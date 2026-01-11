@@ -4,16 +4,19 @@
   "files": [],
   "references": [
     {
-      "path": "./packages/strings"
+      "path": "./libs/shared/types"
     },
     {
-      "path": "./packages/colors"
+      "path": "./libs/shared/utils"
     },
     {
-      "path": "./packages/async"
+      "path": "./libs/database"
     },
     {
-      "path": "./packages/utils"
+      "path": "./libs/queue"
+    },
+    {
+      "path": "./apps/chat-bot"
     }
   ]
 }

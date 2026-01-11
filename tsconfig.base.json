@@ -15,7 +15,6 @@
     "noUnusedLocals": true,
     "skipLibCheck": true,
     "strict": true,
-    "target": "es2022",
-    "customConditions": ["@sobremesa/source"]
+    "target": "es2022"
   }
 }
