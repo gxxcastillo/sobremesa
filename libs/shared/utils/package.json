@@ -15,9 +15,6 @@
       "default": "./dist/index.js"
     }
   },
-  "nx": {
-    "name": "shared-utils"
-  },
   "dependencies": {
     "tslib": "^2.3.0",
     "pino": "^10.1.1"

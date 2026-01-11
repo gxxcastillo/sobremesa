@@ -67,5 +67,15 @@
       "inputs": ["production", "^production"]
     }
   },
+  "targets": {
+    "local-registry": {
+      "executor": "@nx/js:verdaccio",
+      "options": {
+        "port": 4873,
+        "config": ".verdaccio/config.yml",
+        "storage": "tmp/local-registry/storage"
+      }
+    }
+  },
   "nxCloudId": "6961ac7de391467e39b9a1d6"
 }

@@ -15,9 +15,6 @@
       "default": "./dist/index.js"
     }
   },
-  "nx": {
-    "name": "agents-registrar"
-  },
   "dependencies": {
     "tslib": "^2.3.0",
     "@sobremesa/shared-types": "workspace:*",

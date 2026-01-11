@@ -26,8 +26,12 @@ export default [
               onlyDependOnLibsWithTags: ['scope:shared'],
             },
             {
+              sourceTag: 'scope:infra',
+              onlyDependOnLibsWithTags: ['scope:shared', 'scope:infra'],
+            },
+            {
               sourceTag: 'scope:async',
-              onlyDependOnLibsWithTags: ['scope:shared', 'scope:async'],
+              onlyDependOnLibsWithTags: ['scope:shared', 'scope:infra', 'scope:async'],
             },
             {
               sourceTag: 'scope:colors',
