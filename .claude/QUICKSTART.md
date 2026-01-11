@@ -151,11 +151,11 @@ VALUES ('00000000-0000-0000-0000-000000000001');
 ## Step 5: Run the Bot
 
 ```bash
-# Start chat bot
-nx serve chat-bot
+# Start conversation gateway
+nx serve conversation-gateway
 
 # OR for specific family
-FAMILY_ID=00000000-0000-0000-0000-000000000001 nx serve chat-bot
+FAMILY_ID=00000000-0000-0000-0000-000000000001 nx serve conversation-gateway
 ```
 
 **Expected output:**
@@ -322,19 +322,19 @@ nx test agents-scribe --watch
 nx lint
 
 # Lint specific app
-nx lint chat-bot
+nx lint conversation-gateway
 
 # Auto-fix
-nx lint chat-bot --fix
+nx lint conversation-gateway --fix
 ```
 
 ### Building
 
 ```bash
 # Build for production
-nx build chat-bot --prod
+nx build conversation-gateway --prod
 
-# Output: dist/apps/chat-bot/
+# Output: dist/apps/conversation-gateway/
 ```
 
 ---
@@ -355,7 +355,7 @@ nx affected:test
 nx reset
 
 # Show project details
-nx show project chat-bot
+nx show project conversation-gateway
 ```
 
 ---

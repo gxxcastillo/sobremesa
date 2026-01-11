@@ -91,7 +91,7 @@ Complete technical specification for Sobremesa implementation.
 ```
 sobremesa/
 ├── apps/
-│   └── chat-bot/          ← Main chat bot app
+│   └── conversation-gateway/  ← Telegram ingestion/orchestration app
 ├── libs/
 │   ├── agents/                ← Facilitator, Admin, Scribe, Curator
 │   │   ├── facilitator/

@@ -1,5 +1,5 @@
 {
-  "name": "chat-bot",
+  "name": "conversation-gateway",
   "tags": ["scope:async"],
   "targets": {
     "build": {
@@ -10,15 +10,15 @@
       "defaultConfiguration": "production",
       "options": {
         "platform": "node",
-        "outputPath": "apps/chat-bot/dist",
+        "outputPath": "apps/conversation-gateway/dist",
         "format": [
           "cjs"
         ],
         "bundle": false,
-        "main": "apps/chat-bot/src/main.ts",
-        "tsConfig": "apps/chat-bot/tsconfig.app.json",
+        "main": "apps/conversation-gateway/src/main.ts",
+        "tsConfig": "apps/conversation-gateway/tsconfig.app.json",
         "assets": [
-          "apps/chat-bot/src/assets"
+          "apps/conversation-gateway/src/assets"
         ],
         "esbuildOptions": {
           "sourcemap": true,
@@ -46,8 +46,8 @@
       "cache": true,
       "executor": "@nx/js:prune-lockfile",
       "outputs": [
-        "{workspaceRoot}/apps/chat-bot/dist/package.json",
-        "{workspaceRoot}/apps/chat-bot/dist/pnpm-lock.yaml"
+        "{workspaceRoot}/apps/conversation-gateway/dist/package.json",
+        "{workspaceRoot}/apps/conversation-gateway/dist/pnpm-lock.yaml"
       ],
       "options": {
         "buildTarget": "build"
@@ -59,7 +59,7 @@
       ],
       "cache": true,
       "outputs": [
-        "{workspaceRoot}/apps/chat-bot/dist/workspace_modules"
+        "{workspaceRoot}/apps/conversation-gateway/dist/workspace_modules"
       ],
       "executor": "@nx/js:copy-workspace-modules",
       "options": {
@@ -81,15 +81,15 @@
         "build"
       ],
       "options": {
-        "buildTarget": "chat-bot:build",
+        "buildTarget": "conversation-gateway:build",
         "runBuildTargetDependencies": false
       },
       "configurations": {
         "development": {
-          "buildTarget": "chat-bot:build:development"
+          "buildTarget": "conversation-gateway:build:development"
         },
         "production": {
-          "buildTarget": "chat-bot:build:production"
+          "buildTarget": "conversation-gateway:build:production"
         }
       }
     }

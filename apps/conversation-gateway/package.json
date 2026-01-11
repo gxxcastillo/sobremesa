@@ -1,5 +1,5 @@
 {
-  "name": "@sobremesa/chat-bot",
+  "name": "@sobremesa/conversation-gateway",
   "version": "0.0.1",
   "private": true,
   "dependencies": {

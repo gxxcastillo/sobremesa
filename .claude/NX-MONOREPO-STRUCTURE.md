@@ -25,7 +25,7 @@ sobremesa-workspace/
 │   └── curator.md
 │
 ├── apps/                             ← Nx applications
-│   ├── chat-bot/                     ← Main bot application
+│   ├── conversation-gateway/         ← Telegram ingestion/orchestration app
 │   │   ├── src/
 │   │   │   ├── main.ts              ← Entry point
 │   │   │   ├── app/

@@ -7,10 +7,10 @@ import { FamilyRepository } from '@sobremesa/database';
 import { ScribeAgent } from '@sobremesa/agents-scribe';
 import { RegistrarAgent } from '@sobremesa/agents-registrar';
 
-const logger = createLogger({ name: 'chat-bot' });
+const logger = createLogger({ name: 'conversation-gateway' });
 
 async function main() {
-  logger.info('Starting Sobremesa chat bot...');
+  logger.info('Starting Sobremesa conversation gateway...');
 
   // Validate required environment variables
   const token = process.env['TELEGRAM_BOT_TOKEN'];

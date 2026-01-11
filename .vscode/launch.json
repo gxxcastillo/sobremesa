@@ -4,9 +4,9 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Debug chat-bot with Nx",
+      "name": "Debug conversation-gateway with Nx",
       "runtimeExecutable": "pnpm exec",
-      "runtimeArgs": ["nx", "serve", "chat-bot"],
+      "runtimeArgs": ["nx", "serve", "conversation-gateway"],
       "env": {
         "NODE_OPTIONS": "--inspect=9229"
       },
@@ -15,7 +15,7 @@
       "skipFiles": ["<node_internals>/**"],
       "sourceMaps": true,
       "outFiles": [
-        "${workspaceFolder}/apps/chat-bot/dist/**/*.(m|c|)js",
+        "${workspaceFolder}/apps/conversation-gateway/dist/**/*.(m|c|)js",
         "!**/node_modules/**"
       ]
     }

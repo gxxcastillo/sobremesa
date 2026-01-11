@@ -170,7 +170,7 @@ export class PeopleRepository extends BaseRepository<Person> {
 **Establish family context early in request lifecycle:**
 
 ```typescript
-// apps/chat-bot/src/main.ts
+// apps/conversation-gateway/src/main.ts
 bot.on('message', async (msg) => {
   // 1. Determine family_id from message
   const familyId = await getFamilyIdFromChatId(msg.chat.id);

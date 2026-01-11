@@ -22,7 +22,7 @@
       "path": "./libs/agents/registrar"
     },
     {
-      "path": "./apps/chat-bot"
+      "path": "./apps/conversation-gateway"
     }
   ]
 }
