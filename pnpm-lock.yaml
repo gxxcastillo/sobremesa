@@ -111,6 +111,15 @@ importers:
 
   apps/chat-bot:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.71.2
+        version: 0.71.2(zod@4.3.5)
+      '@sobremesa/agents-registrar':
+        specifier: workspace:*
+        version: link:../../libs/agents/registrar
+      '@sobremesa/agents-scribe':
+        specifier: workspace:*
+        version: link:../../libs/agents/scribe
       '@sobremesa/database':
         specifier: workspace:*
         version: link:../../libs/database
@@ -129,6 +138,36 @@ importers:
       telegraf:
         specifier: ^4.16.3
         version: 4.16.3
+
+  libs/agents/registrar:
+    dependencies:
+      '@sobremesa/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sobremesa/shared-types':
+        specifier: workspace:*
+        version: link:../../shared/types
+      '@sobremesa/shared-utils':
+        specifier: workspace:*
+        version: link:../../shared/utils
+      tslib:
+        specifier: ^2.3.0
+        version: 2.8.1
+
+  libs/agents/scribe:
+    dependencies:
+      '@sobremesa/database':
+        specifier: workspace:*
+        version: link:../../database
+      '@sobremesa/shared-types':
+        specifier: workspace:*
+        version: link:../../shared/types
+      '@sobremesa/shared-utils':
+        specifier: workspace:*
+        version: link:../../shared/utils
+      tslib:
+        specifier: ^2.3.0
+        version: 2.8.1
 
   libs/database:
     dependencies:

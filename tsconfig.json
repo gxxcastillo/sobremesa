@@ -16,6 +16,12 @@
       "path": "./libs/queue"
     },
     {
+      "path": "./libs/agents/scribe"
+    },
+    {
+      "path": "./libs/agents/registrar"
+    },
+    {
       "path": "./apps/chat-bot"
     }
   ]

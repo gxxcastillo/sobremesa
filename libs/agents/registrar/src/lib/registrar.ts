@@ -1,0 +1,371 @@
+import type { ScribeDomainModel } from '@sobremesa/shared-types';
+import {
+  PersonRepository,
+  PlaceRepository,
+  TimelineEventRepository,
+  StoryRepository,
+  ClaimRepository,
+  RelationshipRepository,
+  QuestionRepository,
+  EventLogRepository,
+  ConversationEventRepository,
+} from '@sobremesa/database';
+import { createLogger } from '@sobremesa/shared-utils';
+import type pino from 'pino';
+import { detectClaimConflict, subjectsMatch } from './conflict-detector.js';
+
+/**
+ * Options for creating a RegistrarAgent.
+ */
+export interface RegistrarAgentOptions {
+  /** Person repository */
+  personRepo?: PersonRepository;
+  /** Place repository */
+  placeRepo?: PlaceRepository;
+  /** Timeline event repository */
+  eventRepo?: TimelineEventRepository;
+  /** Story repository */
+  storyRepo?: StoryRepository;
+  /** Claim repository */
+  claimRepo?: ClaimRepository;
+  /** Relationship repository */
+  relationshipRepo?: RelationshipRepository;
+  /** Question repository */
+  questionRepo?: QuestionRepository;
+  /** Event log repository */
+  eventLog?: EventLogRepository;
+  /** Conversation event repository (for getting claimedBy info) */
+  conversationEventRepo?: ConversationEventRepository;
+  /** Logger instance */
+  logger?: pino.Logger;
+}
+
+/**
+ * Result of a Registrar persist operation.
+ */
+export interface PersistResult {
+  peopleCreated: number;
+  peopleUpdated: number;
+  placesCreated: number;
+  eventsCreated: number;
+  storiesCreated: number;
+  claimsCreated: number;
+  conflictsDetected: number;
+  relationshipsCreated: number;
+  questionsCreated: number;
+  answersProcessed: number;
+}
+
+/**
+ * The Registrar agent persists extracted data to the database.
+ * It handles deduplication, conflict detection, and provenance tracking.
+ */
+export class RegistrarAgent {
+  private personRepo: PersonRepository;
+  private placeRepo: PlaceRepository;
+  private eventRepo: TimelineEventRepository;
+  private storyRepo: StoryRepository;
+  private claimRepo: ClaimRepository;
+  private relationshipRepo: RelationshipRepository;
+  private questionRepo: QuestionRepository;
+  private eventLog: EventLogRepository;
+  private conversationEventRepo: ConversationEventRepository;
+  private logger: pino.Logger;
+
+  constructor(options: RegistrarAgentOptions = {}) {
+    this.personRepo = options.personRepo || new PersonRepository();
+    this.placeRepo = options.placeRepo || new PlaceRepository();
+    this.eventRepo = options.eventRepo || new TimelineEventRepository();
+    this.storyRepo = options.storyRepo || new StoryRepository();
+    this.claimRepo = options.claimRepo || new ClaimRepository();
+    this.relationshipRepo = options.relationshipRepo || new RelationshipRepository();
+    this.questionRepo = options.questionRepo || new QuestionRepository();
+    this.eventLog = options.eventLog || new EventLogRepository();
+    this.conversationEventRepo =
+      options.conversationEventRepo || new ConversationEventRepository();
+    this.logger = options.logger || createLogger({ name: 'registrar' });
+  }
+
+  /**
+   * Persist a domain model to the database.
+   * This is the RegistrarProcessor function for MessageProcessor.
+   */
+  async persist(
+    domainModel: ScribeDomainModel,
+    familyId: string
+  ): Promise<void> {
+    this.logger.info(
+      { familyId, sourceEventId: domainModel.sourceEventId },
+      'Registrar persist started'
+    );
+
+    const result: PersistResult = {
+      peopleCreated: 0,
+      peopleUpdated: 0,
+      placesCreated: 0,
+      eventsCreated: 0,
+      storiesCreated: 0,
+      claimsCreated: 0,
+      conflictsDetected: 0,
+      relationshipsCreated: 0,
+      questionsCreated: 0,
+      answersProcessed: 0,
+    };
+
+    const sourceEventId = domainModel.sourceEventId;
+
+    // Get the claimedBy from the source event
+    const sourceEvent = await this.conversationEventRepo.findById(
+      familyId,
+      sourceEventId
+    );
+    const claimedBy =
+      sourceEvent?.actorDisplayName ||
+      sourceEvent?.actorUsername ||
+      'Unknown';
+
+    // Build maps for name -> ID resolution
+    const personIdMap = new Map<string, string>();
+    const placeIdMap = new Map<string, string>();
+
+    try {
+      // 1. Process People (with deduplication)
+      for (const person of domainModel.people) {
+        const existingPerson = await this.personRepo.findByFuzzyMatch(
+          familyId,
+          person.name,
+          person.aliases
+        );
+
+        if (existingPerson) {
+          // Check if we need to merge aliases
+          const existingAliases = new Set(
+            (existingPerson.aliases || []).map((a) => a.toLowerCase())
+          );
+          const newAliases = person.aliases.filter(
+            (a) => !existingAliases.has(a.toLowerCase())
+          );
+
+          if (newAliases.length > 0) {
+            await this.personRepo.updateAliases(familyId, existingPerson.id, [
+              ...existingPerson.aliases,
+              ...newAliases,
+            ]);
+            result.peopleUpdated++;
+          }
+
+          personIdMap.set(person.name, existingPerson.id);
+          for (const alias of person.aliases) {
+            personIdMap.set(alias, existingPerson.id);
+          }
+        } else {
+          const newPerson = await this.personRepo.findOrCreate(
+            familyId,
+            person,
+            sourceEventId,
+            claimedBy
+          );
+          personIdMap.set(person.name, newPerson.id);
+          for (const alias of person.aliases) {
+            personIdMap.set(alias, newPerson.id);
+          }
+          result.peopleCreated++;
+        }
+      }
+
+      // 2. Process Places
+      for (const place of domainModel.places) {
+        const dbPlace = await this.placeRepo.findOrCreate(
+          familyId,
+          place,
+          sourceEventId
+        );
+        placeIdMap.set(place.name, dbPlace.id);
+        if (dbPlace.createdAt.getTime() > Date.now() - 1000) {
+          result.placesCreated++;
+        }
+      }
+
+      // 3. Process Events
+      for (const event of domainModel.events) {
+        // Resolve people IDs
+        const peopleIds = event.peopleInvolved
+          .map((name) => personIdMap.get(name))
+          .filter((id): id is string => !!id);
+
+        // Resolve place ID
+        const placeId = event.placeName
+          ? placeIdMap.get(event.placeName)
+          : undefined;
+
+        await this.eventRepo.createFromExtracted(
+          familyId,
+          event,
+          peopleIds,
+          placeId,
+          sourceEventId,
+          claimedBy
+        );
+        result.eventsCreated++;
+      }
+
+      // 4. Process Relationships
+      for (const rel of domainModel.relationships) {
+        const personAId = personIdMap.get(rel.personAName);
+        const personBId = personIdMap.get(rel.personBName);
+
+        if (personAId && personBId) {
+          const existing = await this.relationshipRepo.findBetween(
+            familyId,
+            personAId,
+            personBId
+          );
+
+          if (!existing) {
+            await this.relationshipRepo.findOrCreate(
+              familyId,
+              personAId,
+              personBId,
+              rel.relationshipType,
+              sourceEventId,
+              claimedBy,
+              rel.confidence
+            );
+            result.relationshipsCreated++;
+          }
+        }
+      }
+
+      // 5. Process Story (if present)
+      if (domainModel.story) {
+        const peopleIds = [...personIdMap.values()];
+        const placeIds = [...placeIdMap.values()];
+
+        await this.storyRepo.createFromExtracted(
+          familyId,
+          domainModel.story,
+          peopleIds,
+          placeIds,
+          [], // eventIds - would need to track created event IDs
+          sourceEventId,
+          domainModel.detectedLanguage,
+          claimedBy
+        );
+        result.storiesCreated++;
+      }
+
+      // 6. Process Claims (with conflict detection)
+      for (const claim of domainModel.claims) {
+        // Find entity ID if we can resolve it
+        let entityId: string | undefined;
+        let entityType: 'person' | 'place' | 'event' | 'story' | undefined;
+
+        // Try to resolve entity from subject
+        const subjectPersonId = personIdMap.get(claim.subject);
+        if (subjectPersonId) {
+          entityId = subjectPersonId;
+          entityType = 'person';
+        }
+
+        // Check for conflicts with existing claims
+        const existingClaims = await this.claimRepo.findActiveBySubject(
+          familyId,
+          claim.subject
+        );
+
+        // Create the new claim
+        const newClaim = await this.claimRepo.createFromExtracted(
+          familyId,
+          claim,
+          sourceEventId,
+          claimedBy,
+          entityId,
+          entityType
+        );
+        result.claimsCreated++;
+
+        // Check for conflicts and create links
+        for (const existing of existingClaims) {
+          if (
+            subjectsMatch(existing.subject, claim.subject) &&
+            detectClaimConflict(existing.claimValue, claim.claimValue)
+          ) {
+            await this.claimRepo.addConflict(familyId, newClaim.id, existing.id);
+            result.conflictsDetected++;
+            this.logger.info(
+              {
+                familyId,
+                subject: claim.subject,
+                newClaimId: newClaim.id,
+                existingClaimId: existing.id,
+              },
+              'Conflict detected between claims'
+            );
+          }
+        }
+      }
+
+      // 7. Process Questions
+      for (const question of domainModel.questions) {
+        await this.questionRepo.createFromGenerated(
+          familyId,
+          question,
+          sourceEventId
+        );
+        result.questionsCreated++;
+      }
+
+      // 8. Process Detected Answers
+      for (const answer of domainModel.answers) {
+        try {
+          await this.questionRepo.markAnswered(
+            familyId,
+            answer.questionId,
+            sourceEventId
+          );
+          result.answersProcessed++;
+        } catch (error) {
+          this.logger.warn(
+            { questionId: answer.questionId, error },
+            'Failed to mark question as answered'
+          );
+        }
+      }
+
+      // 9. Log completion
+      await this.eventLog.log({
+        familyId,
+        eventType: 'event_processed',
+        eventCategory: 'system_event',
+        actor: 'registrar',
+        actorType: 'system',
+        sourceEventId,
+        eventData: result as unknown as Record<string, unknown>,
+      });
+
+      this.logger.info({ familyId, sourceEventId, ...result }, 'Registrar persist complete');
+    } catch (error) {
+      this.logger.error(
+        { familyId, sourceEventId, error },
+        'Registrar persist failed'
+      );
+
+      // Log the error
+      await this.eventLog.log({
+        familyId,
+        eventType: 'error',
+        eventCategory: 'system_event',
+        actor: 'registrar',
+        actorType: 'system',
+        sourceEventId,
+        severity: 'error',
+        eventData: {
+          error: error instanceof Error ? error.message : String(error),
+          partialResult: result as unknown as Record<string, unknown>,
+        } as Record<string, unknown>,
+      });
+
+      throw error;
+    }
+  }
+}

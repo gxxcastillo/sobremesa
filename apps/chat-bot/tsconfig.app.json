@@ -20,6 +20,12 @@
     },
     {
       "path": "../../libs/shared/types/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/agents/scribe/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/agents/registrar/tsconfig.lib.json"
     }
   ]
 }
