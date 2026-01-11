@@ -10,12 +10,12 @@ This repository demonstrates a production-ready TypeScript monorepo with:
 
 - **3 Publishable Packages** - Ready for NPM publishing
 
-  - `@org/strings` - String manipulation utilities
-  - `@org/async` - Async utility functions with retry logic
-  - `@org/colors` - Color conversion and manipulation utilities
+  - `@sobremesa/strings` - String manipulation utilities
+  - `@sobremesa/async` - Async utility functions with retry logic
+  - `@sobremesa/colors` - Color conversion and manipulation utilities
 
 - **1 Internal Library**
-  - `@org/utils` - Shared utilities (private, not published)
+  - `@sobremesa/utils` - Shared utilities (private, not published)
 
 ## 🚀 Quick Start
 
@@ -132,10 +132,10 @@ This repository uses tags to enforce module boundaries:
 
 | Package        | Tag             | Can Import From        |
 | -------------- | --------------- | ---------------------- |
-| `@org/utils`   | `scope:shared`  | Nothing (base library) |
-| `@org/strings` | `scope:strings` | `scope:shared`         |
-| `@org/async`   | `scope:async`   | `scope:shared`         |
-| `@org/colors`  | `scope:colors`  | `scope:shared`         |
+| `@sobremesa/utils`   | `scope:shared`  | Nothing (base library) |
+| `@sobremesa/strings` | `scope:strings` | `scope:shared`         |
+| `@sobremesa/async`   | `scope:async`   | `scope:shared`         |
+| `@sobremesa/colors`  | `scope:colors`  | `scope:shared`         |
 
 The ESLint configuration enforces these boundaries, preventing circular dependencies and maintaining clean architecture.
 
@@ -143,7 +143,7 @@ The ESLint configuration enforces these boundaries, preventing circular dependen
 
 To see module boundary enforcement in action:
 
-1. Try importing `@org/colors` into `@org/strings`
+1. Try importing `@sobremesa/colors` into `@sobremesa/strings`
 2. Run `npx nx lint strings`
 3. You'll see an error about violating module boundaries
 
@@ -201,3 +201,388 @@ Join the Nx community:
 - [LinkedIn](https://www.linkedin.com/company/nrwl)
 - [YouTube](https://www.youtube.com/@nxdevtools)
 - [Blog](https://nx.dev/blog)
+
+
+
+-------- NEW ------
+
+# Sobremesa
+
+> *"Sobremesa"* - That special time after a meal when family gathers, conversation flows, and stories are shared.
+
+An AI-powered family history collection system that preserves your family's stories through warm, natural conversation.
+
+---
+
+## What is Sobremesa?
+
+Sobremesa helps families preserve their history by creating a warm, conversational space where:
+- **Stories flow naturally** - No forms, no interviews, just conversation
+- **AI asks thoughtful questions** - Filling in gaps while respecting emotional boundaries
+- **Conflicts are preserved** - Different memories honored, never auto-resolved
+- **Multiple languages supported** - Bilingual storage with cultural term preservation
+- **Everything is sourced** - Complete provenance for every fact
+
+Perfect for families who want to preserve their heritage before precious memories are lost.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Supabase account (free tier works)
+- Chat Provider account
+- Anthropic API key
+
+### 1. Clone and Install
+
+```bash
+# Clone the repository
+git clone <your-repo-url> sobremesa-workspace
+cd sobremesa-workspace
+
+# Install dependencies
+npm install
+```
+
+### 2. Set Up Environment
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your credentials:
+# - CHAT PROVIDER_BOT_TOKEN (from @BotFather)
+# - ANTHROPIC_API_KEY (from Anthropic Console)
+# - SUPABASE_URL and SUPABASE_ANON_KEY (from Supabase)
+```
+
+### 3. Set Up Database
+
+```bash
+# Run the schema on your Supabase instance
+# Copy .claude/SCHEMA.sql and run it in Supabase SQL Editor
+```
+
+### 4. Build and Run
+
+```bash
+# Build all libraries
+nx run-many -t build
+
+# Run the Chat Provider bot
+nx run chat provider-bot:serve
+```
+
+### 5. Add Bot to Chat Provider Group
+
+1. Create a Chat Provider group for your family
+2. Add your bot (search for your bot name)
+3. Start sharing stories!
+
+---
+
+## Project Structure
+
+```
+sobremesa-workspace/
+├── .claude/                   # Complete system documentation
+│   ├── ARCHITECTURE.md       # System design and data flow
+│   ├── AGENTS.md             # AI agent specifications
+│   ├── CONFIGURATION.md      # How to configure for your family
+│   ├── WARMTH.md             # Core philosophy (read this!)
+│   ├── IMPLEMENTATION.md     # Build plan
+│   └── SCHEMA.sql            # Database schema
+│
+├── prompts/                   # AI system prompts
+│   ├── facilitator.md       # Question-asking agent
+│   ├── admin.md             # Project management agent
+│   ├── scribe.md        # Data extraction agent
+│   └── curator.md  # Image analysis agent
+│
+├── apps/
+│   └── chat provider-bot/         # Main bot application
+│
+└── libs/
+    ├── agents/               # AI agents (facilitator, admin, scribe)
+    ├── database/             # Supabase integration
+    ├── queue/                # Message processing queue
+    └── ...                   # Other libraries
+```
+
+---
+
+## Documentation
+
+### Essential Reading
+
+Start here to understand the system:
+
+1. **[WARMTH.md](.claude/WARMTH.md)** - Why warmth is core to the product
+2. **[ARCHITECTURE.md](.claude/ARCHITECTURE.md)** - System design and data flow
+3. **[AGENTS.md](.claude/AGENTS.md)** - How the 5 AI agents work
+4. **[CONFIGURATION.md](.claude/CONFIGURATION.md)** - Customize for your family
+
+### Additional Docs
+
+- **[IMPLEMENTATION.md](.claude/IMPLEMENTATION.md)** - 6-week build plan with demo flow
+- **[DECISIONS.md](.claude/DECISIONS.md)** - Architecture decision records (why we built it this way)
+- **[CULTURE.md](.claude/CULTURE.md)** - Adapting for different cultures and languages
+- **[NX-MONOREPO-STRUCTURE.md](.claude/NX-MONOREPO-STRUCTURE.md)** - Nx workspace layout
+
+---
+
+## How It Works
+
+### The Agents
+
+**Sobremesa uses 5 AI agents working together:**
+
+1. **👥 Carmencita (Facilitator)** - Asks warm questions to fill gaps
+2. **🔧 La Directora (Admin)** - Celebrates milestones, mediates conflicts
+3. **📝 Don Rubén (Scribe)** - Extracts data, generates questions
+4. **🎨 Curator** - Analyzes photos and documents (hidden)
+5. **💾 Registrar** - Saves everything with provenance (backend)
+
+*Note: Names are configurable - "Carmencita" is the default for a Nicaraguan family.*
+
+### The Flow
+
+```
+1. Family shares story in Chat Provider
+   ↓
+2. Scribe extracts people, places, events, creates claims
+   ↓
+3. Registrar saves to database with full provenance
+   ↓
+4. Facilitator asks warm follow-up questions
+   ↓
+5. Coaching module optimizes based on family response
+```
+
+### Key Features
+
+- **✨ Warmth-first** - Every interaction uses the [Warmth] + [Question] + [Permission] + [Gratitude] formula
+- **📊 Claims-based** - Every fact has a source, confidence level, and provenance
+- **🔄 Conflict preservation** - Different memories honored, never auto-resolved
+- **🌍 Bilingual+** - Original language + translations, cultural terms preserved
+- **🎯 Adaptive** - System learns and optimizes engagement based on family patterns
+- **🔒 Privacy** - Redaction support, GDPR compliant
+- **⛓️ Web3 ready** - Optional Solana integration for tamper-proof audit trail
+
+---
+
+## Configuration
+
+### Default: Nicaraguan Family
+
+The system ships with default settings for a Spanish/English bilingual family:
+
+```typescript
+{
+  projectName: "Sobremesa",
+  languages: { primary: "es", secondary: ["en"] },
+  bots: {
+    facilitator: { displayName: "Carmencita" },
+    admin: { displayName: "La Directora" },
+    scribe: { displayName: "Don Rubén" }
+  },
+  culturalTerms: ["pulpería", "gallo pinto", "vigorón"]
+}
+```
+
+### Customize for Your Family
+
+See [CONFIGURATION.md](.claude/CONFIGURATION.md) for complete customization guide:
+- Different languages (English, Japanese, Italian, etc.)
+- Different bot names and personalities
+- Cultural term preservation
+- Formality and emoji usage
+
+---
+
+## Development
+
+### Nx Commands
+
+```bash
+# Build everything
+nx run-many -t build
+
+# Run tests
+nx run-many -t test
+
+# Lint
+nx run-many -t lint
+
+# Build specific library
+nx build agents-facilitator
+
+# View dependency graph
+nx graph
+
+# Generate new library
+nx g @nx/node:library my-library --directory=libs
+```
+
+### Development Workflow
+
+1. Make changes in `libs/`
+2. Run tests: `nx test <library-name>`
+3. Build: `nx build chat provider-bot`
+4. Test in Chat Provider group
+5. Check event log in database for debugging
+
+---
+
+## Database
+
+### Schema
+
+Complete PostgreSQL schema in `.claude/SCHEMA.sql`:
+- 16 tables (messages, people, places, events, stories, claims, etc.)
+- 4 helper views
+- Complete audit trail (event_log)
+- Bilingual storage (original + translations)
+- Web3 integration ready
+
+### Key Tables
+
+- **messages** - Raw Chat Provider messages
+- **claims** - All factual claims with provenance *(key innovation)*
+- **people, places, events, stories** - Extracted entities
+- **questions** - Facilitator's question queue
+- **facilitator_rules** - Dynamic engagement rules
+- **real_time_levers** - Immediate conversation flow controls
+- **event_log** - Complete audit trail
+
+---
+
+## Deployment
+
+### Production Checklist
+
+- [ ] Set up Supabase production database
+- [ ] Run SCHEMA.sql on production database
+- [ ] Configure environment variables
+- [ ] Set up Chat Provider bot (production token)
+- [ ] Deploy bot application (Railway, Render, AWS, etc.)
+- [ ] Configure real-time levers for your family
+- [ ] Test warmth formula in production
+- [ ] Monitor event_log for issues
+
+### Environment Variables (Production)
+
+```bash
+NODE_ENV=production
+LOG_LEVEL=info
+CHAT PROVIDER_BOT_TOKEN=<production-token>
+ANTHROPIC_API_KEY=<production-key>
+SUPABASE_URL=<production-url>
+SUPABASE_ANON_KEY=<production-key>
+```
+
+---
+
+## Contributing
+
+This is a reusable library designed to work for any family. Contributions welcome!
+
+### Areas for Contribution
+
+- New language support (Chinese, Arabic, etc.)
+- Cultural adaptation guides
+- Additional prompt templates
+- Dashboard UI
+- Knowledge graph visualization
+- Additional scribe extractors
+
+### Development Guidelines
+
+1. Read `.claude/WARMTH.md` first - warmth is non-negotiable
+2. Follow architecture in `.claude/ARCHITECTURE.md`
+3. Use generic role names in code (`BotRole.FACILITATOR`)
+4. Make everything configurable
+5. Preserve conflicts, never auto-resolve
+6. Test with multiple languages
+7. Document cultural considerations
+
+---
+
+## Architecture Principles
+
+1. **Warmth First** - Not optional, IS the product
+2. **Configurable** - Works for any family, any culture, any language
+3. **Claims-Based** - Provenance for everything
+4. **Conflict Preservation** - Never auto-resolve disagreements
+5. **Single Writer** - Only Registrar modifies core tables
+6. **Adaptive** - System learns and optimizes
+7. **Auditable** - Complete event log
+8. **Privacy-Respecting** - Redaction and GDPR compliance
+
+See [DECISIONS.md](.claude/DECISIONS.md) for full architecture decision records.
+
+---
+
+## Tech Stack
+
+- **Runtime**: Node.js + TypeScript
+- **Bot Framework**: Telegraf (Chat Provider Bot API)
+- **Database**: PostgreSQL (Supabase)
+- **AI**: Anthropic Claude API (Sonnet)
+- **Queue**: In-memory (POC) → Redis (production)
+- **Monorepo**: Nx
+- **Web3** (optional): Solana
+
+---
+
+## Support
+
+### Common Issues
+
+See [.claude/TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md) (if exists) or check:
+
+**Bot not responding?**
+- Check event_log table for errors
+- Verify CHAT PROVIDER_BOT_TOKEN
+- Check Anthropic API quota
+
+**Questions too frequent?**
+- Coaching module will auto-adjust
+- Check facilitator_rules table
+- Adjust real_time_levers if needed
+
+**Wrong language?**
+- Check config.languages.primary
+- Verify message language detection
+- Check cultural terms preservation
+
+---
+
+## License
+
+[Your License Here - e.g., MIT]
+
+---
+
+## Acknowledgments
+
+Built with warmth for families everywhere who want to preserve their stories before they're lost.
+
+**Special thanks to:**
+- Families sharing their precious memories
+- The Ruby Darío literary tradition (inspiration for "Don Rubén")
+- The concept of "sobremesa" - that beautiful after-meal conversation time
+
+---
+
+## Contact
+
+[Your contact information]
+
+---
+
+**Remember:** Warmth = Data Quality. Without warmth, people clam up. With warmth, stories flow. 💝

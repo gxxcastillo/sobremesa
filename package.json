@@ -1,5 +1,5 @@
 {
-  "name": "@org/source",
+  "name": "@sobremesa/root",
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {},
@@ -30,9 +30,6 @@
     "vite": "^7.0.0",
     "vitest": "4.0.9"
   },
-  "workspaces": [
-    "packages/*"
-  ],
   "nx": {
     "includedScripts": [],
     "targets": {
@@ -46,5 +43,6 @@
       }
     }
   },
-  "dependencies": {}
+  "dependencies": {},
+  "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
 }
