@@ -1,4 +1,24 @@
 {
   "name": "database",
-  "tags": ["scope:infra"]
+  "tags": ["scope:infra"],
+  "targets": {
+    "types": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --noEmit -p libs/database/tsconfig.lib.json"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint libs/database"
+      }
+    },
+    "check-db": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx tsx libs/database/src/lib/check-db.ts"
+      }
+    }
+  }
 }

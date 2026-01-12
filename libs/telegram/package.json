@@ -1,5 +1,5 @@
 {
-  "name": "@sobremesa/database",
+  "name": "@sobremesa/telegram",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -17,10 +17,10 @@
   },
   "dependencies": {
     "tslib": "^2.3.0",
+    "telegraf": "^4.16.3",
     "@sobremesa/shared-types": "workspace:*",
-    "@supabase/supabase-js": "^2.90.1"
-  },
-  "devDependencies": {
-    "vitest": "4.0.9"
+    "@sobremesa/shared-utils": "workspace:*",
+    "@sobremesa/database": "workspace:*",
+    "@sobremesa/queue": "workspace:*"
   }
 }

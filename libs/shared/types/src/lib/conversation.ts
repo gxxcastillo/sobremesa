@@ -87,6 +87,7 @@ export interface Family {
   id: string;
   name: string;
   config: Record<string, unknown>;
+  chatId?: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

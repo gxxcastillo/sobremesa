@@ -1,5 +1,8 @@
 packages:
-  - 'libs/*'
-  - 'libs/shared/*'
-  - 'libs/agents/*'
-  - 'apps/*'
+  - libs/*
+  - libs/shared/*
+  - libs/agents/*
+  - apps/*
+
+onlyBuiltDependencies:
+  - supabase

@@ -110,4 +110,63 @@ export class FamilyRepository {
 
     return mapRowToCamelCase<Family>(data);
   }
+
+  /**
+   * Find a family by chat ID.
+   */
+  async findByChatId(chatId: string): Promise<Family | null> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('chat_id', chatId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      throw new Error(`Failed to find family by chat ID: ${error.message}`);
+    }
+
+    return mapRowToCamelCase<Family>(data);
+  }
+
+  /**
+   * Link a chat ID to a family.
+   */
+  async setChatId(id: string, chatId: string): Promise<Family> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .update({ chat_id: chatId })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to set chat ID: ${error.message}`);
+    }
+
+    return mapRowToCamelCase<Family>(data);
+  }
+
+  /**
+   * Create a new family with a chat ID.
+   */
+  async createWithChat(
+    name: string,
+    chatId: string,
+    config: Record<string, unknown> = {}
+  ): Promise<Family> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .insert({ name, chat_id: chatId, config })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create family: ${error.message}`);
+    }
+
+    return mapRowToCamelCase<Family>(data);
+  }
 }

@@ -106,6 +106,40 @@ export class ProcessingQueueRepository {
   }
 
   /**
+   * Dequeue the next item from any family for processing.
+   * Used for multi-family queue processing.
+   */
+  async dequeueAny(
+    workerId: string,
+    lockTimeoutMs = 300000
+  ): Promise<QueueItem | null> {
+    const lockExpiry = new Date(Date.now() - lockTimeoutMs).toISOString();
+
+    // Find and lock the next available item from any family
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .update({
+        status: 'processing',
+        locked_at: new Date().toISOString(),
+        locked_by: workerId,
+      })
+      .or(`status.eq.queued,and(status.eq.processing,locked_at.lt.${lockExpiry})`)
+      .order('queued_at', { ascending: true })
+      .limit(1)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null; // No items available
+      }
+      throw new Error(`Failed to dequeue item: ${error.message}`);
+    }
+
+    return mapRowToCamelCase<QueueItem>(data);
+  }
+
+  /**
    * Mark an item as completed.
    */
   async complete(familyId: string, id: string): Promise<void> {

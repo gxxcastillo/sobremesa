@@ -1,9 +1,8 @@
 import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { createBot } from './bot/bot.js';
 import { createLogger } from '@sobremesa/shared-utils';
 import { MessageQueue, MessageProcessor } from '@sobremesa/queue';
-import { FamilyRepository } from '@sobremesa/database';
+import { BotManager } from '@sobremesa/telegram';
 import { ScribeAgent } from '@sobremesa/agents-scribe';
 import { RegistrarAgent } from '@sobremesa/agents-registrar';
 
@@ -12,10 +11,13 @@ const logger = createLogger({ name: 'conversation-gateway' });
 async function main() {
   logger.info('Starting Sobremesa conversation gateway...');
 
-  // Validate required environment variables
-  const token = process.env['TELEGRAM_BOT_TOKEN'];
-  if (!token) {
-    logger.error('TELEGRAM_BOT_TOKEN environment variable is required');
+  // Get bot tokens from environment
+  const scribeToken = process.env['TELEGRAM_BOT_TOKEN_SCRIBE'];
+  const adminToken = process.env['TELEGRAM_BOT_TOKEN_ADMIN'];
+  const facilitatorToken = process.env['TELEGRAM_BOT_TOKEN_FACILITATOR'];
+
+  if (!scribeToken) {
+    logger.error('At least TELEGRAM_BOT_TOKEN_SCRIBE is required');
     process.exit(1);
   }
 
@@ -25,20 +27,27 @@ async function main() {
   }
 
   try {
-    const bot = await createBot({ token });
+    logger.debug('Creating BotManager...');
+    // Create bot manager with available tokens
+    // Note: Family ID is looked up dynamically by chat ID via /register command
+    const botManager = new BotManager({
+      scribeToken,
+      adminToken,
+      facilitatorToken,
+      logger,
+    });
 
-    // Get default family for queue processing
-    const familyRepo = new FamilyRepository();
-    let family = await familyRepo.findDefault();
-    if (!family) {
-      family = await familyRepo.create('Default Family', {});
-    }
+    // Log which bots are configured
+    const roles = botManager.getConfiguredRoles();
+    logger.info({ roles }, 'Bots configured');
 
+    logger.debug('Creating MessageProcessor...');
     // Set up message processing pipeline
     const processor = new MessageProcessor();
 
     // Configure Scribe agent if API key is available
     if (anthropicApiKey) {
+      logger.debug('Configuring Scribe and Registrar agents...');
       const anthropic = new Anthropic({ apiKey: anthropicApiKey });
       const scribe = new ScribeAgent({ anthropic });
       const registrar = new RegistrarAgent();
@@ -49,28 +58,31 @@ async function main() {
       logger.info('Scribe and Registrar agents configured');
     }
 
-    // Start the message queue
+    logger.debug('Starting MessageQueue...');
+    // Start the message queue (processes all registered families)
     const queue = new MessageQueue();
     queue.setHandler(processor.createHandler());
-    await queue.start(family.id);
-    logger.info({ familyId: family.id }, 'Message queue started');
+    await queue.start();
+    logger.info('Message queue started');
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {
       logger.info({ signal }, 'Received shutdown signal');
       await queue.stop();
-      bot.stop(signal);
+      await botManager.stop(signal);
       process.exit(0);
     };
 
     process.once('SIGINT', () => shutdown('SIGINT'));
     process.once('SIGTERM', () => shutdown('SIGTERM'));
 
-    // Start the bot
-    await bot.launch();
-    logger.info('Bot is running. Press Ctrl+C to stop.');
+    // Start all bots
+    await botManager.start();
+    logger.info('All bots are running. Press Ctrl+C to stop.');
   } catch (error) {
-    logger.error({ error }, 'Failed to start bot');
+    const err = error instanceof Error ? error : new Error(String(error));
+    logger.error({ err: err.message, stack: err.stack }, 'Failed to start');
+    console.error('Startup error:', err);
     process.exit(1);
   }
 }

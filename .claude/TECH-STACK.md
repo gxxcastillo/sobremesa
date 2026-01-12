@@ -119,7 +119,7 @@ sobremesa/
 # Database
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_KEY=your-service-role-key  # For backend only
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key  # For backend only
 
 # Claude API
 ANTHROPIC_API_KEY=sk-ant-...

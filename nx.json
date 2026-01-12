@@ -14,8 +14,8 @@
     {
       "plugin": "@nx/js/typescript",
       "options": {
-        "typecheck": {
-          "targetName": "typecheck"
+        "types": {
+          "targetName": "types"
         },
         "build": {
           "targetName": "build",
@@ -33,7 +33,7 @@
         "devTargetName": "dev",
         "previewTargetName": "preview",
         "serveStaticTargetName": "serve-static",
-        "typecheckTargetName": "typecheck",
+        "typecheckTargetName": "types",
         "buildDepsTargetName": "build-deps",
         "watchDepsTargetName": "watch-deps"
       }

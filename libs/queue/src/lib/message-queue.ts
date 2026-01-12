@@ -65,9 +65,9 @@ export class MessageQueue {
   }
 
   /**
-   * Start processing messages.
+   * Start processing messages from all families.
    */
-  async start(familyId: string): Promise<void> {
+  async start(): Promise<void> {
     if (!this.handler) {
       throw new Error('No message handler set');
     }
@@ -78,9 +78,9 @@ export class MessageQueue {
     }
 
     this.isRunning = true;
-    this.logger.info({ familyId, workerId: this.workerId }, 'Starting queue processor');
+    this.logger.info({ workerId: this.workerId }, 'Starting queue processor');
 
-    await this.poll(familyId);
+    await this.poll();
   }
 
   /**
@@ -96,15 +96,14 @@ export class MessageQueue {
   }
 
   /**
-   * Process a single message synchronously.
+   * Process a single message synchronously from any family.
    */
-  async processOne(familyId: string): Promise<boolean> {
+  async processOne(): Promise<boolean> {
     if (!this.handler) {
       throw new Error('No message handler set');
     }
 
-    const item = await this.repository.dequeue(
-      familyId,
+    const item = await this.repository.dequeueAny(
       this.workerId,
       this.options.lockTimeoutMs
     );
@@ -113,7 +112,8 @@ export class MessageQueue {
       return false;
     }
 
-    this.logger.debug({ itemId: item.id, eventId: item.conversationEventId }, 'Processing message');
+    const familyId = item.familyId;
+    this.logger.debug({ itemId: item.id, eventId: item.conversationEventId, familyId }, 'Processing message');
 
     try {
       const result = await this.handler(item.conversationEventId, familyId);
@@ -174,22 +174,23 @@ export class MessageQueue {
   }
 
   /**
-   * Poll for messages.
+   * Poll for messages from all families.
    */
-  private async poll(familyId: string): Promise<void> {
+  private async poll(): Promise<void> {
     if (!this.isRunning) return;
 
     try {
-      const processed = await this.processOne(familyId);
+      const processed = await this.processOne();
 
       // If we processed something, poll immediately
       // Otherwise, wait for the poll interval
       const delay = processed ? 0 : this.pollIntervalMs;
 
-      this.pollTimeout = setTimeout(() => this.poll(familyId), delay);
+      this.pollTimeout = setTimeout(() => this.poll(), delay);
     } catch (error) {
-      this.logger.error({ error }, 'Error in poll loop');
-      this.pollTimeout = setTimeout(() => this.poll(familyId), this.pollIntervalMs);
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.error({ err: err.message, stack: err.stack }, 'Error in poll loop');
+      this.pollTimeout = setTimeout(() => this.poll(), this.pollIntervalMs);
     }
   }
 }
