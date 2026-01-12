@@ -195,6 +195,9 @@ CREATE TABLE IF NOT EXISTS people (
   name VARCHAR(255) NOT NULL,
   aliases JSONB DEFAULT '[]',
 
+  -- Placeholder flag (for unknown people in family tree, e.g., "unknown parent of Maria")
+  is_placeholder BOOLEAN DEFAULT FALSE,
+
   -- OPTIONAL derived summaries (canonical provenance lives in claims)
   birth_year INTEGER,
   birth_year_confidence VARCHAR(20),           -- 'high','medium','low'
@@ -221,12 +224,13 @@ CREATE TABLE IF NOT EXISTS people (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
 
-  CONSTRAINT uq_people_family_id UNIQUE (family_id, id)  
+  CONSTRAINT uq_people_family_id UNIQUE (family_id, id)
 );
 
 COMMENT ON TABLE people IS 'People mentioned in family history (identity + optional derived summaries).';
 COMMENT ON COLUMN people.birth_year IS 'Derived summary; canonical provenance lives in claims.';
 COMMENT ON COLUMN people.death_year IS 'Derived summary; canonical provenance lives in claims.';
+COMMENT ON COLUMN people.is_placeholder IS 'True if this person is a placeholder for an unknown individual in the family tree.';
 
 CREATE INDEX IF NOT EXISTS idx_people_family_name
   ON people(family_id, name);
@@ -234,6 +238,10 @@ CREATE INDEX IF NOT EXISTS idx_people_family_name
 CREATE INDEX IF NOT EXISTS idx_people_not_redacted
   ON people(family_id, redacted)
   WHERE redacted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_people_placeholder
+  ON people(family_id, is_placeholder)
+  WHERE is_placeholder = TRUE;
 
 DROP TRIGGER IF EXISTS update_people_updated_at ON people;
 CREATE TRIGGER update_people_updated_at
@@ -294,7 +302,29 @@ CREATE TABLE IF NOT EXISTS relationships (
 
   person_a_id UUID NOT NULL REFERENCES people(id) ON DELETE RESTRICT,
   person_b_id UUID NOT NULL REFERENCES people(id) ON DELETE RESTRICT,
-  relationship_type VARCHAR(50) NOT NULL,      -- 'parent','child','spouse','sibling'
+
+  -- Relationship type: 'parent', 'spouse', 'guardian', 'godparent', 'mentor', 'friend', etc.
+  -- For 'parent': person_a is parent, person_b is child
+  -- For 'spouse': order normalized by UUID
+  -- For others: person_a is role-holder, person_b is recipient
+  relationship_type VARCHAR(50) NOT NULL,
+
+  -- Category distinguishes the nature of the relationship
+  -- 'biological': blood relations
+  -- 'legal': adoption, marriage, legal guardianship
+  -- 'functional': raised by, de facto guardian
+  -- 'honorary': godparent, "uncle" by respect, padrino
+  -- 'social': family friend, mentor, best friend
+  category VARCHAR(20) DEFAULT 'biological',
+
+  -- Status of the relationship
+  -- 'active': currently active
+  -- 'ended': divorced, separated, estranged
+  -- 'deceased': ended due to death
+  status VARCHAR(20) DEFAULT 'active',
+
+  -- Qualifier for nuance: 'half', 'step', 'adoptive', 'maternal', 'paternal', etc.
+  qualifier VARCHAR(30),
 
   confidence VARCHAR(20) DEFAULT 'medium',
 
@@ -310,7 +340,11 @@ CREATE TABLE IF NOT EXISTS relationships (
   CONSTRAINT no_self_relationship CHECK (person_a_id != person_b_id)
 );
 
-COMMENT ON TABLE relationships IS 'Claimed relationships between people (edges).';
+COMMENT ON TABLE relationships IS 'Relationships between people. Parent+spouse form the family tree backbone; others are narrative relationships.';
+COMMENT ON COLUMN relationships.relationship_type IS 'Type: parent, spouse, guardian, godparent, mentor, friend, etc.';
+COMMENT ON COLUMN relationships.category IS 'Category: biological, legal, functional, honorary, social';
+COMMENT ON COLUMN relationships.status IS 'Status: active, ended, deceased';
+COMMENT ON COLUMN relationships.qualifier IS 'Qualifier: half, step, adoptive, maternal, paternal, etc.';
 
 CREATE INDEX IF NOT EXISTS idx_relationships_family
   ON relationships(family_id);
@@ -320,6 +354,13 @@ CREATE INDEX IF NOT EXISTS idx_relationships_person_a
 
 CREATE INDEX IF NOT EXISTS idx_relationships_person_b
   ON relationships(family_id, person_b_id);
+
+CREATE INDEX IF NOT EXISTS idx_relationships_category
+  ON relationships(family_id, category);
+
+CREATE INDEX IF NOT EXISTS idx_relationships_tree
+  ON relationships(family_id, category)
+  WHERE category IN ('biological', 'legal');
 
 DROP TRIGGER IF EXISTS update_relationships_updated_at ON relationships;
 CREATE TRIGGER update_relationships_updated_at

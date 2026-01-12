@@ -48,6 +48,15 @@ This directory contains all specifications, decisions, and guides needed to buil
 | [AGENT_CURATOR.md](AGENT_CURATOR.md) | Curator agent specification |
 | [AGENT_REGISTRAR.md](AGENT_REGISTRAR.md) | Registrar specification (data writer) |
 
+### Data Models
+
+| Document | Purpose |
+|----------|---------|
+| [DATA-MODELS.md](DATA-MODELS.md) | Overview of all data models and relationships |
+| [RELATIONSHIPS.md](RELATIONSHIPS.md) | Structural/extended relationships, normalization, API |
+| [IDENTITIES.md](IDENTITIES.md) | Chat provider accounts, multi-channel linking |
+| [PERSONS.md](PERSONS.md) | Family tree members, fuzzy matching, placeholders |
+
 ### Configuration & Setup
 
 | Document | Purpose |
@@ -76,6 +85,12 @@ System Architecture
     ├── DOMAIN-MODEL.md
     ├── DATA-ISOLATION.md
     └── ERROR-HANDLING.md
+
+Data Models
+    ├── DATA-MODELS.md      ← Overview of all models
+    ├── RELATIONSHIPS.md    ← How people connect
+    ├── IDENTITIES.md       ← Chat provider accounts
+    └── PERSONS.md          ← Family tree members
 
 Technical Setup
     ├── TECH-STACK.md       ← Technologies
@@ -158,6 +173,10 @@ Implementation
 | Understand product vision | [PRODUCT.md](PRODUCT.md) |
 | Set up dev environment | [QUICKSTART.md](QUICKSTART.md) |
 | Understand data flow | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Understand all data models | [DATA-MODELS.md](DATA-MODELS.md) |
+| Build relationships feature | [RELATIONSHIPS.md](RELATIONSHIPS.md) |
+| Build identity/multi-channel | [IDENTITIES.md](IDENTITIES.md) |
+| Build person management | [PERSONS.md](PERSONS.md) |
 | Implement Scribe | [AGENT_SCRIBE.md](AGENT_SCRIBE.md) + [DOMAIN-MODEL.md](DOMAIN-MODEL.md) |
 | Write warm questions | [WARMTH.md](WARMTH.md) |
 | Adapt for culture | [CULTURE.md](CULTURE.md) |

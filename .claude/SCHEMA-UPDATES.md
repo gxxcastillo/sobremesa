@@ -42,6 +42,59 @@ Schema simplified based on MVP decisions. Removed pre-computed translations and 
 - `asked_at`, `answered_at`, `answer_message_id`
 - `created_at`, `updated_at`
 
+### 3. ✅ Enhanced Relationships System
+**Before**: Simple `relationship_type` only
+**After**: Rich relationship model with category, status, qualifier
+
+**Added columns:**
+- `category` (biological, legal, functional, honorary, social)
+- `status` (active, ended, deceased)  
+- `qualifier` (half, step, adoptive, maternal, paternal, etc.)
+
+**Benefits:**
+- Captures relationship nuance (step-parent, adoptive sibling, etc.)
+- Tracks relationship lifecycle (marriage, divorce, death)
+- Distinguishes biological from legal relationships
+- Enables better graph traversal for derived relationships
+
+### 4. ✅ New Identities System
+**Before**: No provider account tracking
+**After**: Full identities table linking chat users to family tree
+
+**New table: `identities`**
+- `source` - chat provider (telegram, whatsapp, sms)
+- `provider_user_id` - provider's user ID
+- `display_name`, `username` - profile snapshot
+- `person_id` - optional link to family tree Person
+- Auto-updates profile when user changes name
+
+**Benefits:**
+- One person can have multiple chat accounts
+- Multi-channel support (Telegram + WhatsApp same family)
+- Privacy: unlinked guest accounts
+- Audit trail of all provider accounts
+
+### 5. ✅ Placeholder Persons System
+**Before**: No way to represent unknown people
+**After**: Placeholder system for incomplete family trees
+
+**New field: `people.is_placeholder`**
+- Boolean flag for unknown intermediate people
+- Aliases store description ("parent of Maria")
+- Can merge placeholder into real person later
+- Partial index for efficient queries
+
+**Benefits:**
+- Handle "unknown parent" scenarios
+- Build family trees with missing data
+- No orphaned relationship records
+- Merge when real person identified
+
+**Added methods:**
+- `createPlaceholder(description, relatedPeople)`
+- `findPlaceholderByDescription(description)`
+- `mergePlaceholderIntoPerson(placeholderId, realPersonId)`
+
 ---
 
 ## Validation Checklist
@@ -54,6 +107,10 @@ Schema simplified based on MVP decisions. Removed pre-computed translations and 
 | Redaction support complete | ✅ |
 | Indexes optimized for queries | ✅ |
 | RLS enabled on sensitive tables | ✅ |
+| Relationship normalization working | ✅ |
+| Identity auto-creation on ingestion | ✅ |
+| Placeholder merging logic tested | ✅ |
+| Database constraints enforcing data integrity | ✅ |
 
 ---
 
@@ -63,8 +120,21 @@ Schema simplified based on MVP decisions. Removed pre-computed translations and 
 - [ ] Test cascade deletes work correctly
 - [ ] Verify triggers update timestamps
 - [ ] Run schema against local Supabase
+- [ ] Test relationship normalization
+- [ ] Test identity auto-creation
+- [ ] Test placeholder creation & merging
+- [ ] Verify CHECK constraints working
 
 ---
 
-**Last Updated**: 2026-01-10
-**Schema Version**: 1.0 (MVP)
+## Key Documentation Files
+
+- **Relationships**: [docs/RELATIONSHIPS.md](../docs/RELATIONSHIPS.md)
+- **Identities**: [docs/IDENTITIES.md](../docs/IDENTITIES.md)
+- **Persons**: [docs/PERSONS.md](../docs/PERSONS.md)
+- **ADR-001**: [docs/adr/001-family-tree-traversal.md](../docs/adr/001-family-tree-traversal.md)
+
+---
+
+**Last Updated**: 2026-01-12
+**Schema Version**: 1.1 (Relationships + Identities + Placeholders)

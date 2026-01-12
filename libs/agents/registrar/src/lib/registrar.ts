@@ -227,9 +227,11 @@ export class RegistrarAgent {
               personAId,
               personBId,
               rel.relationshipType,
-              sourceEventId,
-              claimedBy,
-              rel.confidence
+              {
+                sourceEventId,
+                claimedBy,
+                confidence: rel.confidence,
+              }
             );
             result.relationshipsCreated++;
           }

@@ -186,6 +186,116 @@ export class PersonRepository extends BaseRepository<Person> {
   }
 
   /**
+   * Create a placeholder person for an unknown individual in the family tree.
+   * Used when we know a relationship exists but don't know the intermediate people.
+   *
+   * @param familyId - The family this person belongs to
+   * @param description - A description like "parent of Maria" or "parent of Juan and Maria's parents"
+   * @param relatedToPersonIds - IDs of people this placeholder is related to (for potential future merging)
+   * @param sourceEventId - The conversation event that led to this placeholder's creation
+   * @param createdBy - Who created this placeholder
+   */
+  async createPlaceholder(
+    familyId: string,
+    description: string,
+    relatedToPersonIds: string[],
+    sourceEventId?: string,
+    createdBy?: string
+  ): Promise<Person> {
+    const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
+      familyId,
+      name: 'Unknown',
+      aliases: [description, ...relatedToPersonIds.map(id => `related-to:${id}`)],
+      isPlaceholder: true,
+      firstMentionedEventId: sourceEventId,
+      createdBy,
+      redacted: false,
+    };
+
+    return await this.insert(record);
+  }
+
+  /**
+   * Find a placeholder person by their relationship description.
+   * Used to avoid creating duplicate placeholders.
+   */
+  async findPlaceholderByDescription(
+    familyId: string,
+    description: string
+  ): Promise<Person | null> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('is_placeholder', true)
+      .eq('redacted', false)
+      .contains('aliases', [description]);
+
+    if (error) {
+      throw new Error(`Failed to find placeholder: ${error.message}`);
+    }
+
+    if (!data || data.length === 0) {
+      return null;
+    }
+
+    return this.mapFromDb(data[0]);
+  }
+
+  /**
+   * Find or create a placeholder person.
+   */
+  async findOrCreatePlaceholder(
+    familyId: string,
+    description: string,
+    relatedToPersonIds: string[],
+    sourceEventId?: string,
+    createdBy?: string
+  ): Promise<Person> {
+    const existing = await this.findPlaceholderByDescription(familyId, description);
+
+    if (existing) {
+      return existing;
+    }
+
+    return await this.createPlaceholder(
+      familyId,
+      description,
+      relatedToPersonIds,
+      sourceEventId,
+      createdBy
+    );
+  }
+
+  /**
+   * Merge a placeholder person into a real person.
+   * Updates all relationships pointing to the placeholder to point to the real person.
+   */
+  async mergePlaceholderIntoPerson(
+    familyId: string,
+    placeholderId: string,
+    realPersonId: string
+  ): Promise<void> {
+    // This will be called by RelationshipRepository or a higher-level service
+    // to update relationships when we discover who a placeholder actually is
+    const { error } = await this.client
+      .from(this.tableName)
+      .update({
+        redacted: true,
+        redacted_at: new Date().toISOString(),
+        redacted_by: 'system:merge',
+        redaction_reason: `Merged into person ${realPersonId}`,
+      })
+      .eq('family_id', familyId)
+      .eq('id', placeholderId)
+      .eq('is_placeholder', true);
+
+    if (error) {
+      throw new Error(`Failed to merge placeholder: ${error.message}`);
+    }
+  }
+
+  /**
    * Calculate Levenshtein similarity between two strings (0 to 1).
    */
   private calculateSimilarity(a: string, b: string): number {

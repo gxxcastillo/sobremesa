@@ -6,6 +6,7 @@ import {
   ConversationEventRepository,
   ProcessingQueueRepository,
   EventLogRepository,
+  IdentityRepository,
 } from '@sobremesa/database';
 
 const logger = createLogger({ name: 'ingester' });
@@ -19,12 +20,14 @@ export class MessageIngester {
   private eventRepo: ConversationEventRepository;
   private queueRepo: ProcessingQueueRepository;
   private eventLog: EventLogRepository;
+  private identityRepo: IdentityRepository;
 
   constructor(familyId: string) {
     this.familyId = familyId;
     this.eventRepo = new ConversationEventRepository();
     this.queueRepo = new ProcessingQueueRepository();
     this.eventLog = new EventLogRepository();
+    this.identityRepo = new IdentityRepository();
   }
 
   /**
@@ -51,6 +54,15 @@ export class MessageIngester {
       logger.debug({ messageId: msg.message_id }, 'Message already exists, skipping');
       return;
     }
+
+    // Ensure identity exists for the sender
+    await this.identityRepo.findOrCreate(
+      this.familyId,
+      'telegram',
+      String(msg.from.id),
+      this.getDisplayName(msg.from),
+      msg.from.username
+    );
 
     // Create conversation event
     const event = await this.eventRepo.insert({
@@ -128,6 +140,15 @@ export class MessageIngester {
       logger.debug({ messageId: msg.message_id }, 'Photo already exists, skipping');
       return;
     }
+
+    // Ensure identity exists for the sender
+    await this.identityRepo.findOrCreate(
+      this.familyId,
+      'telegram',
+      String(msg.from.id),
+      this.getDisplayName(msg.from),
+      msg.from.username
+    );
 
     // Create conversation event
     const event = await this.eventRepo.insert({
@@ -209,6 +230,15 @@ export class MessageIngester {
       return;
     }
 
+    // Ensure identity exists for the sender
+    await this.identityRepo.findOrCreate(
+      this.familyId,
+      'telegram',
+      String(msg.from.id),
+      this.getDisplayName(msg.from),
+      msg.from.username
+    );
+
     // Create conversation event
     const event = await this.eventRepo.insert({
       familyId: this.familyId,
@@ -262,6 +292,34 @@ export class MessageIngester {
       { eventId: event.id, messageId: msg.message_id },
       'Document message ingested and queued'
     );
+  }
+
+  /**
+   * Ingest new chat members from Telegram.
+   * Creates identity records for users who join the chat.
+   */
+  async ingestNewMembers(
+    newMembers: Array<{ id: number; first_name: string; last_name?: string; username?: string }>
+  ): Promise<void> {
+    for (const member of newMembers) {
+      // Skip bots
+      if ('is_bot' in member && member.is_bot) {
+        continue;
+      }
+
+      logger.debug(
+        { userId: member.id, username: member.username },
+        'Creating identity for new chat member'
+      );
+
+      await this.identityRepo.findOrCreate(
+        this.familyId,
+        'telegram',
+        String(member.id),
+        this.getDisplayName(member),
+        member.username
+      );
+    }
   }
 
   /**

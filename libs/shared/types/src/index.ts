@@ -2,6 +2,7 @@
 export * from './lib/bot-role.js';
 export * from './lib/confidence.js';
 export * from './lib/languages.js';
+export * from './lib/relationships.js';
 
 // Entity types
 export * from './lib/entities.js';

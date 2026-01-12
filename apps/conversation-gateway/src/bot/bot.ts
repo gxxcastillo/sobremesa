@@ -65,13 +65,17 @@ export async function createBot(config: BotConfig): Promise<Telegraf> {
     }
   });
 
-  // Handle new chat members
-  bot.on('chat_member', async (ctx) => {
-    if (ctx.chatMember.new_chat_member.status === 'member') {
+  // Handle new chat members joining
+  bot.on(message('new_chat_members'), async (ctx) => {
+    try {
+      const newMembers = ctx.message.new_chat_members;
       logger.info(
-        { userId: ctx.chatMember.new_chat_member.user.id },
-        'New member joined'
+        { count: newMembers.length, members: newMembers.map((m) => m.username || m.id) },
+        'New members joined chat'
       );
+      await ingester.ingestNewMembers(newMembers);
+    } catch (error) {
+      logger.error({ error }, 'Failed to ingest new chat members');
     }
   });
 

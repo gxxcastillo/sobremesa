@@ -30,6 +30,8 @@ export interface Person extends BaseEntity {
   languageOriginal?: LanguageCode;
   firstMentionedEventId?: string;
   createdBy?: string;
+  /** True if this person is a placeholder for an unknown individual in the family tree. */
+  isPlaceholder?: boolean;
 }
 
 /**
@@ -103,14 +105,63 @@ export interface Claim extends BaseEntity {
 }
 
 /**
+ * Relationship categories.
+ */
+export type RelationshipCategory =
+  | 'biological'  // Blood relations
+  | 'legal'       // Adoption, marriage, legal guardianship
+  | 'functional'  // Raised by, de facto guardian
+  | 'honorary'    // Godparent, "uncle" by respect, padrino
+  | 'social';     // Family friend, mentor, best friend
+
+/**
+ * Relationship status.
+ */
+export type RelationshipStatus =
+  | 'active'      // Currently active
+  | 'ended'       // Divorced, separated, estranged
+  | 'deceased';   // Ended due to death
+
+/**
+ * Core relationship types (structural backbone of the family tree).
+ */
+export type CoreRelationshipType = 'parent' | 'spouse';
+
+/**
+ * Extended relationship types (non-structural, narrative relationships).
+ */
+export type ExtendedRelationshipType =
+  | 'guardian'    // Legal or de facto guardian
+  | 'godparent'   // Religious/cultural godparent
+  | 'mentor'      // Mentor relationship
+  | 'friend'      // Close family friend
+  | 'caregiver';  // Caregiver role
+
+/**
+ * All relationship types.
+ */
+export type RelationshipType = CoreRelationshipType | ExtendedRelationshipType | string;
+
+/**
  * A relationship between two people.
+ *
+ * For 'parent' relationships: personA is the parent, personB is the child.
+ * For 'spouse' relationships: order is normalized by UUID.
+ * For other types: personA is the role-holder (godparent, mentor), personB is the recipient.
  */
 export interface Relationship {
   id: string;
   familyId: string;
   personAId: string;
   personBId: string;
-  relationshipType: 'parent' | 'child' | 'spouse' | 'sibling' | string;
+  /** The type of relationship (parent, spouse, godparent, etc.) */
+  relationshipType: RelationshipType;
+  /** Category: biological, legal, functional, honorary, social */
+  category: RelationshipCategory;
+  /** Status: active, ended, deceased */
+  status: RelationshipStatus;
+  /** Qualifier for nuance: half, step, adoptive, maternal, paternal, etc. */
+  qualifier?: string;
   confidence: Confidence;
   sourceEventId?: string;
   claimedBy?: string;
