@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { getServiceClient } from './client.js';
 
 /**
@@ -12,12 +11,9 @@ export async function initDb(): Promise<void> {
   const client = getServiceClient();
 
   // Find schema file relative to project root
-  // When running from dist, we need to navigate up to find .claude/SCHEMA.sql
-  const currentDir = dirname(fileURLToPath(import.meta.url));
   const possiblePaths = [
-    join(currentDir, '../../../../.claude/SCHEMA.sql'), // from libs/database/src/lib
-    join(currentDir, '../../../../../.claude/SCHEMA.sql'), // from dist
-    join(process.cwd(), '.claude/SCHEMA.sql'), // from project root
+    join(process.cwd(), '.claude/SCHEMA.sql'),
+    join(process.cwd(), 'apps/db/supabase/migrations/20260112074715_init_schema.sql'),
   ];
 
   let schemaPath: string | null = null;

@@ -169,4 +169,22 @@ export class FamilyRepository {
 
     return mapRowToCamelCase<Family>(data);
   }
+
+  /**
+   * Deactivate a family (soft delete).
+   */
+  async deactivate(id: string): Promise<Family> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .update({ is_active: false })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to deactivate family: ${error.message}`);
+    }
+
+    return mapRowToCamelCase<Family>(data);
+  }
 }
