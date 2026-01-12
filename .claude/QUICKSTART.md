@@ -7,11 +7,10 @@ Get Sobremesa running locally in under 30 minutes.
 ## Prerequisites
 
 - **Node.js** 22 LTS ([Download](https://nodejs.org/))
-- **pnpm** (or npm) - `npm install -g pnpm`
-- **Docker** ([Download](https://www.docker.com/)) - For local Supabase
-- **Supabase CLI** - `npm install -g supabase`
-- **Claude API Key** - [Get from Anthropic](https://console.anthropic.com/)
-- **Chat Provider Bot** - Set up bot with your chosen chat platform (Telegram, WhatsApp, etc.)
+- **pnpm** - `npm install -g pnpm`
+- **Supabase Account** - [supabase.com](https://supabase.com/) (free tier works)
+- **Claude API Key** - [console.anthropic.com](https://console.anthropic.com/)
+- **Telegram Bots** - Create via [@BotFather](https://t.me/botfather)
 
 ---
 
@@ -24,377 +23,259 @@ pnpm install
 
 ---
 
-## Step 2: Database Setup
+## Step 2: Create Telegram Bots
 
-### Start Local Supabase
+Open Telegram and message [@BotFather](https://t.me/botfather):
 
-```bash
-# Initialize Supabase project
-supabase init
+1. **Create Scribe Bot** (required)
+   ```
+   /newbot
+   Name: Sobremesa Scribe
+   Username: sobremesa_scribe_bot
+   ```
+   Save the token.
 
-# Start local PostgreSQL + Studio
-supabase start
-```
+2. **Create Facilitator Bot** (required for questions)
+   ```
+   /newbot
+   Name: Sobremesa Facilitator
+   Username: sobremesa_facilitator_bot
+   ```
+   Save the token.
 
-**Expected output:**
-```
-Started supabase local development setup.
+3. **Create Admin Bot** (optional)
+   ```
+   /newbot
+   Name: Sobremesa Admin
+   Username: sobremesa_admin_bot
+   ```
+   Save the token.
 
-         API URL: http://localhost:54321
-          DB URL: postgresql://postgres:postgres@localhost:54322/postgres
-      Studio URL: http://localhost:54323
-```
+---
+
+## Step 3: Supabase Setup
+
+### Create Project
+
+1. Go to [supabase.com](https://supabase.com/)
+2. Create new project
+3. Wait for project to initialize
+
+### Get Connection Info
+
+From Project Settings > API:
+- **Project URL** (SUPABASE_URL)
+- **anon public** key (SUPABASE_ANON_KEY)
+- **service_role** key (SUPABASE_SERVICE_ROLE_KEY)
 
 ### Apply Schema
 
-```bash
-# Option 1: Using Supabase CLI
-supabase db reset
+1. Go to SQL Editor in Supabase dashboard
+2. Copy contents of `.claude/SCHEMA.sql`
+3. Run the query
 
-# Option 2: Using psql
-psql -h localhost -p 54322 -U postgres -d postgres -f .claude/SCHEMA.sql
+### Create Test Family
+
+Run this SQL:
+
+```sql
+INSERT INTO families (name, config, is_active)
+VALUES (
+  'My Family',
+  '{"languages": {"primary": "en"}}'::jsonb,
+  true
+);
 ```
 
-### Verify Tables Created
-
-Open Supabase Studio: http://localhost:54323
-
-You should see tables:
-- `families`
-- `conversation_events` (raw message ingestion)
-- `claims`
-- `people`
-- `places`
-- `events`
-- `stories`
-- `questions`
-- `facilitator_rules`
-- `real_time_levers`
-- `event_log`
-- etc.
+Note the family ID from the result.
 
 ---
 
-## Step 3: Environment Variables
+## Step 4: Environment Variables
 
-Create `.env` file in workspace root:
+Create `.env` in project root:
 
 ```bash
-# Database (from `supabase start` output)
-SUPABASE_URL=http://localhost:54321
-SUPABASE_ANON_KEY=your-anon-key-from-supabase-start
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-from-supabase-start
+# Supabase
+SUPABASE_URL=https://xxxxx.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 # Claude API
-ANTHROPIC_API_KEY=sk-ant-your-key-here
+ANTHROPIC_API_KEY=sk-ant-api03-...
 
-# Chat Provider Bot
-CHAT_PROVIDER_BOT_TOKEN=your-bot-token
-
-# Application
-NODE_ENV=development
-LOG_LEVEL=debug
-```
-
-**How to get keys:**
-
-1. **Supabase keys**: Shown in `supabase start` output
-2. **Claude API key**: https://console.anthropic.com/settings/keys
-3. **Chat Provider token**: From your chat platform's bot setup
-
----
-
-## Step 4: Seed Database
-
-Create a test family:
-
-```bash
-# Connect to local database
-psql -h localhost -p 54322 -U postgres -d postgres
-
-# Insert test family
-INSERT INTO families (id, name, config) 
-VALUES (
-  '00000000-0000-0000-0000-000000000001',
-  'Test Family',
-  '{
-    "languages": {
-      "primary": "en",
-      "secondary": ["es"]
-    },
-    "bots": {
-      "facilitator": {
-        "displayName": "Annie",
-        "personality": {
-          "formality": "friendly",
-          "verbosity": "moderate",
-          "emojiUsage": "moderate"
-        }
-      }
-    }
-  }'::jsonb
-);
-
-# Insert initial facilitator rules
-INSERT INTO facilitator_rules (family_id, max_questions_per_window, current_signal)
-VALUES ('00000000-0000-0000-0000-000000000001', 2, 'neutral');
-
-# Insert initial real-time levers
-INSERT INTO real_time_levers (family_id)
-VALUES ('00000000-0000-0000-0000-000000000001');
-
-\q
+# Telegram Bots
+TELEGRAM_BOT_TOKEN_SCRIBE=123456789:AAF...
+TELEGRAM_BOT_TOKEN_FACILITATOR=123456789:BBG...
+TELEGRAM_BOT_TOKEN_ADMIN=123456789:CCH...
 ```
 
 ---
 
-## Step 5: Run the Bot
+## Step 5: Create Telegram Group
 
-```bash
-# Start conversation gateway
-nx serve conversation-gateway
-
-# OR for specific family
-FAMILY_ID=00000000-0000-0000-0000-000000000001 nx serve conversation-gateway
-```
-
-**Expected output:**
-```
-Sobremesa bot started
-Listening for messages...
-Family ID: 00000000-0000-0000-0000-000000000001
-```
+1. Create a new Telegram group
+2. Add all three bots to the group
+3. Make sure bots have permission to read messages
 
 ---
 
-## Step 6: Test the Bot
+## Step 6: Register the Family
 
-### 6.1 Create Chat Provider Group
+1. Start the gateway:
+   ```bash
+   nx serve conversation-gateway
+   ```
 
-1. Open Chat Provider
-2. Create new group chat
-3. Add the bot (use bot username from @BotFather)
+2. In the Telegram group, send:
+   ```
+   /register YOUR_FAMILY_ID
+   ```
+   (Use the family ID from Step 3)
 
-### 6.2 Send Test Message
+3. You should see a confirmation message
 
+---
+
+## Step 7: Test Message Flow
+
+Send a message in the group:
 ```
-Hey everyone, I just remembered something about Grandpa...
+My grandmother Rosa came to America from Poland in 1920.
 ```
 
 **Expected behavior:**
-1. Message stored in `conversation_events` table
-2. Message added to queue
-3. Scribe processes message (extracts entities)
-4. Registrar saves to database
-5. Check Supabase Studio for new records
+1. Scribe bot ingests message
+2. Claude extracts: Rosa (person), Poland (place), America (place), immigration (event)
+3. Questions generated about gaps
+4. Facilitator may ask a follow-up question
 
-### 6.3 Check Database
+### Verify in Database
 
-Open Studio: http://localhost:54323
+Check Supabase tables:
+- `conversation_events` - Should have your message
+- `people` - Should have "Rosa" and "grandmother"
+- `places` - Should have "America" and "Poland"
+- `events` - Should have immigration event
+- `questions` - Should have follow-up questions
 
-Check tables:
-- `conversation_events` - Should have 1 row (raw message)
-- `claims` - May have rows if Scribe extracted facts
-- `people` - May have row for "Grandpa"
-- `event_log` - Should have processing events
-
----
-
-## Step 7: Verify Question Flow
-
-### Send a Story
-
-```
-My grandfather owned a small store in the village. 
-He would wake up at 5am every day to open it.
-```
-
-**Expected:**
-1. Scribe extracts story
-2. Scribe detects gaps (which village? what year? what kind of store?)
-3. Questions saved to `questions` table
-4. Facilitator checks if should ask
-5. If conditions met, bot asks warm question:
-
-```
-Annie: This is such a beautiful memory! If you happen to remember, 
-what village was the store in? No pressure if you're not sure. 
-Thank you for sharing! 😊
-```
-
-### Check Question Table
-
-```sql
-SELECT * FROM questions WHERE family_id = '00000000-0000-0000-0000-000000000001';
-```
-
-Should see:
-- Priority assigned
-- Status: `pending` or `asked`
-- Warmth-formatted question text
-
----
-
-## Step 8: Test Coaching
-
-### Ignore a Question
-
-When bot asks a question, don't answer it. Instead:
-
-```
-Let me tell you about another time...
-```
-
-**Expected:**
-1. Question marked as `ignored` after timeout
-2. Coach detects high ignore rate
-3. If threshold hit, coach adjusts `facilitator_rules.current_signal` to `hold_back`
-4. Facilitator reduces question frequency
-
-### Check Event Log
-
-```sql
-SELECT * FROM event_log 
-WHERE family_id = '00000000-0000-0000-0000-000000000001'
-ORDER BY timestamp DESC
-LIMIT 10;
-```
-
-Should see:
-- `question_asked` events
-- `question_ignored` events
-- `coaching_adjustment` events
-
----
-
-## Common Issues
-
-### Issue: Bot not receiving messages
-
-**Check:**
-1. Bot added to chat group?
-2. Bot has appropriate group permissions
-3. `.env` has correct `CHAT_PROVIDER_BOT_TOKEN`?
-
-### Issue: Database connection failed
-
-**Check:**
-1. Supabase running? `docker ps` should show containers
-2. Correct port (54322 for local, not 54321)
-3. `.env` has correct `SUPABASE_URL`
-
-### Issue: Claude API errors
-
-**Check:**
-1. Valid API key in `.env`?
-2. API key has credits? Check https://console.anthropic.com/
-3. Network access (not behind firewall blocking anthropic.com)
-
-### Issue: Messages stored but not processed
-
-**Check:**
-1. Queue processing running? Check logs
-2. Scribe errors? Check `event_log` for `processing_error` events
-3. Claude API rate limits hit? Add exponential backoff
-
----
-
-## Development Workflow
-
-### Running Tests
+### Run Summary
 
 ```bash
-# All tests
-nx test
-
-# Specific library
-nx test agents-scribe
-nx test agents-facilitator
-
-# Watch mode
-nx test agents-scribe --watch
+npx tsx scripts/summary.ts
 ```
 
-### Linting
+This shows everything captured so far.
+
+---
+
+## Common Commands
 
 ```bash
-# Lint all
-nx lint
+# Start the gateway
+nx serve conversation-gateway
 
-# Lint specific app
-nx lint conversation-gateway
+# Build everything
+nx build conversation-gateway
 
-# Auto-fix
-nx lint conversation-gateway --fix
-```
+# Run summary
+npx tsx scripts/summary.ts
 
-### Building
+# Test Scribe extraction
+npx tsx scripts/test-scribe.ts
 
-```bash
-# Build for production
-nx build conversation-gateway --prod
+# Send a question manually
+npx tsx scripts/test-send-question.ts
 
-# Output: dist/apps/conversation-gateway/
+# Check answer detection status
+npx tsx scripts/test-answer-detection.ts
+
+# Debug Facilitator
+npx tsx scripts/debug-facilitator.ts
 ```
 
 ---
 
-## Nx Commands Cheat Sheet
+## Troubleshooting
 
-```bash
-# Show dependency graph
-nx graph
+### Bot not receiving messages
 
-# Show affected projects (after git changes)
-nx affected:graph
+1. Check bot is added to group
+2. Check bot has message permission (BotFather settings)
+3. Verify token in `.env`
+4. Check logs: `nx serve conversation-gateway`
 
-# Run command on affected projects
-nx affected:test
+### Database connection failed
 
-# Clear cache
-nx reset
+1. Verify SUPABASE_URL format: `https://xxx.supabase.co`
+2. Check service role key (not anon key) for writes
+3. Verify project is running in Supabase dashboard
 
-# Show project details
-nx show project conversation-gateway
+### Claude API errors
+
+1. Verify ANTHROPIC_API_KEY
+2. Check API credits at console.anthropic.com
+3. Check rate limits
+
+### Questions not being asked
+
+1. Check TELEGRAM_BOT_TOKEN_FACILITATOR is set
+2. Run `npx tsx scripts/debug-facilitator.ts`
+3. Check rate limiting (5 min default between questions)
+4. Verify questions exist: `SELECT * FROM questions`
+
+### No entities extracted
+
+1. Check ANTHROPIC_API_KEY is valid
+2. Check logs for Scribe errors
+3. Run `npx tsx scripts/test-scribe.ts` to test extraction
+
+---
+
+## Project Structure
+
+```
+apps/
+  conversation-gateway/     # Main application entry point
+
+libs/
+  agents/
+    scribe/                 # Claude-powered extraction
+    registrar/              # Database persistence
+    facilitator/            # Question asking
+  database/                 # Supabase repositories
+  queue/                    # Message processing
+  telegram/                 # Bot management
+  shared/
+    types/                  # TypeScript types
+    utils/                  # Shared utilities
+
+scripts/
+  summary.ts                # Show family knowledge
+  test-scribe.ts            # Test extraction
+  test-facilitator.ts       # Test question asking
+  test-send-question.ts     # Send real question
+  debug-facilitator.ts      # Debug issues
 ```
 
 ---
 
 ## Next Steps
 
-**Phase 1 Complete?** → Proceed to Phase 2:
-- Implement full Scribe logic
-- Add claim creation
-- Test entity extraction
+Once basic flow is working:
 
-**Phase 2 Complete?** → Proceed to Phase 3:
-- Implement question generation
-- Test warmth formula
-- Verify real-time levers
+1. **Send family messages** - The more context, the better extraction
+2. **Answer questions** - Reply to Facilitator questions to mark them answered
+3. **Check summary** - Run `npx tsx scripts/summary.ts` periodically
+4. **Adjust rate limiting** - Edit `minMinutesBetweenQuestions` in main.ts
 
-See [IMPLEMENTATION.md](IMPLEMENTATION.md) for full roadmap.
-
----
-
-## Useful Links
-
-- **Supabase Studio**: http://localhost:54323
-- **Supabase Docs**: https://supabase.com/docs
-- **Claude API Docs**: https://docs.anthropic.com/
-- **Nx Docs**: https://nx.dev/
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for full feature roadmap.
 
 ---
 
 ## Getting Help
 
-**Check these first:**
-1. [ARCHITECTURE.md](ARCHITECTURE.md) - System design
-2. [TECH-STACK.md](TECH-STACK.md) - Technical details
-3. [IMPLEMENTATION.md](IMPLEMENTATION.md) - Build plan
-4. Event log table - `SELECT * FROM event_log ORDER BY timestamp DESC`
-
-**Still stuck?**
-- Check Nx cache: `nx reset`
-- Restart Supabase: `supabase stop && supabase start`
-- Check Docker: `docker ps` (should show 5+ containers)
-- Review logs: `tail -f .nx/workspace-data/*`
+1. Check logs: `nx serve conversation-gateway`
+2. Check event_log table in Supabase
+3. Run debug scripts in `scripts/`
+4. Review [ARCHITECTURE.md](ARCHITECTURE.md) for system design
