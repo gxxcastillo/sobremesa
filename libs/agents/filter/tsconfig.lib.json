@@ -1,5 +1,5 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
     "rootDir": "src",
@@ -12,19 +12,10 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../shared/types/tsconfig.lib.json"
+      "path": "../../shared/utils/tsconfig.lib.json"
     },
     {
-      "path": "../shared/utils/tsconfig.lib.json"
-    },
-    {
-      "path": "../database/tsconfig.lib.json"
-    },
-    {
-      "path": "../queue/tsconfig.lib.json"
-    },
-    {
-      "path": "../ingester/tsconfig.lib.json"
+      "path": "../../database/tsconfig.lib.json"
     }
   ],
   "exclude": [

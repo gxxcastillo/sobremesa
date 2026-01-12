@@ -493,6 +493,7 @@ CREATE TABLE IF NOT EXISTS claims (
   -- Provenance
   source_event_id UUID NOT NULL REFERENCES conversation_events(id),
   claimed_by VARCHAR(255) NOT NULL,
+  claimed_by_source VARCHAR(20),              -- 'direct','attributed','hearsay'
   claimed_at TIMESTAMPTZ DEFAULT NOW(),
 
   -- Certainty

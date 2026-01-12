@@ -9,3 +9,13 @@ export type {
   BotHandler,
   OutgoingMessage,
 } from './lib/types.js';
+
+// Re-export from @sobremesa/ingester for convenience
+export {
+  MessageIngester,
+  type ActorInfo,
+  type BaseMessageInput,
+  type TextMessageInput,
+  type PhotoMessageInput,
+  type DocumentMessageInput,
+} from '@sobremesa/ingester';

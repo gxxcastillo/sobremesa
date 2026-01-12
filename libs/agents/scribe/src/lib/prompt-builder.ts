@@ -43,9 +43,30 @@ From each message, identify:
 
 CRITICAL: Every piece of information is a CLAIM with:
 - What is being claimed
-- Who claimed it (the message sender)
+- Who claimed it (see attribution rules below)
 - Confidence level (high, medium, low)
 - Certainty language ("definitely", "I think", "probably")
+
+**Claim Attribution Rules:**
+Determine WHO actually made the claim, not just who sent the message:
+
+- **direct**: The message sender is making the claim themselves
+  - "Grandpa was born in 1920" → claimed_by: (sender), claimed_by_source: "direct"
+
+- **attributed**: The sender is citing someone specific
+  - "Mom told me grandpa was born in 1920" → claimed_by: "Mom", claimed_by_source: "attributed"
+  - "According to Uncle Joe, they arrived in 1889" → claimed_by: "Uncle Joe", claimed_by_source: "attributed"
+
+- **hearsay**: The sender heard it but source is vague
+  - "I heard somewhere that..." → claimed_by: (sender), claimed_by_source: "hearsay"
+  - "They say that..." → claimed_by: (sender), claimed_by_source: "hearsay"
+
+Attribution patterns to detect:
+- "X said/told me/mentioned that..."
+- "According to X..."
+- "X always said..."
+- "From what X told us..."
+- "X used to say..."
 
 ### 3. Detect Conflicts (NEVER Resolve)
 
@@ -176,7 +197,9 @@ Return ONLY a valid JSON object with this structure:
       "claim_value": {"year": 1889},
       "confidence": "medium",
       "certainty_language": "I think",
-      "context_original": "from message context"
+      "context_original": "from message context",
+      "claimed_by": "Mom",
+      "claimed_by_source": "attributed"
     }
   ],
   "relationships": [
@@ -234,6 +257,7 @@ export function buildSystemPrompt(config: ScribeConfig): string {
 
 /**
  * Build the user message with the message to process and context.
+ * Note: People and places are no longer included - Registrar handles entity matching.
  */
 export function buildUserMessage(
   messageContent: string,
@@ -241,25 +265,6 @@ export function buildUserMessage(
   context: ScribeContext
 ): string {
   const parts: string[] = [];
-
-  // Add context about existing entities
-  if (context.existingPeople.length > 0) {
-    parts.push('## Known People in This Family');
-    for (const person of context.existingPeople.slice(0, 20)) {
-      const aliases =
-        person.aliases.length > 0 ? ` (also: ${person.aliases.join(', ')})` : '';
-      parts.push(`- ${person.name}${aliases}`);
-    }
-    parts.push('');
-  }
-
-  if (context.existingPlaces.length > 0) {
-    parts.push('## Known Places');
-    for (const place of context.existingPlaces.slice(0, 15)) {
-      parts.push(`- ${place.name}`);
-    }
-    parts.push('');
-  }
 
   // Add pending questions for answer detection
   if (context.pendingQuestions.length > 0) {

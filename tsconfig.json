@@ -29,6 +29,12 @@
     },
     {
       "path": "./libs/agents/facilitator"
+    },
+    {
+      "path": "./libs/agents/filter"
+    },
+    {
+      "path": "./libs/ingester"
     }
   ]
 }

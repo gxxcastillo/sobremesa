@@ -3,6 +3,15 @@ import type { Person, ExtractedPerson } from '@sobremesa/shared-types';
 import { BaseRepository, mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
 
 /**
+ * Match result with confidence level.
+ */
+export interface PersonMatchResult {
+  person: Person;
+  confidence: 'high' | 'medium' | 'low';
+  matchReason: string;
+}
+
+/**
  * Repository for people mentioned in family history.
  */
 export class PersonRepository extends BaseRepository<Person> {
@@ -41,12 +50,30 @@ export class PersonRepository extends BaseRepository<Person> {
     name: string,
     aliases: string[] = []
   ): Promise<Person | null> {
-    // Get all non-redacted people for this family
+    const result = await this.findBestMatch(familyId, name, aliases);
+    return result?.person ?? null;
+  }
+
+  /**
+   * Find the best matching person with confidence level.
+   * Matching strategy (in order of confidence):
+   * 1. Exact match on name or alias → high confidence
+   * 2. First-name match with single result → medium confidence
+   * 3. Fuzzy match (>0.8 similarity) → medium confidence
+   * 4. First-name match with multiple results → returns null (ambiguous)
+   */
+  async findBestMatch(
+    familyId: string,
+    name: string,
+    aliases: string[] = []
+  ): Promise<PersonMatchResult | null> {
+    // Get all non-redacted, non-placeholder people for this family
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
       .eq('family_id', familyId)
-      .eq('redacted', false);
+      .eq('redacted', false)
+      .or('is_placeholder.is.null,is_placeholder.eq.false');
 
     if (error) {
       throw new Error(`Failed to search people for fuzzy match: ${error.message}`);
@@ -60,32 +87,84 @@ export class PersonRepository extends BaseRepository<Person> {
     const aliasesLower = aliases.map((a) => a.toLowerCase().trim());
     const allSearchTerms = [nameLower, ...aliasesLower];
 
-    // Check each person for a match
-    for (const row of data) {
-      const person = this.mapFromDb(row);
+    const people = data.map((row) => this.mapFromDb(row));
+
+    // Pass 1: Exact match on name or alias (high confidence)
+    for (const person of people) {
       const personNameLower = person.name.toLowerCase().trim();
       const personAliasesLower = (person.aliases || []).map((a) =>
         a.toLowerCase().trim()
       );
       const allPersonTerms = [personNameLower, ...personAliasesLower];
 
-      // Check for exact matches
       for (const searchTerm of allSearchTerms) {
         for (const personTerm of allPersonTerms) {
           if (searchTerm === personTerm) {
-            return person;
+            return {
+              person,
+              confidence: 'high',
+              matchReason: `exact match: "${searchTerm}" = "${personTerm}"`,
+            };
           }
         }
       }
+    }
 
-      // Check for fuzzy matches (similarity > 0.8)
+    // Pass 2: First-name match (check if search term is first name of a person)
+    const firstNameMatches: Person[] = [];
+    for (const person of people) {
+      const personFirstName = person.name.toLowerCase().trim().split(' ')[0];
+
+      for (const searchTerm of allSearchTerms) {
+        // Check if search term matches first name
+        if (searchTerm === personFirstName) {
+          firstNameMatches.push(person);
+          break;
+        }
+        // Also check if person's first name matches any search term's first name
+        const searchFirstName = searchTerm.split(' ')[0];
+        if (searchFirstName === personFirstName && searchFirstName.length >= 3) {
+          firstNameMatches.push(person);
+          break;
+        }
+      }
+    }
+
+    if (firstNameMatches.length === 1) {
+      // Unambiguous first-name match
+      return {
+        person: firstNameMatches[0],
+        confidence: 'medium',
+        matchReason: `first-name match: "${nameLower}" → "${firstNameMatches[0].name}"`,
+      };
+    }
+
+    // Pass 3: Fuzzy match (Levenshtein similarity > 0.8)
+    for (const person of people) {
+      const personNameLower = person.name.toLowerCase().trim();
+      const personAliasesLower = (person.aliases || []).map((a) =>
+        a.toLowerCase().trim()
+      );
+      const allPersonTerms = [personNameLower, ...personAliasesLower];
+
       for (const searchTerm of allSearchTerms) {
         for (const personTerm of allPersonTerms) {
-          if (this.calculateSimilarity(searchTerm, personTerm) > 0.8) {
-            return person;
+          const similarity = this.calculateSimilarity(searchTerm, personTerm);
+          if (similarity > 0.8) {
+            return {
+              person,
+              confidence: 'medium',
+              matchReason: `fuzzy match: "${searchTerm}" ~ "${personTerm}" (${(similarity * 100).toFixed(0)}%)`,
+            };
           }
         }
       }
+    }
+
+    // Pass 4: Multiple first-name matches = ambiguous, don't match
+    if (firstNameMatches.length > 1) {
+      // Could log this for potential manual review
+      return null;
     }
 
     return null;

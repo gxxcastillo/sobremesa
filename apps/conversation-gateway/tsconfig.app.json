@@ -10,6 +10,21 @@
   "exclude": [],
   "references": [
     {
+      "path": "../../libs/agents/facilitator/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/agents/registrar/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/agents/scribe/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/agents/filter/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/telegram/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/queue/tsconfig.lib.json"
     },
     {
@@ -20,18 +35,6 @@
     },
     {
       "path": "../../libs/shared/types/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/telegram/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/agents/scribe/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/agents/registrar/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/agents/facilitator/tsconfig.lib.json"
     }
   ]
 }

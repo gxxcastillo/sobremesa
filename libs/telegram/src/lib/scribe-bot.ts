@@ -1,20 +1,122 @@
 import type { Telegraf, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
-import type { Message, Update } from 'telegraf/types';
-  import { createLogger } from '@sobremesa/shared-utils';
-  import { detectLanguage } from '@sobremesa/shared-types';
-  import {
-    ConversationEventRepository,
-    ProcessingQueueRepository,
-    EventLogRepository,
-    FamilyRepository,
-  } from '@sobremesa/database';
-  import type pino from 'pino';
-  import type { BotHandler, BotRole } from './types.js';
+import type { Message, Update, User } from 'telegraf/types';
+import { createLogger } from '@sobremesa/shared-utils';
+import { FamilyRepository } from '@sobremesa/database';
+import type pino from 'pino';
+import type { BotHandler, BotRole } from './types.js';
+import {
+  MessageIngester,
+  type TextMessageInput,
+  type PhotoMessageInput,
+  type DocumentMessageInput,
+} from '@sobremesa/ingester';
 
-  type TextMessageContext = Context<Update.MessageUpdate<Message.TextMessage>>;
-  type PhotoMessageContext = Context<Update.MessageUpdate<Message.PhotoMessage>>;
-  type DocumentMessageContext = Context<Update.MessageUpdate<Message.DocumentMessage>>;
+type TextMessageContext = Context<Update.MessageUpdate<Message.TextMessage>>;
+type PhotoMessageContext = Context<Update.MessageUpdate<Message.PhotoMessage>>;
+type DocumentMessageContext = Context<Update.MessageUpdate<Message.DocumentMessage>>;
+
+/**
+ * Get display name from Telegram user.
+ */
+function getDisplayName(user: { first_name: string; last_name?: string }): string {
+  if (user.last_name) {
+    return `${user.first_name} ${user.last_name}`;
+  }
+  return user.first_name;
+}
+
+/**
+ * Transform a Telegram text message to generic input.
+ */
+function transformTextMessage(msg: Message.TextMessage & { from: User }): TextMessageInput {
+  return {
+    type: 'text',
+    source: 'telegram',
+    conversationId: String(msg.chat.id),
+    externalEventId: String(msg.message_id),
+    externalReplyToId: msg.reply_to_message
+      ? String(msg.reply_to_message.message_id)
+      : undefined,
+    actor: {
+      externalId: String(msg.from.id),
+      displayName: getDisplayName(msg.from),
+      username: msg.from.username,
+    },
+    text: msg.text,
+    occurredAt: new Date(msg.date * 1000),
+    metadata: {
+      chatType: msg.chat.type,
+      chatTitle: 'title' in msg.chat ? msg.chat.title : undefined,
+      forwardFrom: msg.forward_origin ? true : undefined,
+    },
+    sourcePayload: msg as unknown as Record<string, unknown>,
+  };
+}
+
+/**
+ * Transform a Telegram photo message to generic input.
+ */
+function transformPhotoMessage(msg: Message.PhotoMessage & { from: User }): PhotoMessageInput {
+  const photo = msg.photo[msg.photo.length - 1]; // Get largest photo
+  return {
+    type: 'photo',
+    source: 'telegram',
+    conversationId: String(msg.chat.id),
+    externalEventId: String(msg.message_id),
+    externalReplyToId: msg.reply_to_message
+      ? String(msg.reply_to_message.message_id)
+      : undefined,
+    actor: {
+      externalId: String(msg.from.id),
+      displayName: getDisplayName(msg.from),
+      username: msg.from.username,
+    },
+    caption: msg.caption,
+    fileId: photo.file_id,
+    fileUniqueId: photo.file_unique_id,
+    width: photo.width,
+    height: photo.height,
+    fileSize: photo.file_size,
+    occurredAt: new Date(msg.date * 1000),
+    metadata: {
+      chatType: msg.chat.type,
+    },
+    sourcePayload: msg as unknown as Record<string, unknown>,
+  };
+}
+
+/**
+ * Transform a Telegram document message to generic input.
+ */
+function transformDocumentMessage(msg: Message.DocumentMessage & { from: User }): DocumentMessageInput {
+  const doc = msg.document;
+  return {
+    type: 'document',
+    source: 'telegram',
+    conversationId: String(msg.chat.id),
+    externalEventId: String(msg.message_id),
+    externalReplyToId: msg.reply_to_message
+      ? String(msg.reply_to_message.message_id)
+      : undefined,
+    actor: {
+      externalId: String(msg.from.id),
+      displayName: getDisplayName(msg.from),
+      username: msg.from.username,
+    },
+    caption: msg.caption,
+    fileId: doc.file_id,
+    fileUniqueId: doc.file_unique_id,
+    fileName: doc.file_name,
+    mimeType: doc.mime_type,
+    fileSize: doc.file_size,
+    occurredAt: new Date(msg.date * 1000),
+    metadata: {
+      chatType: msg.chat.type,
+    },
+    sourcePayload: msg as unknown as Record<string, unknown>,
+  };
+}
 
 /**
  * Scribe bot handler.
@@ -26,18 +128,14 @@ import type { Message, Update } from 'telegraf/types';
 export class ScribeBotHandler implements BotHandler {
   readonly role: BotRole = 'scribe';
 
-  private eventRepo: ConversationEventRepository;
-  private queueRepo: ProcessingQueueRepository;
-  private eventLog: EventLogRepository;
   private familyRepo: FamilyRepository;
+  private ingester: MessageIngester;
   private logger: pino.Logger;
 
   constructor(logger?: pino.Logger) {
-    this.eventRepo = new ConversationEventRepository();
-    this.queueRepo = new ProcessingQueueRepository();
-    this.eventLog = new EventLogRepository();
     this.familyRepo = new FamilyRepository();
     this.logger = logger || createLogger({ name: 'scribe-bot' });
+    this.ingester = new MessageIngester(this.logger);
   }
 
   /**
@@ -52,7 +150,7 @@ export class ScribeBotHandler implements BotHandler {
     // Handle text messages
     bot.on(message('text'), async (ctx) => {
       try {
-        await this.ingestTextMessage(ctx);
+        await this.handleTextMessage(ctx);
       } catch (error) {
         this.logger.error({ error, messageId: ctx.message.message_id }, 'Failed to ingest text message');
       }
@@ -61,7 +159,7 @@ export class ScribeBotHandler implements BotHandler {
     // Handle photos
     bot.on(message('photo'), async (ctx) => {
       try {
-        await this.ingestPhotoMessage(ctx);
+        await this.handlePhotoMessage(ctx);
       } catch (error) {
         this.logger.error({ error, messageId: ctx.message.message_id }, 'Failed to ingest photo message');
       }
@@ -70,7 +168,7 @@ export class ScribeBotHandler implements BotHandler {
     // Handle documents
     bot.on(message('document'), async (ctx) => {
       try {
-        await this.ingestDocumentMessage(ctx);
+        await this.handleDocumentMessage(ctx);
       } catch (error) {
         this.logger.error({ error, messageId: ctx.message.message_id }, 'Failed to ingest document message');
       }
@@ -80,11 +178,10 @@ export class ScribeBotHandler implements BotHandler {
   }
 
   /**
-   * Ingest a text message from Telegram.
+   * Handle a text message from Telegram.
    */
-  private async ingestTextMessage(ctx: TextMessageContext): Promise<void> {
+  private async handleTextMessage(ctx: TextMessageContext): Promise<void> {
     const msg = ctx.message;
-    const text = msg.text;
     const chatId = String(msg.chat.id);
 
     // Look up family for this chat
@@ -97,82 +194,22 @@ export class ScribeBotHandler implements BotHandler {
       return;
     }
 
-    this.logger.debug(
-      { chatId, messageId: msg.message_id, from: msg.from.username, familyId },
-      'Ingesting text message'
-    );
+    const input = transformTextMessage(msg);
+    const eventId = await this.ingester.ingestTextMessage(familyId, input);
 
-    // Check for duplicates
-    const existing = await this.eventRepo.findByExternalId(
-      familyId,
-      'telegram',
-      chatId,
-      String(msg.message_id)
-    );
-
-    if (existing) {
-      this.logger.debug({ messageId: msg.message_id }, 'Message already exists, skipping');
-      return;
+    if (eventId) {
+      this.logger.info(
+        { eventId, messageId: msg.message_id, familyId },
+        'Text message ingested and queued'
+      );
     }
-
-    // Create conversation event
-    const event = await this.eventRepo.insert({
-      familyId,
-      source: 'telegram',
-      conversationId: chatId,
-      externalEventId: String(msg.message_id),
-      externalReplyToId: msg.reply_to_message
-        ? String(msg.reply_to_message.message_id)
-        : undefined,
-      actorExternalId: String(msg.from.id),
-      actorDisplayName: this.getDisplayName(msg.from),
-      actorUsername: msg.from.username,
-      eventType: 'message',
-      contentOriginal: text,
-      languageOriginal: detectLanguage(text),
-      metadata: {
-        chatType: msg.chat.type,
-        chatTitle: 'title' in msg.chat ? msg.chat.title : undefined,
-        forwardFrom: msg.forward_origin ? true : undefined,
-      },
-      sourcePayload: msg as unknown as Record<string, unknown>,
-      processed: false,
-      redacted: false,
-      occurredAt: new Date(msg.date * 1000),
-      ingestedAt: new Date(),
-    });
-
-    // Enqueue for processing
-    await this.queueRepo.enqueue(familyId, event.id);
-
-    // Log the event
-    await this.eventLog.log({
-      familyId,
-      eventType: 'event_ingested',
-      eventCategory: 'user_action',
-      actor: msg.from.username || String(msg.from.id),
-      actorType: 'user',
-      sourceEventId: event.id,
-      eventData: {
-        messageType: 'text',
-        textLength: text.length,
-        language: detectLanguage(text),
-      },
-    });
-
-    this.logger.info(
-      { eventId: event.id, messageId: msg.message_id },
-      'Text message ingested and queued'
-    );
   }
 
   /**
-   * Ingest a photo message from Telegram.
+   * Handle a photo message from Telegram.
    */
-  private async ingestPhotoMessage(ctx: PhotoMessageContext): Promise<void> {
+  private async handlePhotoMessage(ctx: PhotoMessageContext): Promise<void> {
     const msg = ctx.message;
-    const caption = msg.caption || '';
-    const photo = msg.photo[msg.photo.length - 1]; // Get largest photo
     const chatId = String(msg.chat.id);
 
     // Look up family for this chat
@@ -185,85 +222,22 @@ export class ScribeBotHandler implements BotHandler {
       return;
     }
 
-    this.logger.debug(
-      { chatId, messageId: msg.message_id, familyId },
-      'Ingesting photo message'
-    );
+    const input = transformPhotoMessage(msg);
+    const eventId = await this.ingester.ingestPhotoMessage(familyId, input);
 
-    // Check for duplicates
-    const existing = await this.eventRepo.findByExternalId(
-      familyId,
-      'telegram',
-      chatId,
-      String(msg.message_id)
-    );
-
-    if (existing) {
-      this.logger.debug({ messageId: msg.message_id }, 'Photo already exists, skipping');
-      return;
+    if (eventId) {
+      this.logger.info(
+        { eventId, messageId: msg.message_id, familyId },
+        'Photo message ingested and queued'
+      );
     }
-
-    // Create conversation event
-    const event = await this.eventRepo.insert({
-      familyId,
-      source: 'telegram',
-      conversationId: chatId,
-      externalEventId: String(msg.message_id),
-      externalReplyToId: msg.reply_to_message
-        ? String(msg.reply_to_message.message_id)
-        : undefined,
-      actorExternalId: String(msg.from.id),
-      actorDisplayName: this.getDisplayName(msg.from),
-      actorUsername: msg.from.username,
-      eventType: 'photo',
-      contentOriginal: caption || undefined,
-      languageOriginal: caption ? detectLanguage(caption) : undefined,
-      metadata: {
-        chatType: msg.chat.type,
-        fileId: photo.file_id,
-        fileUniqueId: photo.file_unique_id,
-        width: photo.width,
-        height: photo.height,
-        fileSize: photo.file_size,
-      },
-      sourcePayload: msg as unknown as Record<string, unknown>,
-      processed: false,
-      redacted: false,
-      occurredAt: new Date(msg.date * 1000),
-      ingestedAt: new Date(),
-    });
-
-    // Enqueue for processing
-    await this.queueRepo.enqueue(familyId, event.id);
-
-    // Log the event
-    await this.eventLog.log({
-      familyId,
-      eventType: 'event_ingested',
-      eventCategory: 'user_action',
-      actor: msg.from.username || String(msg.from.id),
-      actorType: 'user',
-      sourceEventId: event.id,
-      eventData: {
-        messageType: 'photo',
-        hasCaption: !!caption,
-        photoSize: photo.file_size,
-      },
-    });
-
-    this.logger.info(
-      { eventId: event.id, messageId: msg.message_id },
-      'Photo message ingested and queued'
-    );
   }
 
   /**
-   * Ingest a document message from Telegram.
+   * Handle a document message from Telegram.
    */
-  private async ingestDocumentMessage(ctx: DocumentMessageContext): Promise<void> {
+  private async handleDocumentMessage(ctx: DocumentMessageContext): Promise<void> {
     const msg = ctx.message;
-    const caption = msg.caption || '';
-    const doc = msg.document;
     const chatId = String(msg.chat.id);
 
     // Look up family for this chat
@@ -276,86 +250,14 @@ export class ScribeBotHandler implements BotHandler {
       return;
     }
 
-    this.logger.debug(
-      { chatId, messageId: msg.message_id, familyId },
-      'Ingesting document message'
-    );
+    const input = transformDocumentMessage(msg);
+    const eventId = await this.ingester.ingestDocumentMessage(familyId, input);
 
-    // Check for duplicates
-    const existing = await this.eventRepo.findByExternalId(
-      familyId,
-      'telegram',
-      chatId,
-      String(msg.message_id)
-    );
-
-    if (existing) {
-      this.logger.debug({ messageId: msg.message_id }, 'Document already exists, skipping');
-      return;
+    if (eventId) {
+      this.logger.info(
+        { eventId, messageId: msg.message_id, familyId },
+        'Document message ingested and queued'
+      );
     }
-
-    // Create conversation event
-    const event = await this.eventRepo.insert({
-      familyId,
-      source: 'telegram',
-      conversationId: chatId,
-      externalEventId: String(msg.message_id),
-      externalReplyToId: msg.reply_to_message
-        ? String(msg.reply_to_message.message_id)
-        : undefined,
-      actorExternalId: String(msg.from.id),
-      actorDisplayName: this.getDisplayName(msg.from),
-      actorUsername: msg.from.username,
-      eventType: 'document',
-      contentOriginal: caption || undefined,
-      languageOriginal: caption ? detectLanguage(caption) : undefined,
-      metadata: {
-        chatType: msg.chat.type,
-        fileId: doc.file_id,
-        fileUniqueId: doc.file_unique_id,
-        fileName: doc.file_name,
-        mimeType: doc.mime_type,
-        fileSize: doc.file_size,
-      },
-      sourcePayload: msg as unknown as Record<string, unknown>,
-      processed: false,
-      redacted: false,
-      occurredAt: new Date(msg.date * 1000),
-      ingestedAt: new Date(),
-    });
-
-    // Enqueue for processing
-    await this.queueRepo.enqueue(familyId, event.id);
-
-    // Log the event
-    await this.eventLog.log({
-      familyId,
-      eventType: 'event_ingested',
-      eventCategory: 'user_action',
-      actor: msg.from.username || String(msg.from.id),
-      actorType: 'user',
-      sourceEventId: event.id,
-      eventData: {
-        messageType: 'document',
-        hasCaption: !!caption,
-        mimeType: doc.mime_type,
-        fileName: doc.file_name,
-      },
-    });
-
-    this.logger.info(
-      { eventId: event.id, messageId: msg.message_id },
-      'Document message ingested and queued'
-    );
-  }
-
-  /**
-   * Get display name from Telegram user.
-   */
-  private getDisplayName(user: { first_name: string; last_name?: string }): string {
-    if (user.last_name) {
-      return `${user.first_name} ${user.last_name}`;
-    }
-    return user.first_name;
   }
 }

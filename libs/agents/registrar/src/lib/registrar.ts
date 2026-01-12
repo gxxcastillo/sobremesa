@@ -129,21 +129,37 @@ export class RegistrarAgent {
     const placeIdMap = new Map<string, string>();
 
     try {
-      // 1. Process People (with deduplication)
+      // 1. Process People (with smart matching)
       for (const person of domainModel.people) {
-        const existingPerson = await this.personRepo.findByFuzzyMatch(
+        const matchResult = await this.personRepo.findBestMatch(
           familyId,
           person.name,
           person.aliases
         );
 
-        if (existingPerson) {
-          // Check if we need to merge aliases
+        if (matchResult) {
+          const { person: existingPerson, confidence, matchReason } = matchResult;
+
+          this.logger.debug(
+            {
+              familyId,
+              extractedName: person.name,
+              matchedName: existingPerson.name,
+              matchedId: existingPerson.id,
+              confidence,
+              matchReason,
+            },
+            'Person matched to existing'
+          );
+
+          // Add the extracted name as an alias if it's not already there
           const existingAliases = new Set(
             (existingPerson.aliases || []).map((a) => a.toLowerCase())
           );
-          const newAliases = person.aliases.filter(
-            (a) => !existingAliases.has(a.toLowerCase())
+          const newAliases = [person.name, ...person.aliases].filter(
+            (a) =>
+              !existingAliases.has(a.toLowerCase()) &&
+              a.toLowerCase() !== existingPerson.name.toLowerCase()
           );
 
           if (newAliases.length > 0) {
@@ -152,6 +168,11 @@ export class RegistrarAgent {
               ...newAliases,
             ]);
             result.peopleUpdated++;
+
+            this.logger.debug(
+              { familyId, personId: existingPerson.id, newAliases },
+              'Added aliases to existing person'
+            );
           }
 
           personIdMap.set(person.name, existingPerson.id);
@@ -159,12 +180,23 @@ export class RegistrarAgent {
             personIdMap.set(alias, existingPerson.id);
           }
         } else {
+          // No match found - create new person
           const newPerson = await this.personRepo.findOrCreate(
             familyId,
             person,
             sourceEventId,
             claimedBy
           );
+
+          this.logger.debug(
+            {
+              familyId,
+              personName: person.name,
+              personId: newPerson.id,
+            },
+            'Created new person'
+          );
+
           personIdMap.set(person.name, newPerson.id);
           for (const alias of person.aliases) {
             personIdMap.set(alias, newPerson.id);
@@ -275,12 +307,31 @@ export class RegistrarAgent {
           claim.subject
         );
 
+        // Determine who made this claim:
+        // - Use Scribe's extracted claimedBy if available (e.g., "Mom" in "Mom told me...")
+        // - Fall back to message sender
+        const effectiveClaimedBy = claim.claimedBy || claimedBy;
+
+        // Log attribution if it differs from sender
+        if (claim.claimedBy && claim.claimedBy !== claimedBy) {
+          this.logger.debug(
+            {
+              familyId,
+              subject: claim.subject,
+              attributedTo: claim.claimedBy,
+              reportedBy: claimedBy,
+              sourceType: claim.claimedBySource,
+            },
+            'Claim attributed to different person than sender'
+          );
+        }
+
         // Create the new claim
         const newClaim = await this.claimRepo.createFromExtracted(
           familyId,
           claim,
           sourceEventId,
-          claimedBy,
+          effectiveClaimedBy,
           entityId,
           entityType
         );

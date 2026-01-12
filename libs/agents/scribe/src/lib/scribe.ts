@@ -1,8 +1,6 @@
 import type { ScribeDomainModel } from '@sobremesa/shared-types';
 import {
   ConversationEventRepository,
-  PersonRepository,
-  PlaceRepository,
   ClaimRepository,
   QuestionRepository,
   FamilyRepository,
@@ -30,10 +28,6 @@ export interface ScribeAgentOptions {
   anthropic: AnthropicClient;
   /** Conversation event repository */
   eventRepo?: ConversationEventRepository;
-  /** Person repository */
-  personRepo?: PersonRepository;
-  /** Place repository */
-  placeRepo?: PlaceRepository;
   /** Claim repository */
   claimRepo?: ClaimRepository;
   /** Question repository */
@@ -49,12 +43,11 @@ export interface ScribeAgentOptions {
 /**
  * The Scribe agent extracts entities, claims, and questions from messages.
  * It processes one message at a time and outputs a domain model.
+ * Note: Entity matching (people/places) is handled by Registrar, not Scribe.
  */
 export class ScribeAgent {
   private anthropic: AnthropicClient;
   private eventRepo: ConversationEventRepository;
-  private personRepo: PersonRepository;
-  private placeRepo: PlaceRepository;
   private claimRepo: ClaimRepository;
   private questionRepo: QuestionRepository;
   private familyRepo: FamilyRepository;
@@ -64,8 +57,6 @@ export class ScribeAgent {
   constructor(options: ScribeAgentOptions) {
     this.anthropic = options.anthropic;
     this.eventRepo = options.eventRepo || new ConversationEventRepository();
-    this.personRepo = options.personRepo || new PersonRepository();
-    this.placeRepo = options.placeRepo || new PlaceRepository();
     this.claimRepo = options.claimRepo || new ClaimRepository();
     this.questionRepo = options.questionRepo || new QuestionRepository();
     this.familyRepo = options.familyRepo || new FamilyRepository();
@@ -102,13 +93,12 @@ export class ScribeAgent {
     };
 
     // Build context from database
+    // Note: People/places removed - Registrar handles entity matching
     const context = await buildScribeContext(
       familyId,
       event.conversationId,
       {
         eventRepo: this.eventRepo,
-        personRepo: this.personRepo,
-        placeRepo: this.placeRepo,
         claimRepo: this.claimRepo,
         questionRepo: this.questionRepo,
       }

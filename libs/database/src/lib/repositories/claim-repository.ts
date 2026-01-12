@@ -125,6 +125,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
       claimValue: extracted.claimValue,
       sourceEventId,
       claimedBy,
+      claimedBySource: extracted.claimedBySource,
       claimedAt: new Date(),
       confidence: extracted.confidence,
       certaintyLanguage: extracted.certaintyLanguage,

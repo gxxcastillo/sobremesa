@@ -123,6 +123,9 @@ importers:
       '@sobremesa/agents-facilitator':
         specifier: workspace:*
         version: link:../../libs/agents/facilitator
+      '@sobremesa/agents-filter':
+        specifier: workspace:*
+        version: link:../../libs/agents/filter
       '@sobremesa/agents-registrar':
         specifier: workspace:*
         version: link:../../libs/agents/registrar
@@ -159,6 +162,18 @@ importers:
       '@sobremesa/shared-types':
         specifier: workspace:*
         version: link:../../shared/types
+      '@sobremesa/shared-utils':
+        specifier: workspace:*
+        version: link:../../shared/utils
+      tslib:
+        specifier: ^2.3.0
+        version: 2.8.1
+
+  libs/agents/filter:
+    dependencies:
+      '@sobremesa/database':
+        specifier: workspace:*
+        version: link:../../database
       '@sobremesa/shared-utils':
         specifier: workspace:*
         version: link:../../shared/utils
@@ -212,6 +227,21 @@ importers:
         specifier: 4.0.9
         version: 4.0.9(@types/node@20.19.9)(@vitest/ui@4.0.9)(jiti@2.4.2)(tsx@4.21.0)(yaml@2.8.2)
 
+  libs/ingester:
+    dependencies:
+      '@sobremesa/database':
+        specifier: workspace:*
+        version: link:../database
+      '@sobremesa/shared-types':
+        specifier: workspace:*
+        version: link:../shared/types
+      '@sobremesa/shared-utils':
+        specifier: workspace:*
+        version: link:../shared/utils
+      tslib:
+        specifier: ^2.3.0
+        version: 2.8.1
+
   libs/queue:
     dependencies:
       '@sobremesa/database':
@@ -247,6 +277,9 @@ importers:
       '@sobremesa/database':
         specifier: workspace:*
         version: link:../database
+      '@sobremesa/ingester':
+        specifier: workspace:*
+        version: link:../ingester
       '@sobremesa/queue':
         specifier: workspace:*
         version: link:../queue

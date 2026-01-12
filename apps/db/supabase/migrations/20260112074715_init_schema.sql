@@ -534,6 +534,7 @@ CREATE TABLE IF NOT EXISTS claims (
   -- Provenance
   source_event_id UUID NOT NULL REFERENCES conversation_events(id),
   claimed_by VARCHAR(255) NOT NULL,
+  claimed_by_source VARCHAR(20),              -- 'direct','attributed','hearsay'
   claimed_at TIMESTAMPTZ DEFAULT NOW(),
 
   -- Certainty
@@ -583,6 +584,10 @@ CREATE INDEX IF NOT EXISTS idx_claims_family_source
 CREATE INDEX IF NOT EXISTS idx_claims_active
   ON claims(family_id, status)
   WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_claims_family_source_type
+  ON claims(family_id, claimed_by_source)
+  WHERE claimed_by_source IS NOT NULL;
 
 -- ============================================================================
 -- CLAIM CONFLICTS (Explicit preservation, graph-friendly)

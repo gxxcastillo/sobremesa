@@ -2,7 +2,7 @@ export { ConversationEventRepository } from './conversation-event-repository.js'
 export { FamilyRepository } from './family-repository.js';
 export { EventLogRepository } from './event-log-repository.js';
 export { ProcessingQueueRepository } from './processing-queue-repository.js';
-export { PersonRepository } from './person-repository.js';
+export { PersonRepository, type PersonMatchResult } from './person-repository.js';
 export { IdentityRepository } from './identity-repository.js';
 export { PlaceRepository } from './place-repository.js';
 export { TimelineEventRepository } from './timeline-event-repository.js';

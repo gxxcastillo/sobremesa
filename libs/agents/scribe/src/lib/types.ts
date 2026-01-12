@@ -30,6 +30,7 @@ export const DEFAULT_SCRIBE_CONFIG: ScribeConfig = {
 
 /**
  * Context provided to Scribe for processing.
+ * Note: People and places are no longer included - Registrar handles entity matching.
  */
 export interface ScribeContext {
   /** Recent messages for context */
@@ -37,15 +38,6 @@ export interface ScribeContext {
     content: string;
     senderName: string;
     occurredAt: Date;
-  }>;
-  /** Existing people in the family */
-  existingPeople: Array<{
-    name: string;
-    aliases: string[];
-  }>;
-  /** Existing places in the family */
-  existingPlaces: Array<{
-    name: string;
   }>;
   /** Pending questions to check for answers */
   pendingQuestions: Array<{
@@ -103,6 +95,10 @@ export interface RawScribeResponse {
     confidence?: string;
     certainty_language?: string;
     context_original?: string;
+    /** Who made this claim (person name or description) */
+    claimed_by?: string;
+    /** Source type: "direct" (speaker), "attributed" (citing someone), "hearsay" (vague source) */
+    claimed_by_source?: string;
   }>;
   relationships?: Array<{
     person_a: string;

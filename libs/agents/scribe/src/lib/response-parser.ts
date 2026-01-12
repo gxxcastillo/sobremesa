@@ -10,6 +10,7 @@ import {
   type DetectedAnswer,
   type DetectedConflict,
   type LanguageCode,
+  type ClaimSourceType,
 } from '@sobremesa/shared-types';
 import { createLogger } from '@sobremesa/shared-utils';
 import type { RawScribeResponse } from './types.js';
@@ -40,6 +41,18 @@ function parseLanguage(value?: string): LanguageCode {
   if (lower === 'es' || lower === 'spanish') return 'es';
   if (lower === 'mixed') return 'mixed';
   return 'en';
+}
+
+/**
+ * Parse claim source type string to ClaimSourceType.
+ */
+function parseClaimSourceType(value?: string): ClaimSourceType | undefined {
+  if (!value) return undefined;
+  const lower = value.toLowerCase();
+  if (lower === 'direct') return 'direct';
+  if (lower === 'attributed') return 'attributed';
+  if (lower === 'hearsay') return 'hearsay';
+  return undefined;
 }
 
 /**
@@ -131,6 +144,8 @@ export function parseScribeResponse(
     confidence: parseConfidence(c.confidence),
     certaintyLanguage: c.certainty_language,
     contextOriginal: c.context_original,
+    claimedBy: c.claimed_by,
+    claimedBySource: parseClaimSourceType(c.claimed_by_source),
   }));
 
   // Parse story (take first one if multiple)

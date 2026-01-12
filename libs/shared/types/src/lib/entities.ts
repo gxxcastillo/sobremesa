@@ -1,5 +1,6 @@
 import { Confidence } from './confidence.js';
 import { LanguageCode } from './languages.js';
+import { ClaimSourceType } from './domain-model.js';
 
 /**
  * Base entity interface with common fields.
@@ -94,6 +95,8 @@ export interface Claim extends BaseEntity {
   claimValue: Record<string, unknown>;
   sourceEventId: string;
   claimedBy: string;
+  /** How the claim was attributed: direct (speaker), attributed (citing someone), hearsay (vague) */
+  claimedBySource?: ClaimSourceType;
   claimedAt: Date;
   confidence: Confidence;
   certaintyLanguage?: string;

@@ -1,7 +1,5 @@
 import type {
   ConversationEventRepository,
-  PersonRepository,
-  PlaceRepository,
   ClaimRepository,
   QuestionRepository,
 } from '@sobremesa/database';
@@ -13,10 +11,6 @@ import type { ScribeContext } from './types.js';
 export interface ContextBuilderOptions {
   /** Number of recent messages to include */
   recentMessageCount?: number;
-  /** Number of existing people to include */
-  maxPeople?: number;
-  /** Number of existing places to include */
-  maxPlaces?: number;
   /** Number of pending questions to include */
   maxQuestions?: number;
   /** Number of recent claims to include */
@@ -25,22 +19,19 @@ export interface ContextBuilderOptions {
 
 const DEFAULT_OPTIONS: Required<ContextBuilderOptions> = {
   recentMessageCount: 5,
-  maxPeople: 20,
-  maxPlaces: 15,
   maxQuestions: 10,
   maxClaims: 10,
 };
 
 /**
  * Build context for the Scribe agent from database repositories.
+ * Note: People and places are no longer included - Registrar handles entity matching.
  */
 export async function buildScribeContext(
   familyId: string,
   conversationId: string,
   repos: {
     eventRepo: ConversationEventRepository;
-    personRepo: PersonRepository;
-    placeRepo: PlaceRepository;
     claimRepo: ClaimRepository;
     questionRepo: QuestionRepository;
   },
@@ -49,14 +40,11 @@ export async function buildScribeContext(
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
   // Fetch data in parallel for efficiency
-  const [recentEvents, people, places, pendingQuestions, recentClaims] =
-    await Promise.all([
-      repos.eventRepo.findRecent(familyId, conversationId, opts.recentMessageCount),
-      repos.personRepo.findAllActive(familyId),
-      repos.placeRepo.findAllActive(familyId),
-      repos.questionRepo.findPending(familyId, opts.maxQuestions),
-      repos.claimRepo.findAllActive(familyId),
-    ]);
+  const [recentEvents, pendingQuestions, recentClaims] = await Promise.all([
+    repos.eventRepo.findRecent(familyId, conversationId, opts.recentMessageCount),
+    repos.questionRepo.findPending(familyId, opts.maxQuestions),
+    repos.claimRepo.findAllActive(familyId),
+  ]);
 
   // Transform recent events to context format
   const recentMessages = recentEvents
@@ -66,17 +54,6 @@ export async function buildScribeContext(
       senderName: e.actorDisplayName || e.actorUsername || 'Unknown',
       occurredAt: new Date(e.occurredAt),
     }));
-
-  // Transform people to context format
-  const existingPeople = people.slice(0, opts.maxPeople).map((p) => ({
-    name: p.name,
-    aliases: p.aliases || [],
-  }));
-
-  // Transform places to context format
-  const existingPlaces = places.slice(0, opts.maxPlaces).map((p) => ({
-    name: p.name,
-  }));
 
   // Transform questions to context format
   const pendingQuestionsContext = pendingQuestions.map((q) => ({
@@ -93,8 +70,6 @@ export async function buildScribeContext(
 
   return {
     recentMessages,
-    existingPeople,
-    existingPlaces,
     pendingQuestions: pendingQuestionsContext,
     recentClaims: recentClaimsContext,
   };

@@ -41,6 +41,11 @@ export interface ExtractedRelationship {
 }
 
 /**
+ * Source type for claim attribution.
+ */
+export type ClaimSourceType = 'direct' | 'attributed' | 'hearsay';
+
+/**
  * A claim extracted from a message.
  */
 export interface ExtractedClaim {
@@ -50,6 +55,10 @@ export interface ExtractedClaim {
   confidence: Confidence;
   certaintyLanguage?: string;
   contextOriginal?: string;
+  /** Who made this claim (extracted from message content) */
+  claimedBy?: string;
+  /** How the claim was attributed: direct (speaker), attributed (citing someone), hearsay (vague) */
+  claimedBySource?: ClaimSourceType;
 }
 
 /**

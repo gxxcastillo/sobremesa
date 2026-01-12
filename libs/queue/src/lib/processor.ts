@@ -4,6 +4,27 @@ import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 
 /**
+ * Filter result returned by the filter processor.
+ */
+export interface FilterProcessorResult {
+  /** Whether the message should be processed by Scribe */
+  relevant: boolean;
+  /** Reason for the decision (for logging/debugging) */
+  reason: string;
+  /** Tokens used for this filter call */
+  tokensUsed?: number;
+}
+
+/**
+ * Filter processor function type.
+ * Implementations should determine if a message is relevant for extraction.
+ */
+export type FilterProcessor = (
+  eventId: string,
+  familyId: string
+) => Promise<FilterProcessorResult>;
+
+/**
  * Scribe processor function type.
  * Implementations should extract domain model from a conversation event.
  */
@@ -22,12 +43,13 @@ export type RegistrarProcessor = (
 ) => Promise<void>;
 
 /**
- * Message processor that orchestrates Scribe and Registrar.
+ * Message processor that orchestrates Filter, Scribe and Registrar.
  */
 export class MessageProcessor {
   private eventRepo: ConversationEventRepository;
   private eventLog: EventLogRepository;
   private questionRepo: QuestionRepository;
+  private filter?: FilterProcessor;
   private scribe?: ScribeProcessor;
   private registrar?: RegistrarProcessor;
   private logger: pino.Logger;
@@ -41,6 +63,14 @@ export class MessageProcessor {
     this.eventLog = options?.eventLog || new EventLogRepository();
     this.questionRepo = options?.questionRepo || new QuestionRepository();
     this.logger = createLogger({ name: 'processor' });
+  }
+
+  /**
+   * Set the Filter processor.
+   * The filter runs before Scribe to determine if a message is relevant.
+   */
+  setFilter(filter: FilterProcessor): void {
+    this.filter = filter;
   }
 
   /**
@@ -109,9 +139,46 @@ export class MessageProcessor {
         eventData: { status: 'started' },
       });
 
-      // Run Scribe (if configured)
+      // Run Filter (if configured) to determine if message is relevant
+      let shouldProcess = true;
+      if (this.filter) {
+        this.logger.debug({ eventId }, 'Running Filter');
+        const filterResult = await this.filter(eventId, familyId);
+
+        if (!filterResult.relevant) {
+          // Message is not relevant - skip Scribe
+          this.logger.info(
+            { eventId, reason: filterResult.reason, tokensUsed: filterResult.tokensUsed },
+            'Message filtered out as not relevant'
+          );
+
+          // Log filter skip
+          await this.eventLog.log({
+            familyId,
+            eventType: 'event_filtered',
+            eventCategory: 'system_event',
+            actor: 'filter',
+            actorType: 'system',
+            sourceEventId: eventId,
+            eventData: {
+              relevant: false,
+              reason: filterResult.reason,
+              tokensUsed: filterResult.tokensUsed,
+            },
+          });
+
+          shouldProcess = false;
+        } else {
+          this.logger.debug(
+            { eventId, reason: filterResult.reason, tokensUsed: filterResult.tokensUsed },
+            'Message passed filter'
+          );
+        }
+      }
+
+      // Run Scribe (if configured and filter passed)
       let domainModel: ScribeDomainModel | undefined;
-      if (this.scribe) {
+      if (this.scribe && shouldProcess) {
         this.logger.debug({ eventId }, 'Running Scribe');
         domainModel = await this.scribe(eventId, familyId);
       }
