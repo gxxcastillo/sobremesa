@@ -29,6 +29,9 @@
     },
     {
       "path": "../../libs/agents/registrar/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/agents/facilitator/tsconfig.lib.json"
     }
   ]
 }

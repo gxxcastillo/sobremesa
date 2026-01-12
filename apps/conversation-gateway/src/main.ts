@@ -5,6 +5,7 @@ import { MessageQueue, MessageProcessor } from '@sobremesa/queue';
 import { BotManager } from '@sobremesa/telegram';
 import { ScribeAgent } from '@sobremesa/agents-scribe';
 import { RegistrarAgent } from '@sobremesa/agents-registrar';
+import { FacilitatorAgent } from '@sobremesa/agents-facilitator';
 
 const logger = createLogger({ name: 'conversation-gateway' });
 
@@ -45,6 +46,17 @@ async function main() {
     // Set up message processing pipeline
     const processor = new MessageProcessor();
 
+    // Configure Facilitator agent if bot is available
+    let facilitator: FacilitatorAgent | undefined;
+    if (botManager.hasBot('facilitator')) {
+      logger.debug('Configuring Facilitator agent...');
+      facilitator = new FacilitatorAgent({
+        messageSender: botManager,
+        minMinutesBetweenQuestions: 5, // Ask at most once every 5 minutes per family
+      });
+      logger.info('Facilitator agent configured');
+    }
+
     // Configure Scribe agent if API key is available
     if (anthropicApiKey) {
       logger.debug('Configuring Scribe and Registrar agents...');
@@ -53,7 +65,33 @@ async function main() {
       const registrar = new RegistrarAgent();
 
       processor.setScribe((eventId, familyId) => scribe.process(eventId, familyId));
-      processor.setRegistrar((model, familyId) => registrar.persist(model, familyId));
+      processor.setRegistrar(async (model, familyId) => {
+        await registrar.persist(model, familyId);
+
+        // After persisting, try to ask a follow-up question
+        // Rate limiting in FacilitatorAgent prevents spam
+        if (facilitator) {
+          // Small delay to let the conversation settle
+          setTimeout(async () => {
+            try {
+              const result = await facilitator!.askNextQuestion(familyId);
+              if (result.questionContent) {
+                logger.info(
+                  { familyId, questionId: result.questionId },
+                  'Facilitator asked question'
+                );
+              } else if (result.skippedReason) {
+                logger.debug(
+                  { familyId, reason: result.skippedReason },
+                  'Facilitator skipped asking'
+                );
+              }
+            } catch (err) {
+              logger.error({ familyId, err }, 'Facilitator failed to ask question');
+            }
+          }, 3000); // Wait 3 seconds before asking
+        }
+      });
 
       logger.info('Scribe and Registrar agents configured');
     }

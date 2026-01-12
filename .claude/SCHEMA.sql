@@ -637,6 +637,7 @@ CREATE TABLE IF NOT EXISTS questions (
   asked_at TIMESTAMPTZ NULL,
   answered_at TIMESTAMPTZ NULL,
   answer_message_id UUID NULL REFERENCES conversation_events(id),
+  asked_external_message_id TEXT NULL,  -- External message ID for matching replies
 
   -- Timestamps
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -644,6 +645,7 @@ CREATE TABLE IF NOT EXISTS questions (
 );
 
 COMMENT ON TABLE questions IS 'Question lifecycle managed by Facilitator.';
+COMMENT ON COLUMN questions.asked_external_message_id IS 'External message ID of the sent question, for matching replies';
 
 CREATE INDEX IF NOT EXISTS idx_questions_family_status
   ON questions(family_id, status);
@@ -651,6 +653,10 @@ CREATE INDEX IF NOT EXISTS idx_questions_family_status
 CREATE INDEX IF NOT EXISTS idx_questions_family_priority
   ON questions(family_id, status, priority DESC)
   WHERE status = 'proposed';
+
+CREATE INDEX IF NOT EXISTS idx_questions_external_message_id
+  ON questions(family_id, asked_external_message_id)
+  WHERE asked_external_message_id IS NOT NULL;
 
 DROP TRIGGER IF EXISTS update_questions_updated_at ON questions;
 CREATE TRIGGER update_questions_updated_at

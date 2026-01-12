@@ -157,6 +157,7 @@ export interface Question {
   askedAt?: Date;
   answeredAt?: Date;
   answerMessageId?: string;
+  askedExternalMessageId?: string; // External message ID for answer detection
   createdAt: Date;
   updatedAt: Date;
 }

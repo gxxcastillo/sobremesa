@@ -181,7 +181,7 @@ export class RegistrarAgent {
           sourceEventId
         );
         placeIdMap.set(place.name, dbPlace.id);
-        if (dbPlace.createdAt.getTime() > Date.now() - 1000) {
+        if (new Date(dbPlace.createdAt).getTime() > Date.now() - 1000) {
           result.placesCreated++;
         }
       }

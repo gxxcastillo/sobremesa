@@ -115,25 +115,54 @@ export class ProcessingQueueRepository {
   ): Promise<QueueItem | null> {
     const lockExpiry = new Date(Date.now() - lockTimeoutMs).toISOString();
 
-    // Find and lock the next available item from any family
-    const { data, error } = await this.client
+    // First, try to find a queued item
+    const { data: queuedItem, error: selectError } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('status', 'queued')
+      .order('queued_at', { ascending: true })
+      .limit(1)
+      .single();
+
+    // If no queued items, try to find a stale processing item
+    let itemToLock = queuedItem;
+    if (selectError?.code === 'PGRST116') {
+      const { data: staleItem } = await this.client
+        .from(this.tableName)
+        .select('*')
+        .eq('status', 'processing')
+        .lt('locked_at', lockExpiry)
+        .order('queued_at', { ascending: true })
+        .limit(1)
+        .single();
+      itemToLock = staleItem;
+    } else if (selectError) {
+      throw new Error(`Failed to find queue item: ${selectError.message}`);
+    }
+
+    if (!itemToLock) {
+      return null; // No items available
+    }
+
+    // Lock the item
+    const { data, error: updateError } = await this.client
       .from(this.tableName)
       .update({
         status: 'processing',
         locked_at: new Date().toISOString(),
         locked_by: workerId,
       })
-      .or(`status.eq.queued,and(status.eq.processing,locked_at.lt.${lockExpiry})`)
-      .order('queued_at', { ascending: true })
-      .limit(1)
+      .eq('id', itemToLock.id)
+      .eq('status', itemToLock.status) // Optimistic locking
       .select()
       .single();
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return null; // No items available
+    if (updateError) {
+      if (updateError.code === 'PGRST116') {
+        // Item was grabbed by another worker, try again
+        return this.dequeueAny(workerId, lockTimeoutMs);
       }
-      throw new Error(`Failed to dequeue item: ${error.message}`);
+      throw new Error(`Failed to lock queue item: ${updateError.message}`);
     }
 
     return mapRowToCamelCase<QueueItem>(data);

@@ -115,6 +115,9 @@ export interface RawScribeResponse {
     language_original?: string;
     question_type?: string;
     priority?: number;
+    target_person?: string;
+    target_event?: string;
+    target_place?: string;
   }>;
   answered_questions?: Array<{
     question_id: string;

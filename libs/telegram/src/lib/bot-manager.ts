@@ -133,9 +133,13 @@ export class BotManager {
   }
 
   /**
-   * Send a message via a specific bot.
+   * Result of sending a message.
    */
-  async sendMessage(role: BotRole, message: OutgoingMessage): Promise<void> {
+  /**
+   * Send a message via a specific bot.
+   * Returns the Telegram message_id of the sent message.
+   */
+  async sendMessage(role: BotRole, message: OutgoingMessage): Promise<number> {
     const managed = this.bots.get(role);
     if (!managed) {
       this.logger.error({ role }, 'Bot not configured, cannot send message');
@@ -143,7 +147,7 @@ export class BotManager {
     }
 
     try {
-      await managed.bot.telegram.sendMessage(message.chatId, message.text, {
+      const result = await managed.bot.telegram.sendMessage(message.chatId, message.text, {
         parse_mode: message.parseMode,
         reply_parameters: message.replyToMessageId
           ? { message_id: message.replyToMessageId }
@@ -151,9 +155,11 @@ export class BotManager {
       });
 
       this.logger.info(
-        { role, chatId: message.chatId, textLength: message.text.length },
+        { role, chatId: message.chatId, textLength: message.text.length, messageId: result.message_id },
         'Message sent'
       );
+
+      return result.message_id;
     } catch (error) {
       this.logger.error({ role, chatId: message.chatId, error }, 'Failed to send message');
       throw error;

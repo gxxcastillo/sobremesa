@@ -1,20 +1,20 @@
 import type { Telegraf, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import type { Message, Update } from 'telegraf/types';
-import { createLogger } from '@sobremesa/shared-utils';
-import { detectLanguage } from '@sobremesa/shared-types';
-import {
-  ConversationEventRepository,
-  ProcessingQueueRepository,
-  EventLogRepository,
-  FamilyRepository,
-} from '@sobremesa/database';
-import type pino from 'pino';
-import type { BotHandler, BotRole } from './types.js';
+  import { createLogger } from '@sobremesa/shared-utils';
+  import { detectLanguage } from '@sobremesa/shared-types';
+  import {
+    ConversationEventRepository,
+    ProcessingQueueRepository,
+    EventLogRepository,
+    FamilyRepository,
+  } from '@sobremesa/database';
+  import type pino from 'pino';
+  import type { BotHandler, BotRole } from './types.js';
 
-type TextMessageContext = Context<Update.MessageUpdate<Message.TextMessage>>;
-type PhotoMessageContext = Context<Update.MessageUpdate<Message.PhotoMessage>>;
-type DocumentMessageContext = Context<Update.MessageUpdate<Message.DocumentMessage>>;
+  type TextMessageContext = Context<Update.MessageUpdate<Message.TextMessage>>;
+  type PhotoMessageContext = Context<Update.MessageUpdate<Message.PhotoMessage>>;
+  type DocumentMessageContext = Context<Update.MessageUpdate<Message.DocumentMessage>>;
 
 /**
  * Scribe bot handler.

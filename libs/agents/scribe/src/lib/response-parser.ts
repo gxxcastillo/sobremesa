@@ -150,6 +150,9 @@ export function parseScribeResponse(
     language: parseLanguage(q.language_original),
     priority: q.priority ?? 50,
     origin: 'scribe' as const,
+    targetPerson: q.target_person,
+    targetEvent: q.target_event,
+    targetPlace: q.target_place,
   }));
 
   // Parse answered questions

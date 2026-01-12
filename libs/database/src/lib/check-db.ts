@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { getServiceClient } from './client.js';
 
 /**

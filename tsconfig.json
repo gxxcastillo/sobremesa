@@ -26,6 +26,9 @@
     },
     {
       "path": "./apps/conversation-gateway"
+    },
+    {
+      "path": "./libs/agents/facilitator"
     }
   ]
 }

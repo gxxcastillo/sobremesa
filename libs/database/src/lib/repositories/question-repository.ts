@@ -153,7 +153,8 @@ export class QuestionRepository {
   async markAsked(
     familyId: string,
     id: string,
-    askedByIdentityId?: string
+    askedByIdentityId?: string,
+    externalMessageId?: string | number
   ): Promise<Question> {
     const updates: Record<string, unknown> = {
       status: 'asked',
@@ -162,6 +163,10 @@ export class QuestionRepository {
 
     if (askedByIdentityId) {
       updates['asked_by_identity_id'] = askedByIdentityId;
+    }
+
+    if (externalMessageId) {
+      updates['asked_external_message_id'] = String(externalMessageId);
     }
 
     const { data, error } = await this.client
@@ -174,6 +179,30 @@ export class QuestionRepository {
 
     if (error) {
       throw new Error(`Failed to mark question as asked: ${error.message}`);
+    }
+
+    return this.mapFromDb(data);
+  }
+
+  /**
+   * Find a question by its external message ID (for answer detection).
+   */
+  async findByExternalMessageId(
+    familyId: string,
+    externalMessageId: string
+  ): Promise<Question | null> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('asked_external_message_id', externalMessageId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      throw new Error(`Failed to find question by external message id: ${error.message}`);
     }
 
     return this.mapFromDb(data);

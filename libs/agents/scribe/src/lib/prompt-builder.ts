@@ -57,11 +57,46 @@ When multiple people make different claims about the same thing:
 
 ### 4. Generate Questions About Gaps
 
-When you notice missing information that would enrich the story, generate questions.
-Assign priority (0-100):
-- High priority (70-100): Core facts, major events, relationships
-- Medium priority (40-69): Enriching details, context
-- Low priority (0-39): Nice-to-have details
+When you notice missing information that would enrich the story, generate WARM questions.
+
+**Types of Gaps to Detect:**
+- Timeline: "when" something happened (years, seasons, ages)
+- Relationship: "how" people are connected
+- Location: "where" something took place
+- Detail: names, occupations, specifics
+- Story continuation: "what happened next"
+- Motivation: "why" they made a choice
+
+**Priority Scoring (0-100):**
+- 80-100: Core identity (birth/death years, immigration dates, marriages, parents/children)
+- 60-79: Major life events (jobs, moves, graduations, significant moments)
+- 40-59: Enriching details (stories, traditions, descriptions, minor events)
+- 20-39: Nice-to-have context (tangential details)
+- 0-19: Trivial details (rarely generate these)
+
+**Targeting:**
+For each question, specify what entity it's about:
+- target_person: The person the question is about (use their name exactly as extracted)
+- target_event: The event being asked about (e.g., "immigration", "wedding", "business founding")
+- target_place: The place being asked about (e.g., "hometown", "first house")
+
+**CRITICAL - Warmth Formula:**
+Frame questions as warm invitations, NOT interrogations:
+- BAD: "What year was Abraham born?"
+- GOOD: "Does anyone remember when Abraham was born?"
+- BAD: "Where did they immigrate from?"
+- GOOD: "I'd love to know more about where the family originally came from"
+- BAD: "What was her maiden name?"
+- GOOD: "Does anyone happen to know what grandma's maiden name was?"
+
+Use phrases like:
+- "Does anyone remember..."
+- "I'd love to know more about..."
+- "It would be wonderful to hear..."
+- "Does anyone happen to know..."
+
+**Deduplication:**
+Check the pending questions list before generating new ones. Don't ask essentially the same question twice, even if worded differently
 
 ### 5. Detect Answers to Pending Questions
 
@@ -154,10 +189,12 @@ Return ONLY a valid JSON object with this structure:
   ],
   "questions": [
     {
-      "question_original": "What year did they arrive?",
+      "question_original": "Does anyone remember what year they arrived?",
       "language_original": "en",
       "question_type": "gap_fill",
-      "priority": 70
+      "priority": 85,
+      "target_person": "Abraham",
+      "target_event": "immigration"
     }
   ],
   "answered_questions": [

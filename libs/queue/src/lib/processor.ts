@@ -1,5 +1,5 @@
 import type { ProcessingResult, ScribeDomainModel } from '@sobremesa/shared-types';
-import { ConversationEventRepository, EventLogRepository } from '@sobremesa/database';
+import { ConversationEventRepository, EventLogRepository, QuestionRepository } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 
@@ -27,6 +27,7 @@ export type RegistrarProcessor = (
 export class MessageProcessor {
   private eventRepo: ConversationEventRepository;
   private eventLog: EventLogRepository;
+  private questionRepo: QuestionRepository;
   private scribe?: ScribeProcessor;
   private registrar?: RegistrarProcessor;
   private logger: pino.Logger;
@@ -34,9 +35,11 @@ export class MessageProcessor {
   constructor(options?: {
     eventRepo?: ConversationEventRepository;
     eventLog?: EventLogRepository;
+    questionRepo?: QuestionRepository;
   }) {
     this.eventRepo = options?.eventRepo || new ConversationEventRepository();
     this.eventLog = options?.eventLog || new EventLogRepository();
+    this.questionRepo = options?.questionRepo || new QuestionRepository();
     this.logger = createLogger({ name: 'processor' });
   }
 
@@ -88,6 +91,11 @@ export class MessageProcessor {
           success: true,
           duration: Date.now() - startTime,
         };
+      }
+
+      // Check if this message is a reply to a question (answer detection)
+      if (event.externalReplyToId) {
+        await this.detectAndMarkAnswer(familyId, eventId, event.externalReplyToId);
       }
 
       // Log processing start
@@ -174,5 +182,66 @@ export class MessageProcessor {
    */
   createHandler(): (eventId: string, familyId: string) => Promise<ProcessingResult> {
     return (eventId, familyId) => this.process(eventId, familyId);
+  }
+
+  /**
+   * Detect if a message is a reply to a question and mark it as answered.
+   */
+  private async detectAndMarkAnswer(
+    familyId: string,
+    answerEventId: string,
+    replyToExternalId: string
+  ): Promise<void> {
+    try {
+      // Look up if there's a question that was sent with this external message ID
+      const question = await this.questionRepo.findByExternalMessageId(
+        familyId,
+        replyToExternalId
+      );
+
+      if (!question) {
+        // Not a reply to a question we asked
+        return;
+      }
+
+      // Already answered? Skip
+      if (question.status === 'answered') {
+        this.logger.debug(
+          { questionId: question.id, replyToExternalId },
+          'Question already marked as answered'
+        );
+        return;
+      }
+
+      // Mark the question as answered
+      await this.questionRepo.markAnswered(familyId, question.id, answerEventId);
+
+      // Log the answer detection
+      await this.eventLog.log({
+        familyId,
+        eventType: 'question_answered',
+        eventCategory: 'bot_action',
+        actor: 'processor',
+        actorType: 'system',
+        sourceEventId: answerEventId,
+        eventData: {
+          questionId: question.id,
+          questionContent: question.contentOriginal.slice(0, 100),
+          replyToExternalId,
+        },
+      });
+
+      this.logger.info(
+        { familyId, questionId: question.id, answerEventId },
+        'Question marked as answered via reply detection'
+      );
+    } catch (error) {
+      // Don't fail processing if answer detection fails
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        { familyId, replyToExternalId, error: errorMessage },
+        'Answer detection failed (non-fatal)'
+      );
+    }
   }
 }
