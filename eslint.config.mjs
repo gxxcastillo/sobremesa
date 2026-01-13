@@ -31,7 +31,11 @@ export default [
             },
             {
               sourceTag: 'scope:async',
-              onlyDependOnLibsWithTags: ['scope:shared', 'scope:infra', 'scope:async'],
+              onlyDependOnLibsWithTags: [
+                'scope:shared',
+                'scope:infra',
+                'scope:async',
+              ],
             },
             {
               sourceTag: 'scope:colors',

@@ -1,0 +1,13 @@
+{
+  "name": "@sobremesa/publisher",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "solid-js": "^1.8.0",
+    "@sobremesa/api-client": "workspace:*"
+  },
+  "devDependencies": {
+    "solid-js": "^1.8.0",
+    "vite-plugin-solid": "^2.7.0"
+  }
+}

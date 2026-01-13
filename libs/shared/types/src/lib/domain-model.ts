@@ -94,6 +94,23 @@ export interface DetectedConflict {
 }
 
 /**
+ * Reference from a message to an image.
+ * Used when Scribe detects that a message is describing or referencing an image.
+ */
+export interface ImageReference {
+  /** The image ID (short form from context) */
+  imageId: string;
+  /** How the message relates to the image */
+  referenceType: 'describes' | 'identifies_people' | 'provides_context' | 'asks_about';
+  /** People identified in the image by this message */
+  peopleIdentified?: string[];
+  /** Additional context provided about the image */
+  contextProvided?: string;
+  /** Confidence in this reference */
+  confidence: Confidence;
+}
+
+/**
  * Complete domain model output from Scribe.
  */
 export interface ScribeDomainModel {
@@ -124,6 +141,9 @@ export interface ScribeDomainModel {
 
   // Conflicts detected
   conflicts: DetectedConflict[];
+
+  // Image references detected
+  imageReferences: ImageReference[];
 
   // Language detection
   detectedLanguage: LanguageCode;

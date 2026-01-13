@@ -4,6 +4,7 @@ import {
   ClaimRepository,
   QuestionRepository,
   FamilyRepository,
+  ImageRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
@@ -34,6 +35,8 @@ export interface ScribeAgentOptions {
   questionRepo?: QuestionRepository;
   /** Family repository */
   familyRepo?: FamilyRepository;
+  /** Image repository (for recent images context) */
+  imageRepo?: ImageRepository;
   /** Logger instance */
   logger?: pino.Logger;
   /** Scribe configuration overrides */
@@ -51,6 +54,7 @@ export class ScribeAgent {
   private claimRepo: ClaimRepository;
   private questionRepo: QuestionRepository;
   private familyRepo: FamilyRepository;
+  private imageRepo: ImageRepository;
   private logger: pino.Logger;
   private config: ScribeConfig;
 
@@ -60,6 +64,7 @@ export class ScribeAgent {
     this.claimRepo = options.claimRepo || new ClaimRepository();
     this.questionRepo = options.questionRepo || new QuestionRepository();
     this.familyRepo = options.familyRepo || new FamilyRepository();
+    this.imageRepo = options.imageRepo || new ImageRepository();
     this.logger = options.logger || createLogger({ name: 'scribe' });
     this.config = { ...DEFAULT_SCRIBE_CONFIG, ...options.config };
   }
@@ -101,6 +106,7 @@ export class ScribeAgent {
         eventRepo: this.eventRepo,
         claimRepo: this.claimRepo,
         questionRepo: this.questionRepo,
+        imageRepo: this.imageRepo,
       }
     );
 
@@ -139,8 +145,7 @@ export class ScribeAgent {
       const domainModel = parseScribeResponse(
         textContent.text,
         eventId,
-        familyId,
-        event.actorDisplayName || event.actorUsername || 'Unknown'
+        familyId
       );
 
       this.logger.info(
@@ -206,6 +211,7 @@ export class ScribeAgent {
       questions: [],
       answers: [],
       conflicts: [],
+      imageReferences: [],
       detectedLanguage: 'en',
     };
   }

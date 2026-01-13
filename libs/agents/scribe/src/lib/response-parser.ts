@@ -9,6 +9,7 @@ import {
   type GeneratedQuestion,
   type DetectedAnswer,
   type DetectedConflict,
+  type ImageReference,
   type LanguageCode,
   type ClaimSourceType,
 } from '@sobremesa/shared-types';
@@ -56,6 +57,26 @@ function parseClaimSourceType(value?: string): ClaimSourceType | undefined {
 }
 
 /**
+ * Parse image reference type string.
+ */
+function parseImageReferenceType(
+  value?: string
+): 'describes' | 'identifies_people' | 'provides_context' | 'asks_about' {
+  if (!value) return 'describes';
+  const lower = value.toLowerCase();
+  if (lower === 'identifies_people' || lower === 'identifies people') {
+    return 'identifies_people';
+  }
+  if (lower === 'provides_context' || lower === 'provides context') {
+    return 'provides_context';
+  }
+  if (lower === 'asks_about' || lower === 'asks about') {
+    return 'asks_about';
+  }
+  return 'describes';
+}
+
+/**
  * Extract JSON from Claude's response, handling markdown code blocks.
  */
 function extractJson(text: string): string {
@@ -80,8 +101,7 @@ function extractJson(text: string): string {
 export function parseScribeResponse(
   rawText: string,
   sourceEventId: string,
-  familyId: string,
-  claimedBy: string
+  familyId: string
 ): ScribeDomainModel {
   let raw: RawScribeResponse;
 
@@ -186,6 +206,17 @@ export function parseScribeResponse(
       c.conflict_type === 'inconsistency' ? 'inconsistency' : 'contradiction',
   }));
 
+  // Parse image references
+  const imageReferences: ImageReference[] = (raw.image_references || []).map(
+    (r) => ({
+      imageId: r.image_id,
+      referenceType: parseImageReferenceType(r.reference_type),
+      peopleIdentified: r.people_identified,
+      contextProvided: r.context_provided,
+      confidence: parseConfidence(r.confidence),
+    })
+  );
+
   return {
     sourceEventId,
     familyId,
@@ -199,6 +230,7 @@ export function parseScribeResponse(
     questions,
     answers,
     conflicts,
+    imageReferences,
     detectedLanguage: parseLanguage(raw.detected_language),
   };
 }
@@ -222,6 +254,7 @@ function createEmptyDomainModel(
     questions: [],
     answers: [],
     conflicts: [],
+    imageReferences: [],
     detectedLanguage: 'en',
   };
 }

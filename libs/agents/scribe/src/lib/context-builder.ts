@@ -2,8 +2,9 @@ import type {
   ConversationEventRepository,
   ClaimRepository,
   QuestionRepository,
+  ImageRepository,
 } from '@sobremesa/database';
-import type { ScribeContext } from './types.js';
+import type { ScribeContext, ImageContext } from './types.js';
 
 /**
  * Options for building Scribe context.
@@ -15,12 +16,15 @@ export interface ContextBuilderOptions {
   maxQuestions?: number;
   /** Number of recent claims to include */
   maxClaims?: number;
+  /** Number of recent images to include */
+  maxImages?: number;
 }
 
 const DEFAULT_OPTIONS: Required<ContextBuilderOptions> = {
   recentMessageCount: 5,
   maxQuestions: 10,
   maxClaims: 10,
+  maxImages: 5,
 };
 
 /**
@@ -34,16 +38,20 @@ export async function buildScribeContext(
     eventRepo: ConversationEventRepository;
     claimRepo: ClaimRepository;
     questionRepo: QuestionRepository;
+    imageRepo?: ImageRepository;
   },
   options?: ContextBuilderOptions
 ): Promise<ScribeContext> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
   // Fetch data in parallel for efficiency
-  const [recentEvents, pendingQuestions, recentClaims] = await Promise.all([
+  const [recentEvents, pendingQuestions, recentClaims, recentImages] = await Promise.all([
     repos.eventRepo.findRecent(familyId, conversationId, opts.recentMessageCount),
     repos.questionRepo.findPending(familyId, opts.maxQuestions),
     repos.claimRepo.findAllActive(familyId),
+    repos.imageRepo
+      ? repos.imageRepo.findRecentInConversation(familyId, conversationId, opts.maxImages)
+      : Promise.resolve([]),
   ]);
 
   // Transform recent events to context format
@@ -54,6 +62,21 @@ export async function buildScribeContext(
       senderName: e.actorDisplayName || e.actorUsername || 'Unknown',
       occurredAt: new Date(e.occurredAt),
     }));
+
+  // Transform images to context format
+  const recentImagesContext: ImageContext[] = recentImages.map((img) => ({
+    id: img.id.slice(0, 8), // Short ID for prompt efficiency
+    fileType: img.fileType || 'photo',
+    sharedBy: img.sharedBy,
+    sharedAt: new Date(img.createdAt),
+    analyzed: img.analyzed,
+    description: img.analyzed
+      ? (img.analysis as Record<string, unknown>)?.description as string
+      : undefined,
+    peopleCount: img.peopleCount,
+    estimatedEra: img.estimatedEra,
+    visibleText: img.visibleText?.length ? img.visibleText : undefined,
+  }));
 
   // Transform questions to context format
   const pendingQuestionsContext = pendingQuestions.map((q) => ({
@@ -70,6 +93,7 @@ export async function buildScribeContext(
 
   return {
     recentMessages,
+    recentImages: recentImagesContext,
     pendingQuestions: pendingQuestionsContext,
     recentClaims: recentClaimsContext,
   };

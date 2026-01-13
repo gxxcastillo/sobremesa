@@ -5,4 +5,6 @@ export type {
   TextMessageInput,
   PhotoMessageInput,
   DocumentMessageInput,
+  VideoMessageInput,
+  MediaMessageInput,
 } from './lib/ingester.js';

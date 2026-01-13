@@ -77,5 +77,13 @@
       }
     }
   },
-  "nxCloudId": "6961ac7de391467e39b9a1d6"
+  "nxCloudId": "6961ac7de391467e39b9a1d6",
+  "generators": {
+    "@nx/web:application": {
+      "style": "css",
+      "linter": "none",
+      "unitTestRunner": "vitest",
+      "e2eTestRunner": "none"
+    }
+  }
 }

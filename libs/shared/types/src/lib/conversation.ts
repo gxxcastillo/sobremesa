@@ -12,6 +12,7 @@ export type ConversationEventType =
   | 'message'
   | 'photo'
   | 'document'
+  | 'video'
   | 'join'
   | 'leave'
   | 'edit';

@@ -1,0 +1,24 @@
+{
+  "name": "@sobremesa/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/main.ts",
+    "start": "bun run src/main.ts",
+    "build": "bun build src/main.ts --outdir dist",
+    "preview": "bun dist/main.js"
+  },
+  "dependencies": {
+    "elysia": "^1.1.9",
+    "@elysiajs/swagger": "^1.1.9",
+    "@elysiajs/cors": "^1.1.9",
+    "@sobremesa/database": "workspace:*",
+    "@sobremesa/shared-types": "workspace:*",
+    "@sobremesa/shared-utils": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.9",
+    "typescript": "^5.9.2"
+  }
+}

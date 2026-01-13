@@ -29,6 +29,30 @@ export const DEFAULT_SCRIBE_CONFIG: ScribeConfig = {
 };
 
 /**
+ * Image context for Scribe.
+ */
+export interface ImageContext {
+  /** Image ID (short form for referencing) */
+  id: string;
+  /** File type: photo, document, video */
+  fileType: string;
+  /** Who shared this image */
+  sharedBy?: string;
+  /** When it was shared */
+  sharedAt: Date;
+  /** Whether Curator has analyzed it */
+  analyzed: boolean;
+  /** Description from Curator analysis */
+  description?: string;
+  /** Number of people visible */
+  peopleCount?: number;
+  /** Estimated era/decade */
+  estimatedEra?: string;
+  /** Visible text extracted */
+  visibleText?: string[];
+}
+
+/**
  * Context provided to Scribe for processing.
  * Note: People and places are no longer included - Registrar handles entity matching.
  */
@@ -39,6 +63,8 @@ export interface ScribeContext {
     senderName: string;
     occurredAt: Date;
   }>;
+  /** Recent images shared in conversation */
+  recentImages: ImageContext[];
   /** Pending questions to check for answers */
   pendingQuestions: Array<{
     id: string;
@@ -124,6 +150,13 @@ export interface RawScribeResponse {
     existing_claim_value?: Record<string, unknown>;
     new_claim_value?: Record<string, unknown>;
     conflict_type?: string;
+  }>;
+  image_references?: Array<{
+    image_id: string;
+    reference_type: string;
+    people_identified?: string[];
+    context_provided?: string;
+    confidence?: string;
   }>;
   detected_language?: string;
 }

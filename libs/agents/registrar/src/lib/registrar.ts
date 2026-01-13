@@ -9,6 +9,7 @@ import {
   QuestionRepository,
   EventLogRepository,
   ConversationEventRepository,
+  ImageRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
@@ -36,6 +37,8 @@ export interface RegistrarAgentOptions {
   eventLog?: EventLogRepository;
   /** Conversation event repository (for getting claimedBy info) */
   conversationEventRepo?: ConversationEventRepository;
+  /** Image repository (for linking people to images) */
+  imageRepo?: ImageRepository;
   /** Logger instance */
   logger?: pino.Logger;
 }
@@ -54,6 +57,7 @@ export interface PersistResult {
   relationshipsCreated: number;
   questionsCreated: number;
   answersProcessed: number;
+  imageReferencesProcessed: number;
 }
 
 /**
@@ -70,6 +74,7 @@ export class RegistrarAgent {
   private questionRepo: QuestionRepository;
   private eventLog: EventLogRepository;
   private conversationEventRepo: ConversationEventRepository;
+  private imageRepo: ImageRepository;
   private logger: pino.Logger;
 
   constructor(options: RegistrarAgentOptions = {}) {
@@ -83,6 +88,7 @@ export class RegistrarAgent {
     this.eventLog = options.eventLog || new EventLogRepository();
     this.conversationEventRepo =
       options.conversationEventRepo || new ConversationEventRepository();
+    this.imageRepo = options.imageRepo || new ImageRepository();
     this.logger = options.logger || createLogger({ name: 'registrar' });
   }
 
@@ -110,6 +116,7 @@ export class RegistrarAgent {
       relationshipsCreated: 0,
       questionsCreated: 0,
       answersProcessed: 0,
+      imageReferencesProcessed: 0,
     };
 
     const sourceEventId = domainModel.sourceEventId;
@@ -385,7 +392,85 @@ export class RegistrarAgent {
         }
       }
 
-      // 9. Log completion
+      // 9. Process Image References
+      for (const imageRef of domainModel.imageReferences || []) {
+        try {
+          // Handle people identification
+          if (
+            imageRef.referenceType === 'identifies_people' &&
+            imageRef.peopleIdentified &&
+            imageRef.peopleIdentified.length > 0
+          ) {
+            // Resolve person names to IDs
+            const personIds: string[] = [];
+            for (const personName of imageRef.peopleIdentified) {
+              const personId = personIdMap.get(personName);
+              if (personId) {
+                personIds.push(personId);
+              } else {
+                // Try to find existing person by name
+                const matchResult = await this.personRepo.findBestMatch(
+                  familyId,
+                  personName,
+                  []
+                );
+                if (matchResult) {
+                  personIds.push(matchResult.person.id);
+                  personIdMap.set(personName, matchResult.person.id);
+                }
+              }
+            }
+
+            if (personIds.length > 0) {
+              await this.imageRepo.addConnectedPeople(
+                familyId,
+                imageRef.imageId,
+                personIds
+              );
+              this.logger.debug(
+                {
+                  familyId,
+                  imageId: imageRef.imageId,
+                  personIds,
+                  peopleIdentified: imageRef.peopleIdentified,
+                },
+                'Added people to image'
+              );
+            }
+          }
+
+          // Handle context provided
+          if (
+            (imageRef.referenceType === 'provides_context' ||
+              imageRef.referenceType === 'describes') &&
+            imageRef.contextProvided
+          ) {
+            await this.imageRepo.addContext(
+              familyId,
+              imageRef.imageId,
+              imageRef.contextProvided,
+              sourceEventId
+            );
+            this.logger.debug(
+              {
+                familyId,
+                imageId: imageRef.imageId,
+                context: imageRef.contextProvided.slice(0, 100),
+              },
+              'Added context to image'
+            );
+          }
+
+          result.imageReferencesProcessed++;
+        } catch (error) {
+          this.logger.warn(
+            { imageId: imageRef.imageId, referenceType: imageRef.referenceType, error },
+            'Failed to process image reference'
+          );
+        }
+      }
+
+      // 10. Log completion
       await this.eventLog.log({
         familyId,
         eventType: 'event_processed',

@@ -10,3 +10,4 @@ export { StoryRepository } from './story-repository.js';
 export { ClaimRepository } from './claim-repository.js';
 export { RelationshipRepository } from './relationship-repository.js';
 export { QuestionRepository } from './question-repository.js';
+export { ImageRepository } from './image-repository.js';

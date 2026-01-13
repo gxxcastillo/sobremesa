@@ -1,0 +1,18 @@
+{
+  "name": "agents-curator",
+  "tags": ["scope:async"],
+  "targets": {
+    "types": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --noEmit -p libs/agents/curator/tsconfig.lib.json"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint libs/agents/curator"
+      }
+    }
+  }
+}

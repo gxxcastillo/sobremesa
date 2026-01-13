@@ -123,7 +123,23 @@ Check the pending questions list before generating new ones. Don't ask essential
 
 Check each message against pending questions. If it answers one, mark it.
 
-### 6. Language Detection
+### 6. Detect Image References
+
+When recent images are shown in the context, check if this message:
+- **Describes** the image content: "That's a photo from the wedding"
+- **Identifies people** in the image: "That's grandma Maria on the left"
+- **Provides context**: "This was taken in Buenos Aires, 1962"
+- **Asks about** the image: "Who is the man next to her?"
+
+For each image reference detected, specify:
+- The image ID (from the context, e.g., "a1b2c3d4")
+- The reference type: "describes", "identifies_people", "provides_context", "asks_about"
+- People identified (if any): names of people pointed out in the image
+- Context provided (if any): additional information about the image
+
+**IMPORTANT:** Only reference images that appear in the "Recent Images" context section. Use the exact image ID shown in brackets.
+
+### 7. Language Detection
 
 Detect if the message is in Spanish ("es"), English ("en"), or mixed ("mixed").
 
@@ -234,6 +250,15 @@ Return ONLY a valid JSON object with this structure:
       "conflict_type": "contradiction"
     }
   ],
+  "image_references": [
+    {
+      "image_id": "a1b2c3d4",
+      "reference_type": "identifies_people",
+      "people_identified": ["Grandma Maria", "Uncle Roberto"],
+      "context_provided": "Wedding photo from 1962",
+      "confidence": "high"
+    }
+  ],
   "detected_language": "en"
 }
 \`\`\`
@@ -291,6 +316,35 @@ export function buildUserMessage(
     parts.push('## Recent Conversation Context');
     for (const msg of context.recentMessages.slice(0, 5)) {
       parts.push(`[${msg.senderName}]: ${msg.content.slice(0, 300)}...`);
+    }
+    parts.push('');
+  }
+
+  // Add recent images for context
+  if (context.recentImages && context.recentImages.length > 0) {
+    parts.push('## Recent Images in Conversation');
+    parts.push('(If this message describes or references one of these images, note the connection)');
+    for (const img of context.recentImages) {
+      const imgParts: string[] = [`[${img.id}]`];
+      imgParts.push(img.fileType);
+      if (img.sharedBy) {
+        imgParts.push(`shared by ${img.sharedBy}`);
+      }
+      if (img.analyzed && img.description) {
+        imgParts.push(`- "${img.description}"`);
+        if (img.peopleCount) {
+          imgParts.push(`(${img.peopleCount} people)`);
+        }
+        if (img.estimatedEra) {
+          imgParts.push(`(~${img.estimatedEra})`);
+        }
+        if (img.visibleText && img.visibleText.length > 0) {
+          imgParts.push(`[text: "${img.visibleText.slice(0, 2).join(', ')}"]`);
+        }
+      } else {
+        imgParts.push('(not yet analyzed)');
+      }
+      parts.push(imgParts.join(' '));
     }
     parts.push('');
   }

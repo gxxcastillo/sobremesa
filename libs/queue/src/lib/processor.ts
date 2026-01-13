@@ -1,7 +1,13 @@
 import type { ProcessingResult, ScribeDomainModel } from '@sobremesa/shared-types';
-import { ConversationEventRepository, EventLogRepository, QuestionRepository } from '@sobremesa/database';
+import { ConversationEventRepository, EventLogRepository, QuestionRepository, ImageRepository } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
+
+/**
+ * Media event types that should create Image records.
+ */
+const MEDIA_EVENT_TYPES = ['photo', 'document', 'video'] as const;
+type MediaEventType = typeof MEDIA_EVENT_TYPES[number];
 
 /**
  * Filter result returned by the filter processor.
@@ -43,25 +49,40 @@ export type RegistrarProcessor = (
 ) => Promise<void>;
 
 /**
- * Message processor that orchestrates Filter, Scribe and Registrar.
+ * Callback for when a new image is ready for async analysis.
+ * The Curator should be called with this image ID to analyze it.
+ */
+export type OnImageCreatedCallback = (
+  familyId: string,
+  imageId: string,
+  eventId: string
+) => void;
+
+/**
+ * Message processor that orchestrates Filter, Scribe, and Registrar.
+ * Media events create Image records and notify via callback for async Curator analysis.
  */
 export class MessageProcessor {
   private eventRepo: ConversationEventRepository;
   private eventLog: EventLogRepository;
   private questionRepo: QuestionRepository;
+  private imageRepo: ImageRepository;
   private filter?: FilterProcessor;
   private scribe?: ScribeProcessor;
   private registrar?: RegistrarProcessor;
+  private onImageCreated?: OnImageCreatedCallback;
   private logger: pino.Logger;
 
   constructor(options?: {
     eventRepo?: ConversationEventRepository;
     eventLog?: EventLogRepository;
     questionRepo?: QuestionRepository;
+    imageRepo?: ImageRepository;
   }) {
     this.eventRepo = options?.eventRepo || new ConversationEventRepository();
     this.eventLog = options?.eventLog || new EventLogRepository();
     this.questionRepo = options?.questionRepo || new QuestionRepository();
+    this.imageRepo = options?.imageRepo || new ImageRepository();
     this.logger = createLogger({ name: 'processor' });
   }
 
@@ -85,6 +106,20 @@ export class MessageProcessor {
    */
   setRegistrar(registrar: RegistrarProcessor): void {
     this.registrar = registrar;
+  }
+
+  /**
+   * Set callback for when an image is created and ready for async Curator analysis.
+   */
+  setOnImageCreated(callback: OnImageCreatedCallback): void {
+    this.onImageCreated = callback;
+  }
+
+  /**
+   * Check if an event type is a media type.
+   */
+  private isMediaEvent(eventType: string): eventType is MediaEventType {
+    return MEDIA_EVENT_TYPES.includes(eventType as MediaEventType);
   }
 
   /**
@@ -136,57 +171,18 @@ export class MessageProcessor {
         actor: 'processor',
         actorType: 'system',
         sourceEventId: eventId,
-        eventData: { status: 'started' },
+        eventData: { status: 'started', eventType: event.eventType },
       });
 
-      // Run Filter (if configured) to determine if message is relevant
-      let shouldProcess = true;
-      if (this.filter) {
-        this.logger.debug({ eventId }, 'Running Filter');
-        const filterResult = await this.filter(eventId, familyId);
-
-        if (!filterResult.relevant) {
-          // Message is not relevant - skip Scribe
-          this.logger.info(
-            { eventId, reason: filterResult.reason, tokensUsed: filterResult.tokensUsed },
-            'Message filtered out as not relevant'
-          );
-
-          // Log filter skip
-          await this.eventLog.log({
-            familyId,
-            eventType: 'event_filtered',
-            eventCategory: 'system_event',
-            actor: 'filter',
-            actorType: 'system',
-            sourceEventId: eventId,
-            eventData: {
-              relevant: false,
-              reason: filterResult.reason,
-              tokensUsed: filterResult.tokensUsed,
-            },
-          });
-
-          shouldProcess = false;
-        } else {
-          this.logger.debug(
-            { eventId, reason: filterResult.reason, tokensUsed: filterResult.tokensUsed },
-            'Message passed filter'
-          );
-        }
+      // Handle media events: create Image record for async Curator
+      let imageId: string | undefined;
+      if (this.isMediaEvent(event.eventType)) {
+        imageId = await this.createImageRecord(eventId, familyId, event);
       }
 
-      // Run Scribe (if configured and filter passed)
-      let domainModel: ScribeDomainModel | undefined;
-      if (this.scribe && shouldProcess) {
-        this.logger.debug({ eventId }, 'Running Scribe');
-        domainModel = await this.scribe(eventId, familyId);
-      }
-
-      // Run Registrar (if configured and we have a domain model)
-      if (this.registrar && domainModel) {
-        this.logger.debug({ eventId }, 'Running Registrar');
-        await this.registrar(domainModel, familyId);
+      // Process text content through Filter/Scribe (including media captions)
+      if (event.contentOriginal || event.eventType === 'message') {
+        await this.processTextContent(eventId, familyId);
       }
 
       // Mark event as processed
@@ -203,15 +199,8 @@ export class MessageProcessor {
         eventData: {
           status: 'completed',
           duration: Date.now() - startTime,
-          entitiesExtracted: domainModel
-            ? {
-                people: domainModel.people.length,
-                places: domainModel.places.length,
-                events: domainModel.events.length,
-                claims: domainModel.claims.length,
-                questions: domainModel.questions.length,
-              }
-            : undefined,
+          eventType: event.eventType,
+          imageId,
         },
       });
 
@@ -249,6 +238,151 @@ export class MessageProcessor {
    */
   createHandler(): (eventId: string, familyId: string) => Promise<ProcessingResult> {
     return (eventId, familyId) => this.process(eventId, familyId);
+  }
+
+  /**
+   * Process text content through Filter/Scribe/Registrar pipeline.
+   */
+  private async processTextContent(
+    eventId: string,
+    familyId: string
+  ): Promise<void> {
+    // Run Filter (if configured) to determine if message is relevant
+    let shouldProcess = true;
+    if (this.filter) {
+      this.logger.debug({ eventId }, 'Running Filter');
+      const filterResult = await this.filter(eventId, familyId);
+
+      if (!filterResult.relevant) {
+        // Message is not relevant - skip Scribe
+        this.logger.info(
+          { eventId, reason: filterResult.reason, tokensUsed: filterResult.tokensUsed },
+          'Message filtered out as not relevant'
+        );
+
+        // Log filter skip
+        await this.eventLog.log({
+          familyId,
+          eventType: 'event_filtered',
+          eventCategory: 'system_event',
+          actor: 'filter',
+          actorType: 'system',
+          sourceEventId: eventId,
+          eventData: {
+            relevant: false,
+            reason: filterResult.reason,
+            tokensUsed: filterResult.tokensUsed,
+          },
+        });
+
+        shouldProcess = false;
+      } else {
+        this.logger.debug(
+          { eventId, reason: filterResult.reason, tokensUsed: filterResult.tokensUsed },
+          'Message passed filter'
+        );
+      }
+    }
+
+    // Run Scribe (if configured and filter passed)
+    let domainModel: ScribeDomainModel | undefined;
+    if (this.scribe && shouldProcess) {
+      this.logger.debug({ eventId }, 'Running Scribe');
+      domainModel = await this.scribe(eventId, familyId);
+
+      // Log extraction results
+      if (domainModel) {
+        this.logger.info(
+          {
+            eventId,
+            people: domainModel.people.length,
+            places: domainModel.places.length,
+            events: domainModel.events.length,
+            claims: domainModel.claims.length,
+            questions: domainModel.questions.length,
+          },
+          'Scribe extraction complete'
+        );
+      }
+    }
+
+    // Run Registrar (if configured and we have a domain model)
+    if (this.registrar && domainModel) {
+      this.logger.debug({ eventId }, 'Running Registrar');
+      await this.registrar(domainModel, familyId);
+    }
+  }
+
+  /**
+   * Create an Image record for a media event and notify for async Curator analysis.
+   */
+  private async createImageRecord(
+    eventId: string,
+    familyId: string,
+    event: {
+      eventType: string;
+      source: string;
+      contentOriginal?: string;
+      languageOriginal?: string;
+      metadata?: Record<string, unknown>;
+      actorDisplayName?: string;
+    }
+  ): Promise<string | undefined> {
+    const metadata = event.metadata || {};
+    const fileId = (metadata.fileId as string) || '';
+    const fileUniqueId = (metadata.fileUniqueId as string) || '';
+
+    if (!fileUniqueId) {
+      this.logger.warn({ eventId, eventType: event.eventType }, 'Media event missing fileUniqueId, skipping image creation');
+      return undefined;
+    }
+
+    // Check if we already have an Image record for this file
+    let image = await this.imageRepo.findByExternalFileId(familyId, event.source, fileUniqueId);
+
+    if (image) {
+      this.logger.debug({ eventId, imageId: image.id }, 'Image record already exists');
+      return image.id;
+    }
+
+    // Determine file type based on event type
+    let fileType: 'photo' | 'document' | 'video';
+    if (event.eventType === 'photo') {
+      fileType = 'photo';
+    } else if (event.eventType === 'video') {
+      fileType = 'video';
+    } else {
+      fileType = 'document';
+    }
+
+    // Create a new Image record
+    this.logger.debug({ eventId, fileType, fileId }, 'Creating image record');
+    image = await this.imageRepo.createFromEvent(familyId, eventId, {
+      source: event.source,
+      externalFileId: fileUniqueId,
+      fileType,
+      fileSizeBytes: metadata.fileSize as number | undefined,
+      captionOriginal: event.contentOriginal,
+      languageOriginal: event.languageOriginal,
+      sharedBy: event.actorDisplayName,
+    });
+
+    this.logger.info(
+      { eventId, imageId: image.id, fileType },
+      'Image record created'
+    );
+
+    // Notify for async Curator analysis (non-blocking)
+    if (this.onImageCreated) {
+      try {
+        this.onImageCreated(familyId, image.id, eventId);
+      } catch (error) {
+        // Don't fail processing if callback fails
+        this.logger.warn({ imageId: image.id, error }, 'onImageCreated callback failed');
+      }
+    }
+
+    return image.id;
   }
 
   /**

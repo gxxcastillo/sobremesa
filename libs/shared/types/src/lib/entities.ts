@@ -174,12 +174,12 @@ export interface Relationship {
 }
 
 /**
- * A photo or document.
+ * A photo, document, or video.
  */
 export interface Image extends BaseEntity {
   source: string;
   externalFileId: string;
-  fileType?: 'photo' | 'document';
+  fileType?: 'photo' | 'document' | 'video';
   fileSizeBytes?: number;
   captionOriginal?: string;
   languageOriginal?: LanguageCode;

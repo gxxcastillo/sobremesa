@@ -35,6 +35,18 @@
     },
     {
       "path": "./libs/ingester"
+    },
+    {
+      "path": "./libs/agents/curator"
+    },
+    {
+      "path": "./libs/api-client"
+    },
+    {
+      "path": "./apps/publisher"
+    },
+    {
+      "path": "./apps/api"
     }
   ]
 }

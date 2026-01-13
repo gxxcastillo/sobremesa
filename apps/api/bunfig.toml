@@ -1,0 +1,6 @@
+[build]
+root = "src"
+outdir = "dist"
+
+[define]
+"process.env.NODE_ENV" = "\"development\""

@@ -5,4 +5,5 @@ export {
   type FilterProcessorResult,
   type ScribeProcessor,
   type RegistrarProcessor,
+  type OnImageCreatedCallback,
 } from './lib/processor.js';
