@@ -1,4 +1,4 @@
-import type { ProcessingResult, ScribeDomainModel } from '@sobremesa/shared-types';
+import { Confidence, type ProcessingResult, type ScribeDomainModel } from '@sobremesa/shared-types';
 import { ConversationEventRepository, EventLogRepository, QuestionRepository, ImageRepository } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
@@ -18,6 +18,31 @@ export interface FilterProcessorResult {
   /** Reason for the decision (for logging/debugging) */
   reason: string;
   /** Tokens used for this filter call */
+  tokensUsed?: number;
+}
+
+/**
+ * Image reference type for linking.
+ */
+export type ImageReferenceType =
+  | 'describes'
+  | 'identifies_people'
+  | 'provides_context'
+  | 'asks_about';
+
+/**
+ * Image link result returned by the image linker processor.
+ */
+export interface ImageLinkProcessorResult {
+  /** Whether the message references an image */
+  linked: boolean;
+  /** The image ID if linked */
+  imageId?: string;
+  /** How the message references the image */
+  referenceType?: ImageReferenceType;
+  /** Brief explanation */
+  reason: string;
+  /** Tokens used for this call */
   tokensUsed?: number;
 }
 
@@ -49,6 +74,15 @@ export type RegistrarProcessor = (
 ) => Promise<void>;
 
 /**
+ * Image linker processor function type.
+ * Implementations should determine if a message references a recent image.
+ */
+export type ImageLinkerProcessor = (
+  eventId: string,
+  familyId: string
+) => Promise<ImageLinkProcessorResult>;
+
+/**
  * Callback for when a new image is ready for async analysis.
  * The Curator should be called with this image ID to analyze it.
  */
@@ -68,6 +102,7 @@ export class MessageProcessor {
   private questionRepo: QuestionRepository;
   private imageRepo: ImageRepository;
   private filter?: FilterProcessor;
+  private imageLinker?: ImageLinkerProcessor;
   private scribe?: ScribeProcessor;
   private registrar?: RegistrarProcessor;
   private onImageCreated?: OnImageCreatedCallback;
@@ -92,6 +127,14 @@ export class MessageProcessor {
    */
   setFilter(filter: FilterProcessor): void {
     this.filter = filter;
+  }
+
+  /**
+   * Set the Image Linker processor.
+   * The image linker runs after Scribe to detect image references that Scribe may have missed.
+   */
+  setImageLinker(imageLinker: ImageLinkerProcessor): void {
+    this.imageLinker = imageLinker;
   }
 
   /**
@@ -300,9 +343,69 @@ export class MessageProcessor {
             events: domainModel.events.length,
             claims: domainModel.claims.length,
             questions: domainModel.questions.length,
+            imageReferences: domainModel.imageReferences?.length || 0,
           },
           'Scribe extraction complete'
         );
+      }
+    }
+
+    // Run Image Linker (if configured and we have a domain model)
+    // This catches image references that Scribe may have missed
+    if (this.imageLinker && domainModel) {
+      const linkResult = await this.imageLinker(eventId, familyId);
+
+      if (linkResult.linked && linkResult.imageId && linkResult.referenceType) {
+        // Check if Scribe already detected this image reference
+        const existingRefs = domainModel.imageReferences || [];
+        const alreadyDetected = existingRefs.some(
+          (ref) => ref.imageId === linkResult.imageId
+        );
+
+        if (!alreadyDetected) {
+          // Augment domain model with the image reference
+          domainModel.imageReferences = [
+            ...existingRefs,
+            {
+              imageId: linkResult.imageId,
+              referenceType: linkResult.referenceType,
+              confidence: Confidence.MEDIUM, // Intern detection is medium confidence
+            },
+          ];
+
+          this.logger.info(
+            {
+              eventId,
+              imageId: linkResult.imageId,
+              referenceType: linkResult.referenceType,
+              reason: linkResult.reason,
+              tokensUsed: linkResult.tokensUsed,
+            },
+            'Image Linker detected reference (Scribe missed)'
+          );
+
+          // Log the augmentation
+          await this.eventLog.log({
+            familyId,
+            eventType: 'image_linked',
+            eventCategory: 'system_event',
+            actor: 'intern',
+            actorType: 'system',
+            sourceEventId: eventId,
+            eventData: {
+              imageId: linkResult.imageId,
+              referenceType: linkResult.referenceType,
+              reason: linkResult.reason,
+              tokensUsed: linkResult.tokensUsed,
+              source: 'intern_fallback',
+            },
+          });
+        } else {
+          this.logger.debug(
+            { eventId, imageId: linkResult.imageId },
+            'Image Linker confirmed Scribe detection'
+          );
+        }
       }
     }
 

@@ -5,6 +5,7 @@ export type EventLogType =
   | 'event_ingested'
   | 'event_processed'
   | 'event_filtered'
+  | 'image_linked'
   | 'question_proposed'
   | 'question_asked'
   | 'question_answered'

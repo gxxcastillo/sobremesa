@@ -31,9 +31,6 @@
       "path": "./libs/agents/facilitator"
     },
     {
-      "path": "./libs/agents/filter"
-    },
-    {
       "path": "./libs/ingester"
     },
     {
@@ -47,6 +44,9 @@
     },
     {
       "path": "./apps/api"
+    },
+    {
+      "path": "./libs/agents/intern"
     }
   ]
 }

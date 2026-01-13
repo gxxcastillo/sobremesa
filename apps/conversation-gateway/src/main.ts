@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createLogger } from '@sobremesa/shared-utils';
 import { MessageQueue, MessageProcessor } from '@sobremesa/queue';
 import { BotManager } from '@sobremesa/telegram';
-import { MessageFilterAgent } from '@sobremesa/agents-filter';
+import { InternAgent } from '@sobremesa/agents-intern';
 import { ScribeAgent } from '@sobremesa/agents-scribe';
 import { RegistrarAgent } from '@sobremesa/agents-registrar';
 import { FacilitatorAgent } from '@sobremesa/agents-facilitator';
@@ -60,15 +60,16 @@ async function main() {
 
     // Configure agents if API key is available
     if (anthropicApiKey) {
-      logger.debug('Configuring Filter, Scribe and Registrar agents...');
+      logger.debug('Configuring Intern, Scribe and Registrar agents...');
       const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
-      // Filter uses Haiku to quickly determine if a message is relevant
-      const filter = new MessageFilterAgent({ anthropic });
+      // Intern uses Haiku for quick preprocessing tasks
+      const intern = new InternAgent({ anthropic });
       const scribe = new ScribeAgent({ anthropic });
       const registrar = new RegistrarAgent();
 
-      processor.setFilter((eventId, familyId) => filter.filter(eventId, familyId));
+      processor.setFilter((eventId, familyId) => intern.filter(eventId, familyId));
+      processor.setImageLinker((eventId, familyId) => intern.linkToImage(eventId, familyId));
       processor.setScribe((eventId, familyId) => scribe.process(eventId, familyId));
       processor.setRegistrar(async (model, familyId) => {
         await registrar.persist(model, familyId);
@@ -98,7 +99,7 @@ async function main() {
         }
       });
 
-      logger.info('Filter, Scribe and Registrar agents configured');
+      logger.info('Intern, Scribe and Registrar agents configured');
     }
 
     logger.debug('Starting MessageQueue...');

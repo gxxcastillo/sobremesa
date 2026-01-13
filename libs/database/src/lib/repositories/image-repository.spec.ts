@@ -18,7 +18,7 @@ const createChainableMock = (finalResult: { data: any; error: any }) => {
   chain.limit = vi.fn().mockReturnValue(chain);
   chain.single = vi.fn().mockResolvedValue(finalResult);
   // For operations that don't call single()
-  chain.then = (resolve: Function) => resolve(finalResult);
+  chain.then = (resolve: (value: { data: unknown; error: unknown }) => void) => resolve(finalResult);
   return chain;
 };
 
@@ -60,7 +60,7 @@ describe('ImageRepository - addConnectedPeople', () => {
       return callCount === 1 ? findChain : updateChain;
     });
 
-    const result = await imageRepo.addConnectedPeople(
+    await imageRepo.addConnectedPeople(
       'family-abc',
       'img-123',
       ['person-3', 'person-4']

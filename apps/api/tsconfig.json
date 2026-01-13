@@ -4,6 +4,7 @@
     "module": "esnext",
     "target": "esnext",
     "lib": ["esnext"],
+    "types": ["@types/bun"],
     "moduleResolution": "bundler",
     "outDir": "dist",
     "declaration": true,

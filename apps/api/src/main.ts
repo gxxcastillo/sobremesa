@@ -1,10 +1,13 @@
 import { Elysia, t } from 'elysia';
 import { swagger } from '@elysiajs/swagger';
 import { cors } from '@elysiajs/cors';
-import { getServiceClient } from '@sobremesa/database';
-import { FamilyRepository } from '@sobremesa/database';
+import { FamilyRepository, getServiceClient } from '@sobremesa/database';
 
 const port = parseInt(process.env.PORT || '3000', 10);
+const hostname = process.env.HOST || '0.0.0.0';
+const tlsCertPath = process.env.TLS_CERT;
+const tlsKeyPath = process.env.TLS_KEY;
+const tlsConfig = tlsCertPath && tlsKeyPath ? { cert: Bun.file(tlsCertPath), key: Bun.file(tlsKeyPath) } : undefined;
 
 const app = new Elysia()
   .use(swagger())
@@ -263,8 +266,10 @@ const app = new Elysia()
   });
 
 // Start server
-app.listen(port, () => {
-  console.log(`📚 Publisher API server running on http://localhost:${port}`);
-  console.log(`   Health check: http://localhost:${port}/health`);
-  console.log(`   Swagger docs: http://localhost:${port}/swagger`);
+app.listen({ port, hostname, tls: tlsConfig }, () => {
+  const protocol = tlsConfig ? 'https' : 'http';
+  const hostLabel = hostname === '0.0.0.0' ? 'localhost' : hostname;
+  console.log(`📚 Publisher API server running on ${protocol}://${hostLabel}:${port}`);
+  console.log(`   Health check: ${protocol}://${hostLabel}:${port}/health`);
+  console.log(`   Swagger docs: ${protocol}://${hostLabel}:${port}/swagger`);
 });

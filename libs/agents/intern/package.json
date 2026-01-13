@@ -1,5 +1,5 @@
 {
-  "name": "@sobremesa/agents-filter",
+  "name": "@sobremesa/agents-intern",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@sobremesa/database": "workspace:*",
+    "@sobremesa/shared-types": "workspace:*",
     "@sobremesa/shared-utils": "workspace:*",
     "tslib": "^2.3.0"
   }

@@ -551,6 +551,87 @@ FAMILY_ID=family-b-uuid npm start
 
 ---
 
+## ADR-021: Intern Agent for Lightweight Preprocessing (Haiku)
+
+**Date:** 2026-01-12
+**Status:** Accepted
+
+**Context:**
+The Scribe agent uses Claude Sonnet for high-quality entity extraction, but:
+- Many messages don't contain relevant family history content
+- Running Sonnet on every message is expensive
+- Some tasks (filtering, image linking) don't require Sonnet's full capabilities
+- Need to reduce API costs while maintaining quality
+
+**Decision:**
+Create an "Intern" agent that uses Claude Haiku (`claude-3-5-haiku-20241022`) for lightweight preprocessing tasks:
+
+**Tasks:**
+1. **Message Filtering** - Determines if a message is relevant for Scribe extraction
+2. **Image Linking** - Detects when text messages reference recently shared images
+
+**Pipeline Position:**
+```
+Message → Intern (filter) → Scribe → Intern (image link) → Registrar
+```
+
+**Image Reference Types:**
+- `describes` - Text describes image content
+- `identifies_people` - Text identifies people in image
+- `provides_context` - Text provides date, location, or event context
+- `asks_about` - Text asks a question about the image
+
+**Consequences:**
+- **Positive:** Significant cost savings (Haiku is ~10x cheaper than Sonnet)
+- **Positive:** Faster preprocessing (Haiku has lower latency)
+- **Positive:** Catches image references Scribe might miss (specialized task)
+- **Positive:** Domain model augmentation pattern is extensible
+- **Negative:** Additional agent to maintain
+- **Negative:** Two-step image detection (Scribe + Intern fallback)
+- **Trade-off:** Cost efficiency worth the added complexity
+
+---
+
+## ADR-022: Domain Model Augmentation Pattern
+
+**Date:** 2026-01-12
+**Status:** Accepted
+
+**Context:**
+Scribe extracts domain models from messages, but may miss certain patterns (e.g., image references). Need a way for other agents to enhance the domain model without duplicating Scribe's work.
+
+**Decision:**
+Implement domain model augmentation pattern:
+1. Scribe produces initial domain model
+2. Subsequent agents (e.g., Intern image linker) can add to the model
+3. Registrar receives the final augmented model
+4. Augmentations are marked with lower confidence (e.g., `MEDIUM` vs Scribe's `HIGH`)
+
+**Implementation:**
+```typescript
+// If Scribe missed image reference, Intern adds it
+if (!alreadyDetected) {
+  domainModel.imageReferences = [
+    ...existingRefs,
+    {
+      imageId: linkResult.imageId,
+      referenceType: linkResult.referenceType,
+      confidence: Confidence.MEDIUM, // Lower than Scribe
+    },
+  ];
+}
+```
+
+**Consequences:**
+- **Positive:** Specialized agents can improve extraction quality
+- **Positive:** Clear confidence attribution (who detected what)
+- **Positive:** Extensible for future augmentation agents
+- **Positive:** No modification of Scribe code required
+- **Negative:** Requires careful coordination of agent execution order
+- **Trade-off:** Flexibility worth the orchestration complexity
+
+---
+
 ## Summary of Key Architectural Themes
 
 **1. Configurability** - Work for any family, any culture, any language

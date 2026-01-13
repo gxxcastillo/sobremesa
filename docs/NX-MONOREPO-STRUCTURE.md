@@ -78,12 +78,24 @@ sobremesa-workspace/
 │   │   │   │       └── translator.ts
 │   │   │   └── project.json
 │   │   │
-│   │   └── curator/
+│   │   ├── curator/
+│   │   │   ├── src/
+│   │   │   │   ├── index.ts
+│   │   │   │   ├── curator.ts
+│   │   │   │   ├── image-analyzer.ts
+│   │   │   │   └── ocr-extractor.ts
+│   │   │   └── project.json
+│   │   │
+│   │   ├── intern/                   ← Lightweight Haiku-based preprocessing
+│   │   │   ├── src/
+│   │   │   │   ├── index.ts
+│   │   │   │   └── intern.ts        ← Filter + image linking
+│   │   │   └── project.json
+│   │   │
+│   │   └── registrar/               ← Single writer (pure TypeScript)
 │   │       ├── src/
 │   │       │   ├── index.ts
-│   │       │   ├── curator.ts
-│   │       │   ├── image-analyzer.ts
-│   │       │   └── ocr-extractor.ts
+│   │       │   └── registrar.ts
 │   │       └── project.json
 │   │
 │   ├── database/                     ← Database layer
@@ -225,28 +237,35 @@ sobremesa-workspace/
 Visual dependency graph:
 
 ```
-apps/chat provider-bot
+apps/conversation-gateway
     ↓
     ├─→ libs/agents/facilitator
     ├─→ libs/agents/admin
     ├─→ libs/agents/scribe
     ├─→ libs/agents/curator
+    ├─→ libs/agents/intern
+    ├─→ libs/agents/registrar
     ├─→ libs/queue
     ├─→ libs/database
-    ├─→ libs/chat provider
+    ├─→ libs/telegram
     └─→ libs/config
 
-libs/agents/* (all agents)
+libs/agents/intern (uses Haiku)
+    ↓
+    ├─→ libs/database (conversation_events, images)
+    └─→ libs/shared/types
+
+libs/agents/* (other agents use Sonnet)
     ↓
     ├─→ libs/claude-api
     ├─→ libs/prompts
     ├─→ libs/database
     └─→ libs/shared/types
 
-libs/data-writer
+libs/agents/registrar (no LLM)
     ↓
     ├─→ libs/database
-    └─→ libs/web3 (optional)
+    └─→ libs/shared/types
 
 libs/queue
     ↓
@@ -384,6 +403,8 @@ nx g @nx/node:library agents/facilitator --directory=libs
 nx g @nx/node:library agents/admin --directory=libs
 nx g @nx/node:library agents/scribe --directory=libs
 nx g @nx/node:library agents/curator --directory=libs
+nx g @nx/node:library agents/intern --directory=libs
+nx g @nx/node:library agents/registrar --directory=libs
 
 # Generate infrastructure libraries
 nx g @nx/node:library database --directory=libs

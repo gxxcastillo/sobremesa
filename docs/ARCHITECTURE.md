@@ -27,16 +27,27 @@ family_id is the primary isolation boundary of the system.
 ```
 Chat Message
       │
-      ├──→ Queue → Events Table → Scribe → Registrar → Database (Claims Table)
+      ├──→ Queue → Events Table → Intern (filter) → Scribe → Intern (image link) → Registrar → Database
+      │                              │                                    │
+      │                              └─ skips irrelevant msgs ────────────┘
+      │                                                                   │
+      │                                                      (augments domain model if
+      │                                                       Scribe missed image refs)
       │
       └──→ Live Stream
            ├──→ Admin (contains internal coaching module, celebrations, mediation)
            └──→ Facilitator (activity tracking)
                     ↑
                     │
-              Coaching Module 
+              Coaching Module
               (monitors & adjusts in real-time)
 ```
+
+**Processing Pipeline:**
+1. **Intern (filter)** - Uses Haiku to quickly determine if message is relevant for extraction
+2. **Scribe** - Uses Sonnet to extract entities, claims, and questions from relevant messages
+3. **Intern (image link)** - Uses Haiku to detect if message references a recent image (catches what Scribe missed)
+4. **Registrar** - Persists domain model to database (pure TypeScript, no LLM)
 
 Ordering rule: Text messages are processed sequentially and in order (context-sensitive). Media enrichments (Curator outputs) are asynchronous and may arrive later; when they do, they generate additional domain-model outputs and questions without reordering the text stream.
 
@@ -51,27 +62,49 @@ sequenceDiagram
   participant Chat as Chat Provider
   participant DB as Database
   participant Q as Ordered Queue
-  participant S as Scribe (BotRole.SCRIBE)
+  participant I as Intern (Haiku)
+  participant S as Scribe (Sonnet)
   participant C as Curator (BotRole.CURATOR)
   participant R as Registrar (Single Writer)
   participant F as Facilitator (BotRole.FACILITATOR)
   participant A as Admin (BotRole.ADMIN)
 
   User->>Chat: Sends message (text and/or media)
-  Chat->>DB: Store raw message (messages)
-  DB->>Q: Enqueue message_id (ordered, per family_id)
+  Chat->>DB: Store raw message (conversation_events)
+  DB->>Q: Enqueue event_id (ordered, per family_id)
 
-  Q->>S: Dequeue next message_id (sequential)
-  S->>DB: Load context (recent msgs, pending questions, entities)
+  Q->>I: Dequeue next event_id (sequential)
+  I->>DB: Load event context
 
-  alt Text content
+  alt Intern filter
+    I->>I: Determine if message is relevant
+    alt Not relevant
+      I->>DB: Mark processed, log filter decision
+    else Relevant
+      I->>S: Pass to Scribe
+    end
+  end
+
+  alt Text content (Scribe)
+    S->>DB: Load context (recent msgs, pending questions, entities)
     S->>S: Extract entities/stories/claims<br/>Generate proposed questions<br/>Detect answered questions
-    S-->>R: Domain model (text)
+    S-->>I: Domain model (text)
   end
 
   alt Media attachment present
     S->>C: Dispatch media job (async, non-blocking)
   end
+
+  alt Intern image linking
+    I->>DB: Load recent images
+    I->>I: Check if message references image
+    alt Image reference detected (Scribe missed)
+      I->>I: Augment domain model with image reference
+      I->>DB: Log image_linked event
+    end
+  end
+
+  I-->>R: Final domain model
 
   R->>DB: Write entities/stories/claims (single writer)
   R->>DB: Write questions + question status updates

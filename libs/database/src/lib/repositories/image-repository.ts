@@ -145,7 +145,7 @@ export class ImageRepository extends BaseRepository<Image> {
       .filter((row) => row.conversation_events !== null)
       .map((row) => {
         // Remove the joined data before mapping
-        const { conversation_events, ...imageRow } = row;
+        const { conversation_events: _conversation_events, ...imageRow } = row;
         return this.mapFromDb(imageRow);
       });
   }

@@ -1,0 +1,414 @@
+import { ConversationEventRepository, ImageRepository } from '@sobremesa/database';
+import { createLogger } from '@sobremesa/shared-utils';
+import type pino from 'pino';
+import type { Image } from '@sobremesa/shared-types';
+
+/**
+ * Anthropic client interface.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnthropicClient = any;
+
+/**
+ * Result of a message filter task.
+ */
+export interface FilterResult {
+  /** Whether the message should be processed by Scribe */
+  relevant: boolean;
+  /** Reason for the decision (for logging/debugging) */
+  reason: string;
+  /** Tokens used for this call */
+  tokensUsed?: number;
+}
+
+/**
+ * How a message references an image.
+ */
+export type ImageReferenceType =
+  | 'describes'
+  | 'identifies_people'
+  | 'provides_context'
+  | 'asks_about';
+
+/**
+ * Result of image-text linking task.
+ */
+export interface ImageLinkResult {
+  /** Whether the message references an image */
+  linked: boolean;
+  /** The image ID if linked */
+  imageId?: string;
+  /** How the message references the image */
+  referenceType?: ImageReferenceType;
+  /** Brief explanation */
+  reason: string;
+  /** Tokens used for this call */
+  tokensUsed?: number;
+}
+
+/**
+ * Configuration for the Intern agent.
+ */
+export interface InternConfig {
+  /** Model to use (default: claude-3-5-haiku) */
+  model: string;
+  /** Maximum tokens for response */
+  maxTokens: number;
+  /** Number of recent messages for context */
+  recentMessageCount: number;
+}
+
+export const DEFAULT_INTERN_CONFIG: InternConfig = {
+  model: 'claude-3-5-haiku-20241022',
+  maxTokens: 100,
+  recentMessageCount: 2,
+};
+
+/**
+ * Options for creating an InternAgent.
+ */
+export interface InternAgentOptions {
+  /** Anthropic client (from @anthropic-ai/sdk) */
+  anthropic: AnthropicClient;
+  /** Conversation event repository */
+  eventRepo?: ConversationEventRepository;
+  /** Image repository */
+  imageRepo?: ImageRepository;
+  /** Logger instance */
+  logger?: pino.Logger;
+  /** Configuration overrides */
+  config?: Partial<InternConfig>;
+}
+
+const FILTER_SYSTEM_PROMPT = `You are a message filter for a family history application. Your job is to decide if a message might contain family history information worth extracting.
+
+RELEVANT messages (process these):
+- Stories about family members, ancestors, or relatives
+- Mentions of births, deaths, marriages, or other life events
+- References to places where family lived or traveled
+- Descriptions of family traditions, recipes, or customs
+- Old photos being discussed or described
+- Memories or anecdotes about family members
+- Genealogical information (dates, relationships, names)
+- Immigration or migration stories
+- Family business or work history
+
+NOT RELEVANT messages (skip these):
+- General greetings ("Hi!", "Good morning everyone!")
+- Logistics and scheduling ("What time is dinner?", "See you tomorrow")
+- Reactions and acknowledgments ("Thanks!", "OK", "👍", "LOL")
+- Off-topic conversations (weather, sports, news)
+- Technical chat issues ("Can you hear me?", "Is this working?")
+- Simple confirmations without context ("Yes", "No", "Sure")
+
+IMPORTANT: When in doubt, mark as RELEVANT. It's better to process an irrelevant message than miss family history.
+
+Respond with ONLY a JSON object:
+{"relevant": true/false, "reason": "brief explanation"}`;
+
+const IMAGE_LINK_SYSTEM_PROMPT = `You are an assistant that determines if a text message is referencing a recently shared image.
+
+You will be given:
+1. A list of recently shared images with their IDs and descriptions
+2. A text message to evaluate
+
+Determine if the message is talking about, describing, or asking about one of the images.
+
+Reference types:
+- "describes": The message describes what's in the image ("That's a beautiful photo", "I see a house in the background")
+- "identifies_people": The message identifies who is in the image ("That's grandma on the left", "The tall one is Uncle Roberto")
+- "provides_context": The message gives context about the image ("This was taken at the wedding", "That's from 1962 in Buenos Aires")
+- "asks_about": The message asks a question about the image ("Who is that?", "Where was this taken?", "Is that dad?")
+
+IMPORTANT:
+- Only link if the message CLEARLY refers to one of the listed images
+- If the message could be about any image or is ambiguous, don't link
+- If no images are provided, always return linked: false
+
+Respond with ONLY a JSON object:
+{"linked": true/false, "image_id": "id or null", "reference_type": "type or null", "reason": "brief explanation"}`;
+
+/**
+ * The Intern agent uses Haiku for fast, lightweight preprocessing tasks.
+ * It handles quick checks and classifications before heavier agents run.
+ */
+export class InternAgent {
+  private anthropic: AnthropicClient;
+  private eventRepo: ConversationEventRepository;
+  private imageRepo: ImageRepository;
+  private logger: pino.Logger;
+  private config: InternConfig;
+
+  constructor(options: InternAgentOptions) {
+    this.anthropic = options.anthropic;
+    this.eventRepo = options.eventRepo || new ConversationEventRepository();
+    this.imageRepo = options.imageRepo || new ImageRepository();
+    this.logger = options.logger || createLogger({ name: 'intern' });
+    this.config = { ...DEFAULT_INTERN_CONFIG, ...options.config };
+  }
+
+  /**
+   * Filter a message to determine if it should be processed by Scribe.
+   */
+  async filter(eventId: string, familyId: string): Promise<FilterResult> {
+    try {
+      // Load the event
+      const event = await this.eventRepo.findById(familyId, eventId);
+      if (!event) {
+        this.logger.warn({ eventId }, 'Event not found for filtering');
+        return { relevant: true, reason: 'Event not found, defaulting to relevant' };
+      }
+
+      // Skip non-text events (photos, documents) - let Scribe handle those
+      if (event.eventType !== 'message') {
+        return { relevant: true, reason: `Non-text event type: ${event.eventType}` };
+      }
+
+      // Skip empty messages
+      const messageText = event.contentOriginal?.trim();
+      if (!messageText) {
+        return { relevant: false, reason: 'Empty message' };
+      }
+
+      // Skip very short messages (likely reactions)
+      if (messageText.length < 3) {
+        return { relevant: false, reason: 'Message too short' };
+      }
+
+      // Get recent messages for context
+      const recentMessages = await this.eventRepo.findRecent(
+        familyId,
+        event.conversationId,
+        this.config.recentMessageCount + 1 // +1 to include current, then filter it out
+      );
+
+      // Build context from recent messages (excluding current)
+      const contextMessages = recentMessages
+        .filter((m) => m.id !== eventId && m.contentOriginal)
+        .slice(0, this.config.recentMessageCount)
+        .map((m) => `- ${m.actorDisplayName || 'Someone'}: "${m.contentOriginal}"`)
+        .join('\n');
+
+      // Build user message
+      const userMessage = contextMessages
+        ? `Recent conversation:\n${contextMessages}\n\nNew message to evaluate:\n"${messageText}"`
+        : `Message to evaluate:\n"${messageText}"`;
+
+      // Call Haiku
+      const response = await this.anthropic.messages.create({
+        model: this.config.model,
+        max_tokens: this.config.maxTokens,
+        system: FILTER_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+
+      // Parse response
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        this.logger.warn({ eventId }, 'Unexpected response type, defaulting to relevant');
+        return { relevant: true, reason: 'Unexpected response type' };
+      }
+
+      const result = this.parseFilterResponse(content.text);
+
+      // Calculate tokens used
+      const tokensUsed =
+        (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
+
+      this.logger.debug(
+        {
+          eventId,
+          relevant: result.relevant,
+          reason: result.reason,
+          tokensUsed,
+          messagePreview: messageText.slice(0, 50),
+        },
+        'Filter result'
+      );
+
+      return { ...result, tokensUsed };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error({ eventId, error: errorMessage }, 'Filter error, defaulting to relevant');
+      // Default to relevant on error - don't skip messages due to filter failures
+      return { relevant: true, reason: `Filter error: ${errorMessage}` };
+    }
+  }
+
+  /**
+   * Parse the JSON response from the filter prompt.
+   */
+  private parseFilterResponse(text: string): { relevant: boolean; reason: string } {
+    try {
+      // Try to extract JSON from the response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return { relevant: true, reason: 'Could not parse response, defaulting to relevant' };
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      // Validate and extract fields
+      const relevant = typeof parsed.relevant === 'boolean' ? parsed.relevant : true;
+      const reason = typeof parsed.reason === 'string' ? parsed.reason : 'No reason provided';
+
+      return { relevant, reason };
+    } catch {
+      return { relevant: true, reason: 'JSON parse error, defaulting to relevant' };
+    }
+  }
+
+  /**
+   * Check if a message references a recently shared image.
+   * This helps Scribe understand when text messages are describing photos.
+   */
+  async linkToImage(eventId: string, familyId: string): Promise<ImageLinkResult> {
+    try {
+      // Load the event
+      const event = await this.eventRepo.findById(familyId, eventId);
+      if (!event) {
+        this.logger.warn({ eventId }, 'Event not found for image linking');
+        return { linked: false, reason: 'Event not found' };
+      }
+
+      // Only process text messages
+      if (event.eventType !== 'message') {
+        return { linked: false, reason: `Non-text event type: ${event.eventType}` };
+      }
+
+      const messageText = event.contentOriginal?.trim();
+      if (!messageText) {
+        return { linked: false, reason: 'Empty message' };
+      }
+
+      // Get recent images in the conversation
+      const recentImages = await this.imageRepo.findRecentInConversation(
+        familyId,
+        event.conversationId,
+        5 // Check last 5 images
+      );
+
+      if (recentImages.length === 0) {
+        return { linked: false, reason: 'No recent images in conversation' };
+      }
+
+      // Build image context for the prompt
+      const imageDescriptions = recentImages
+        .map((img) => this.formatImageForPrompt(img))
+        .join('\n');
+
+      // Build user message
+      const userMessage = `Recent images:\n${imageDescriptions}\n\nMessage to evaluate:\n"${messageText}"`;
+
+      // Call Haiku
+      const response = await this.anthropic.messages.create({
+        model: this.config.model,
+        max_tokens: this.config.maxTokens,
+        system: IMAGE_LINK_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+
+      // Parse response
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        this.logger.warn({ eventId }, 'Unexpected response type for image link');
+        return { linked: false, reason: 'Unexpected response type' };
+      }
+
+      const result = this.parseImageLinkResponse(content.text);
+
+      // Calculate tokens used
+      const tokensUsed =
+        (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
+
+      this.logger.debug(
+        {
+          eventId,
+          linked: result.linked,
+          imageId: result.imageId,
+          referenceType: result.referenceType,
+          reason: result.reason,
+          tokensUsed,
+          messagePreview: messageText.slice(0, 50),
+        },
+        'Image link result'
+      );
+
+      return { ...result, tokensUsed };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error({ eventId, error: errorMessage }, 'Image link error');
+      return { linked: false, reason: `Error: ${errorMessage}` };
+    }
+  }
+
+  /**
+   * Format an image for the prompt context.
+   */
+  private formatImageForPrompt(image: Image): string {
+    const parts: string[] = [`[${image.id}]`];
+    parts.push(image.fileType || 'image');
+
+    if (image.sharedBy) {
+      parts.push(`shared by ${image.sharedBy}`);
+    }
+
+    // Add analysis info if available
+    const analysis = image.analysis as Record<string, unknown> | undefined;
+    if (analysis?.description) {
+      parts.push(`- "${analysis.description}"`);
+    }
+
+    if (image.peopleCount) {
+      parts.push(`(${image.peopleCount} people visible)`);
+    }
+
+    if (image.estimatedEra) {
+      parts.push(`(~${image.estimatedEra})`);
+    }
+
+    return parts.join(' ');
+  }
+
+  /**
+   * Parse the JSON response from the image link prompt.
+   */
+  private parseImageLinkResponse(text: string): ImageLinkResult {
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return { linked: false, reason: 'Could not parse response' };
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      const linked = typeof parsed.linked === 'boolean' ? parsed.linked : false;
+      const reason = typeof parsed.reason === 'string' ? parsed.reason : 'No reason provided';
+
+      if (!linked) {
+        return { linked: false, reason };
+      }
+
+      // Validate image_id
+      const imageId = typeof parsed.image_id === 'string' ? parsed.image_id : undefined;
+      if (!imageId) {
+        return { linked: false, reason: 'No image ID in response' };
+      }
+
+      // Validate reference_type
+      const validTypes: ImageReferenceType[] = [
+        'describes',
+        'identifies_people',
+        'provides_context',
+        'asks_about',
+      ];
+      const referenceType = validTypes.includes(parsed.reference_type)
+        ? (parsed.reference_type as ImageReferenceType)
+        : 'describes';
+
+      return { linked: true, imageId, referenceType, reason };
+    } catch {
+      return { linked: false, reason: 'JSON parse error' };
+    }
+  }
+}

@@ -39,7 +39,7 @@ export default function App() {
 
         {summary() && (
           <div class="summary-container">
-            <h2>WHAT WE KNOW: {summary()!.familyName}</h2>
+            <h2>{summary()!.familyName}</h2>
 
             {summary()!.people.length > 0 && (
               <section class="summary-section">

@@ -3,18 +3,27 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "projectType": "application",
   "sourceRoot": "apps/api/src",
-  "tags": [],
+  "tags": ["scope:async"],
   "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "source .env && export TLS_CERT=certs/sobremesa.x-cert.pem TLS_KEY=certs/sobremesa.x-key.pem PORT=3001 && ~/.bun/bin/bun run apps/api/src/main.ts",
+        "cwd": "{workspaceRoot}"
+      }
+    },
     "serve": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "cd apps/api && bun run src/main.ts"
+        "command": "~/.bun/bin/bun run src/main.ts",
+        "cwd": "apps/api"
       }
     },
     "build": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "cd apps/api && bun build src/main.ts --outdir dist"
+        "command": "~/.bun/bin/bun build src/main.ts --outdir dist",
+        "cwd": "apps/api"
       }
     }
   }

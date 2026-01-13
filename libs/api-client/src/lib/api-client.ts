@@ -59,8 +59,11 @@ export interface QuestionStats {
 export class PublisherApiClient {
   private baseUrl: string;
 
-  constructor(baseUrl: string = '') {
-    this.baseUrl = baseUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+  constructor(baseUrl = '') {
+    // Prefer explicit env override, then passed-in value, then current origin (no explicit port), then fallback
+    const envBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) || '';
+    const originFallback = typeof window !== 'undefined' ? window.location.origin : '';
+    this.baseUrl = envBase || baseUrl || originFallback || 'https://sobremesa.x:3000';
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {

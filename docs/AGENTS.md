@@ -6,15 +6,16 @@ For detailed specifications, see individual agent files in this directory.
 
 ---
 
-## The Five Agents
+## The Six Agents
 
-| Agent | Role | Visible? | Calls Claude API? | Prompt File |
-|-------|------|----------|-------------------|-------------|
-| **Facilitator** | Asks warm questions | ✅ Yes | ✅ Yes | `prompts/facilitator.md` |
-| **Admin** | Celebrates & mediates | ✅ Yes | ✅ Yes | `prompts/admin.md` |
-| **Scribe** | Extracts data | ❌ No | ✅ Yes | `prompts/scribe.md` |
-| **Curator** | Analyzes photos | ❌ No | ✅ Yes | `prompts/curator.md` |
-| **Registrar** | Saves to database | ❌ No | ❌ No | None (pure logic) |
+| Agent | Role | Visible? | Calls Claude API? | Model | Prompt File |
+|-------|------|----------|-------------------|-------|-------------|
+| **Facilitator** | Asks warm questions | ✅ Yes | ✅ Yes | Sonnet | `prompts/facilitator.md` |
+| **Admin** | Celebrates & mediates | ✅ Yes | ✅ Yes | Sonnet | `prompts/admin.md` |
+| **Scribe** | Extracts data | ❌ No | ✅ Yes | Sonnet | `prompts/scribe.md` |
+| **Curator** | Analyzes photos | ❌ No | ✅ Yes | Sonnet | `prompts/curator.md` |
+| **Intern** | Filters & links images | ❌ No | ✅ Yes | Haiku | None (code prompts) |
+| **Registrar** | Saves to database | ❌ No | ❌ No | N/A | None (pure logic) |
 
 ---
 
@@ -86,10 +87,31 @@ For detailed specifications, see individual agent files in this directory.
 
 ---
 
+### 📋 Intern (Preprocessing)
+
+**What:** Lightweight preprocessing agent using Haiku for fast, low-cost operations
+**When:** Before and after Scribe during message processing
+**How:** Uses Claude Haiku (`claude-3-5-haiku-20241022`) for quick classification tasks
+
+**Key Functions:**
+- **Filter** - Determines if a message is relevant for Scribe processing
+- **Image Link** - Detects when text messages reference recently shared images
+- **Augment** - Adds image references to domain model if Scribe missed them
+
+**Image Reference Types:**
+- `describes` - Text describes what's in the image
+- `identifies_people` - Text identifies people in the image
+- `provides_context` - Text provides context about the image (date, location, event)
+- `asks_about` - Text asks a question about the image
+
+**Key Benefit:** Uses Haiku for preprocessing tasks, reducing Sonnet API costs while maintaining quality for the main extraction.
+
+---
+
 ### 💾 Registrar (Backend)
 
-**What:** Single database writer - receives domain models, saves to Supabase  
-**When:** After Scribe or Curator completes processing  
+**What:** Single database writer - receives domain models, saves to Supabase
+**When:** After Scribe or Curator completes processing
 **How:** Pure TypeScript logic (no AI)
 
 **Key Functions:**
@@ -108,19 +130,25 @@ For detailed specifications, see individual agent files in this directory.
 ```
 1. Message arrives in Chat Provider
    ↓
-2. Stored in messages table
+2. Stored in conversation_events table
    ↓
 3. Added to ordered queue
    ↓
-4. Scribe processes (extracts entities, creates claims)
+4. Intern filters (determines if relevant for extraction)
+   ├─ NOT RELEVANT → Mark processed, skip to step 8
+   └─ RELEVANT → Continue
    ↓
-5. Registrar saves (domain model → database)
+5. Scribe processes (extracts entities, creates claims)
    ↓
-6. Facilitator checks if should ask question
+6. Intern links images (catches image references Scribe missed)
+   ↓
+7. Registrar saves (domain model → database)
+   ↓
+8. Facilitator checks if should ask question
    ├─ YES → Asks warmly using 4-part formula
    └─ NO → Waits (logs reason in event_log)
    ↓
-7. Admin monitors and adjusts
+9. Admin monitors and adjusts
    ├─ Celebrates milestones
    ├─ Mediates conflicts
    └─ Coaches Facilitator
@@ -217,6 +245,7 @@ All access scoped by family_id
 |-------|-----------|------------|
 | **Facilitator** | questions, facilitator_rules, real_time_levers, messages (activity) | event_log (decisions only) |
 | **Admin** | All tables | facilitator_rules, real_time_levers, event_log |
+| **Intern** | conversation_events, images (recent) | event_log (filter/link decisions) |
 | **Scribe** | messages, people, places, questions (to detect answers) | None (outputs domain model) |
 | **Curator** | messages, images, stories (for connections) | None (outputs to Registrar) |
 | **Registrar** | All tables (for deduplication) | people, places, events, stories, claims, questions, images |
@@ -295,11 +324,16 @@ In the Nx monorepo:
 libs/agents/
 ├── facilitator/        ← Implements facilitator.md spec
 ├── admin/              ← Implements admin.md spec
-├── scribe/         ← Implements scribe.md spec
-└── curator/   ← Implements curator.md spec
-
-libs/data-writer/       ← Implements data-writer.md spec (not an agent lib)
+├── scribe/             ← Implements scribe.md spec
+├── curator/            ← Implements curator.md spec
+├── intern/             ← Lightweight preprocessing (Haiku-based)
+└── registrar/          ← Single writer (pure TypeScript logic)
 ```
+
+**Agent Model Allocation:**
+- **Intern** uses Claude Haiku (`claude-3-5-haiku-20241022`) for fast, low-cost preprocessing
+- **Scribe, Curator, Facilitator, Admin** use Claude Sonnet for complex reasoning
+- **Registrar** requires no LLM (pure TypeScript logic)
 
 Each library loads its corresponding prompt from `prompts/` and implements the decision logic described in its spec.
 
