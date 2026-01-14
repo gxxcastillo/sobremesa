@@ -15,10 +15,7 @@
       }
     },
     "test": {
-      "executor": "@nx/vite:test",
-      "options": {
-        "config": "libs/agents/registrar/vite.config.ts"
-      }
+      "executor": "@nx/vite:test"
     }
   }
 }

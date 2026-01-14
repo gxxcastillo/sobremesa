@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => ({
   root: import.meta.dirname,
-  cacheDir: '../../../node_modules/.vite/libs/agents/registrar',
+  cacheDir: './node_modules/.vite',
   plugins: [],
   test: {
     name: 'agents-registrar',

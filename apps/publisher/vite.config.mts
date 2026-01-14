@@ -7,7 +7,7 @@ import selfsigned from 'selfsigned';
 
 export default defineConfig(() => ({
   root: import.meta.dirname,
-  cacheDir: '../../node_modules/.vite/apps/publisher',
+  cacheDir: '.node_modules/.vite',
   server: {
     port: 3000,
     host: 'sobremesa.x',

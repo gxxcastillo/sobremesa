@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig(() => ({
   root: __dirname,
-  cacheDir: '../../node_modules/.vite/libs/queue',
+  cacheDir: '.node_modules/.vite',
   test: {
     name: 'queue',
     watch: false,

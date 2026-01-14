@@ -16,5 +16,8 @@
   "dependencies": {
     "tslib": "^2.3.0",
     "pino": "^10.1.1"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.1.3"
   }
 }

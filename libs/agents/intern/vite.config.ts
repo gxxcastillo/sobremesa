@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => ({
   root: import.meta.dirname,
-  cacheDir: '../../../node_modules/.vite/libs/agents/intern',
+  cacheDir: './node_modules/.vite',
   plugins: [],
   test: {
     name: 'agents-intern',
