@@ -4,7 +4,10 @@
   "license": "MIT",
   "scripts": {
     "prepare": "husky",
-    "format:all": "prettier --write ."
+    "format:all": "prettier --write .",
+    "test:all": "nx run-many -t test",
+    "lint:all": "nx run-many -t lint",
+    "types:all": "nx run-many -t types"
   },
   "private": true,
   "engines": {

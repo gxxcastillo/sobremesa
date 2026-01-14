@@ -88,7 +88,10 @@ export interface VideoMessageInput extends BaseMessageInput {
 /**
  * Union type for all media message inputs.
  */
-export type MediaMessageInput = PhotoMessageInput | DocumentMessageInput | VideoMessageInput;
+export type MediaMessageInput =
+  | PhotoMessageInput
+  | DocumentMessageInput
+  | VideoMessageInput;
 
 /**
  * Platform-agnostic message ingester.
@@ -111,9 +114,16 @@ export class MessageIngester {
    * Ingest a text message from any provider.
    * Returns the event ID if created, null if duplicate.
    */
-  async ingestTextMessage(familyId: string, input: TextMessageInput): Promise<string | null> {
+  async ingestTextMessage(
+    familyId: string,
+    input: TextMessageInput
+  ): Promise<string | null> {
     this.logger.debug(
-      { conversationId: input.conversationId, eventId: input.externalEventId, from: input.actor.username },
+      {
+        conversationId: input.conversationId,
+        eventId: input.externalEventId,
+        from: input.actor.username,
+      },
       'Ingesting text message'
     );
 
@@ -126,7 +136,10 @@ export class MessageIngester {
     );
 
     if (existing) {
-      this.logger.debug({ eventId: input.externalEventId }, 'Message already exists, skipping');
+      this.logger.debug(
+        { eventId: input.externalEventId },
+        'Message already exists, skipping'
+      );
       return null;
     }
 
@@ -181,7 +194,10 @@ export class MessageIngester {
    * Ingest a photo message from any provider.
    * Returns the event ID if created, null if duplicate.
    */
-  async ingestPhotoMessage(familyId: string, input: PhotoMessageInput): Promise<string | null> {
+  async ingestPhotoMessage(
+    familyId: string,
+    input: PhotoMessageInput
+  ): Promise<string | null> {
     this.logger.debug(
       { conversationId: input.conversationId, eventId: input.externalEventId },
       'Ingesting photo message'
@@ -196,7 +212,10 @@ export class MessageIngester {
     );
 
     if (existing) {
-      this.logger.debug({ eventId: input.externalEventId }, 'Photo already exists, skipping');
+      this.logger.debug(
+        { eventId: input.externalEventId },
+        'Photo already exists, skipping'
+      );
       return null;
     }
 
@@ -222,7 +241,9 @@ export class MessageIngester {
       actorUsername: input.actor.username,
       eventType: 'photo',
       contentOriginal: input.caption || undefined,
-      languageOriginal: input.caption ? detectLanguage(input.caption) : undefined,
+      languageOriginal: input.caption
+        ? detectLanguage(input.caption)
+        : undefined,
       metadata,
       sourcePayload: input.sourcePayload,
       processed: false,
@@ -261,7 +282,10 @@ export class MessageIngester {
    * Ingest a document message from any provider.
    * Returns the event ID if created, null if duplicate.
    */
-  async ingestDocumentMessage(familyId: string, input: DocumentMessageInput): Promise<string | null> {
+  async ingestDocumentMessage(
+    familyId: string,
+    input: DocumentMessageInput
+  ): Promise<string | null> {
     this.logger.debug(
       { conversationId: input.conversationId, eventId: input.externalEventId },
       'Ingesting document message'
@@ -276,7 +300,10 @@ export class MessageIngester {
     );
 
     if (existing) {
-      this.logger.debug({ eventId: input.externalEventId }, 'Document already exists, skipping');
+      this.logger.debug(
+        { eventId: input.externalEventId },
+        'Document already exists, skipping'
+      );
       return null;
     }
 
@@ -302,7 +329,9 @@ export class MessageIngester {
       actorUsername: input.actor.username,
       eventType: 'document',
       contentOriginal: input.caption || undefined,
-      languageOriginal: input.caption ? detectLanguage(input.caption) : undefined,
+      languageOriginal: input.caption
+        ? detectLanguage(input.caption)
+        : undefined,
       metadata,
       sourcePayload: input.sourcePayload,
       processed: false,
@@ -342,7 +371,10 @@ export class MessageIngester {
    * Ingest a video message from any provider.
    * Returns the event ID if created, null if duplicate.
    */
-  async ingestVideoMessage(familyId: string, input: VideoMessageInput): Promise<string | null> {
+  async ingestVideoMessage(
+    familyId: string,
+    input: VideoMessageInput
+  ): Promise<string | null> {
     this.logger.debug(
       { conversationId: input.conversationId, eventId: input.externalEventId },
       'Ingesting video message'
@@ -357,7 +389,10 @@ export class MessageIngester {
     );
 
     if (existing) {
-      this.logger.debug({ eventId: input.externalEventId }, 'Video already exists, skipping');
+      this.logger.debug(
+        { eventId: input.externalEventId },
+        'Video already exists, skipping'
+      );
       return null;
     }
 
@@ -386,7 +421,9 @@ export class MessageIngester {
       actorUsername: input.actor.username,
       eventType: 'video',
       contentOriginal: input.caption || undefined,
-      languageOriginal: input.caption ? detectLanguage(input.caption) : undefined,
+      languageOriginal: input.caption
+        ? detectLanguage(input.caption)
+        : undefined,
       metadata,
       sourcePayload: input.sourcePayload,
       processed: false,

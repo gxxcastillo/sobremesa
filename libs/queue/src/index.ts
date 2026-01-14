@@ -1,4 +1,4 @@
-export { MessageQueue, type MessageHandler } from './lib/message-queue.js';
+export { MessageQueue, type MessageHandler } from './lib/message-queue';
 export {
   MessageProcessor,
   type FilterProcessor,
@@ -9,4 +9,4 @@ export {
   type ScribeProcessor,
   type RegistrarProcessor,
   type OnImageCreatedCallback,
-} from './lib/processor.js';
+} from './lib/processor';

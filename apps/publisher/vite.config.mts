@@ -61,7 +61,10 @@ export default defineConfig(() => ({
   plugins: [solid()],
   resolve: {
     alias: {
-      '@sobremesa/api-client': path.resolve(import.meta.dirname, '../../libs/api-client/src/index.ts'),
+      '@sobremesa/api-client': path.resolve(
+        import.meta.dirname,
+        '../../libs/api-client/src/index.ts'
+      ),
     },
   },
   build: {
@@ -78,6 +81,7 @@ export default defineConfig(() => ({
     globals: true,
     environment: 'jsdom',
     include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    passWithNoTests: true,
     reporters: ['default'],
     coverage: {
       reportsDirectory: './test-output/vitest/coverage',

@@ -1,4 +1,2 @@
 '*.{ts,tsx,js,jsx,json,yaml,yml,md,html,css}': prettier --write
-'*.{ts,tsx,js,jsx}':
-  - eslint --fix
-  - tsc --noEmit
+'*.{ts,tsx,js,jsx}': eslint --fix

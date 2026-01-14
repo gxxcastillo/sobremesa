@@ -130,8 +130,8 @@ npx nx release publish --projects=strings,colors
 
 This repository uses tags to enforce module boundaries:
 
-| Package        | Tag             | Can Import From        |
-| -------------- | --------------- | ---------------------- |
+| Package              | Tag             | Can Import From        |
+| -------------------- | --------------- | ---------------------- |
 | `@sobremesa/utils`   | `scope:shared`  | Nothing (base library) |
 | `@sobremesa/strings` | `scope:strings` | `scope:shared`         |
 | `@sobremesa/async`   | `scope:async`   | `scope:shared`         |
@@ -202,13 +202,11 @@ Join the Nx community:
 - [YouTube](https://www.youtube.com/@nxdevtools)
 - [Blog](https://nx.dev/blog)
 
-
-
 -------- NEW ------
 
 # Sobremesa
 
-> *"Sobremesa"* - That special time after a meal when family gathers, conversation flows, and stories are shared.
+> _"Sobremesa"_ - That special time after a meal when family gathers, conversation flows, and stories are shared.
 
 An AI-powered family history collection system that preserves your family's stories through warm, natural conversation.
 
@@ -217,6 +215,7 @@ An AI-powered family history collection system that preserves your family's stor
 ## What is Sobremesa?
 
 Sobremesa helps families preserve their history by creating a warm, conversational space where:
+
 - **Stories flow naturally** - No forms, no interviews, just conversation
 - **AI asks thoughtful questions** - Filling in gaps while respecting emotional boundaries
 - **Conflicts are preserved** - Different memories honored, never auto-resolved
@@ -347,7 +346,7 @@ Start here to understand the system:
 4. **🎨 Curator** - Analyzes photos and documents (hidden)
 5. **💾 Registrar** - Saves everything with provenance (backend)
 
-*Note: Names are configurable - "Carmencita" is the default for a Nicaraguan family.*
+_Note: Names are configurable - "Carmencita" is the default for a Nicaraguan family._
 
 ### The Flow
 
@@ -397,6 +396,7 @@ The system ships with default settings for a Spanish/English bilingual family:
 ### Customize for Your Family
 
 See [CONFIGURATION.md](.claude/CONFIGURATION.md) for complete customization guide:
+
 - Different languages (English, Japanese, Italian, etc.)
 - Different bot names and personalities
 - Cultural term preservation
@@ -443,6 +443,7 @@ nx g @nx/node:library my-library --directory=libs
 ### Schema
 
 Complete PostgreSQL schema in `.claude/SCHEMA.sql`:
+
 - 16 tables (messages, people, places, events, stories, claims, etc.)
 - 4 helper views
 - Complete audit trail (event_log)
@@ -452,7 +453,7 @@ Complete PostgreSQL schema in `.claude/SCHEMA.sql`:
 ### Key Tables
 
 - **messages** - Raw Chat Provider messages
-- **claims** - All factual claims with provenance *(key innovation)*
+- **claims** - All factual claims with provenance _(key innovation)_
 - **people, places, events, stories** - Extracted entities
 - **questions** - Facilitator's question queue
 - **facilitator_rules** - Dynamic engagement rules
@@ -546,16 +547,19 @@ See [DECISIONS.md](.claude/DECISIONS.md) for full architecture decision records.
 See [.claude/TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md) (if exists) or check:
 
 **Bot not responding?**
+
 - Check event_log table for errors
 - Verify CHAT PROVIDER_BOT_TOKEN
 - Check Anthropic API quota
 
 **Questions too frequent?**
+
 - Coaching module will auto-adjust
 - Check facilitator_rules table
 - Adjust real_time_levers if needed
 
 **Wrong language?**
+
 - Check config.languages.primary
 - Verify message language detection
 - Check cultural terms preservation
@@ -573,6 +577,7 @@ See [.claude/TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md) (if exists) or chec
 Built with warmth for families everywhere who want to preserve their stories before they're lost.
 
 **Special thanks to:**
+
 - Families sharing their precious memories
 - The Ruby Darío literary tradition (inspiration for "Don Rubén")
 - The concept of "sobremesa" - that beautiful after-meal conversation time

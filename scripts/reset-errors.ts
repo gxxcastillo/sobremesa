@@ -8,7 +8,13 @@ async function main() {
   // Find and reset error items
   const { data, error } = await client
     .from('processing_queue')
-    .update({ status: 'queued', locked_at: null, locked_by: null, last_error: null, attempts: 0 })
+    .update({
+      status: 'queued',
+      locked_at: null,
+      locked_by: null,
+      last_error: null,
+      attempts: 0,
+    })
     .eq('status', 'error')
     .select();
 

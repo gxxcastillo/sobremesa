@@ -8,14 +8,14 @@ Progress tracker for Sobremesa development.
 
 **Last Updated:** January 2026
 
-| Phase | Status | Notes |
-|-------|--------|-------|
-| Phase 1: Foundation | COMPLETE | Telegram bots, Supabase, message ingestion |
-| Phase 2: Core Extraction | COMPLETE | Scribe extracts entities, Registrar persists |
-| Phase 3: Question System | COMPLETE | Warm questions, Facilitator asks, answer detection |
-| Phase 4: Coaching & Optimization | NOT STARTED | Adaptive behavior based on response patterns |
-| Phase 5: Admin Functions | NOT STARTED | Celebrations, conflict mediation |
-| Phase 6: Polish | NOT STARTED | Curator, Web3, translations |
+| Phase                            | Status      | Notes                                              |
+| -------------------------------- | ----------- | -------------------------------------------------- |
+| Phase 1: Foundation              | COMPLETE    | Telegram bots, Supabase, message ingestion         |
+| Phase 2: Core Extraction         | COMPLETE    | Scribe extracts entities, Registrar persists       |
+| Phase 3: Question System         | COMPLETE    | Warm questions, Facilitator asks, answer detection |
+| Phase 4: Coaching & Optimization | NOT STARTED | Adaptive behavior based on response patterns       |
+| Phase 5: Admin Functions         | NOT STARTED | Celebrations, conflict mediation                   |
+| Phase 6: Polish                  | NOT STARTED | Curator, Web3, translations                        |
 
 ---
 
@@ -24,12 +24,14 @@ Progress tracker for Sobremesa development.
 **Goal:** Basic infrastructure working end-to-end.
 
 ### Database Setup
+
 - [x] Create Supabase project
 - [x] Run SCHEMA.sql
 - [x] Verify all tables created
 - [x] Test connection from Node.js
 
 ### Telegram Bot Connection
+
 - [x] Create bots via BotFather (Scribe, Facilitator, Admin)
 - [x] Connect to Telegram Bot API via Telegraf
 - [x] Receive messages in group chat
@@ -37,17 +39,20 @@ Progress tracker for Sobremesa development.
 - [x] Handle text, photo, document messages
 
 ### Queue System
+
 - [x] `processing_queue` table with optimistic locking
 - [x] FIFO processing (one message at a time)
 - [x] Retry logic with exponential backoff
 - [x] Queue monitoring via event_log
 
 ### Family Registration
+
 - [x] `/register` command to link chat to family
 - [x] Dynamic family lookup by chat ID
 - [x] Multi-family support (family_id scoping)
 
 **Verification:**
+
 ```bash
 nx serve chatbots
 # Send message in Telegram group
@@ -63,6 +68,7 @@ nx serve chatbots
 **Goal:** Scribe extracts data, Registrar saves it.
 
 ### Scribe Agent
+
 - [x] Process message from queue
 - [x] Call Claude API with extraction prompt
 - [x] Extract entities: people, places, events, relationships
@@ -72,6 +78,7 @@ nx serve chatbots
 - [x] Context loading (recent messages + family data)
 
 ### Registrar Agent
+
 - [x] Receive domain model from Scribe
 - [x] Map to database schema
 - [x] Deduplicate people (name matching)
@@ -81,12 +88,14 @@ nx serve chatbots
 - [x] Handle relationships
 
 ### Libraries Created
+
 - `libs/agents/scribe` - Scribe agent with prompt builder
 - `libs/agents/registrar` - Registrar with repository access
 - `libs/queue` - MessageQueue + MessageProcessor
 - `libs/database` - All repositories
 
 **Verification:**
+
 ```bash
 npx tsx scripts/test-scribe.ts
 # Check: ScribeDomainModel output with people, places, events
@@ -101,6 +110,7 @@ npx tsx scripts/summary.ts
 **Goal:** Scribe generates questions, Facilitator asks them warmly.
 
 ### Question Generation (Scribe)
+
 - [x] Detect gaps in stories (who, what, when, where, why)
 - [x] Generate warm questions (not interrogative)
 - [x] Assign priorities (0-100 scale)
@@ -108,6 +118,7 @@ npx tsx scripts/summary.ts
 - [x] Include targeting (target_person, target_event, target_place)
 
 ### Facilitator Agent
+
 - [x] Read pending questions by priority
 - [x] Rate limiting (min minutes between questions per family)
 - [x] Send via Facilitator bot
@@ -116,6 +127,7 @@ npx tsx scripts/summary.ts
 - [x] Log decisions in event_log
 
 ### Answer Detection
+
 - [x] Track external message ID when Facilitator sends question
 - [x] Detect replies (via externalReplyToId)
 - [x] Match reply to original question
@@ -123,9 +135,11 @@ npx tsx scripts/summary.ts
 - [x] Link answer message to question
 
 ### Libraries Created
+
 - `libs/agents/facilitator` - FacilitatorAgent
 
 **Verification:**
+
 ```bash
 npx tsx scripts/test-facilitator.ts
 # Check: Question asked with mock sender
@@ -142,6 +156,7 @@ npx tsx scripts/test-answer-detection.ts
 **Goal:** System adapts to family response patterns.
 
 ### Coaching Module (in Admin)
+
 - [ ] Monitor facilitator performance
   - [ ] Track ignore rate (questions not answered)
   - [ ] Track response rate (questions answered)
@@ -155,6 +170,7 @@ npx tsx scripts/test-answer-detection.ts
 - [ ] Log all adjustments in event_log
 
 ### Real-Time Flow Monitoring
+
 - [ ] Monitor event_log for patterns
 - [ ] Adjust real-time levers when issues detected
 - [ ] Log lever adjustments
@@ -166,18 +182,21 @@ npx tsx scripts/test-answer-detection.ts
 **Goal:** Admin manages project, celebrates, mediates.
 
 ### Milestone Celebrations
+
 - [ ] Track story count, contributor count
 - [ ] Detect milestones (10, 25, 50, 100 stories)
 - [ ] Generate celebration messages
 - [ ] Check for recent sensitive content
 
 ### Conflict Mediation
+
 - [ ] Monitor for conflicting claims
 - [ ] Validate BOTH sides
 - [ ] Reframe as richness (not problem)
 - [ ] NEVER take sides
 
 ### Welcome & Re-engagement
+
 - [ ] Welcome new members to group
 - [ ] Detect prolonged silence
 - [ ] Send warm re-engagement message
@@ -189,6 +208,7 @@ npx tsx scripts/test-answer-detection.ts
 **Goal:** Round out the experience.
 
 ### Curator (Async Image Analysis)
+
 - [ ] Detect images in messages
 - [ ] Analyze photos (Claude vision API)
 - [ ] OCR text extraction
@@ -196,11 +216,13 @@ npx tsx scripts/test-answer-detection.ts
 - [ ] Generate questions about photos
 
 ### Web3 Integration (Optional)
+
 - [ ] Generate content hashes for claims
 - [ ] Write to Solana (if enabled)
 - [ ] Store transaction hashes
 
 ### Bilingual Translation
+
 - [ ] Integrate translation API
 - [ ] Generate translations for all content
 - [ ] Preserve cultural terms
@@ -209,14 +231,14 @@ npx tsx scripts/test-answer-detection.ts
 
 ## Scripts Reference
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/summary.ts` | Show what we know about the family |
-| `scripts/test-scribe.ts` | Test Scribe extraction |
-| `scripts/test-facilitator.ts` | Test Facilitator with mock sender |
-| `scripts/test-send-question.ts` | Send real question via Telegram |
-| `scripts/test-answer-detection.ts` | Check answer detection status |
-| `scripts/debug-facilitator.ts` | Debug Facilitator issues |
+| Script                             | Purpose                            |
+| ---------------------------------- | ---------------------------------- |
+| `scripts/summary.ts`               | Show what we know about the family |
+| `scripts/test-scribe.ts`           | Test Scribe extraction             |
+| `scripts/test-facilitator.ts`      | Test Facilitator with mock sender  |
+| `scripts/test-send-question.ts`    | Send real question via Telegram    |
+| `scripts/test-answer-detection.ts` | Check answer detection status      |
+| `scripts/debug-facilitator.ts`     | Debug Facilitator issues           |
 
 ---
 

@@ -1,6 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { ConversationEvent } from '@sobremesa/shared-types';
-import { BaseRepository, mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
+import {
+  BaseRepository,
+  mapRowToCamelCase,
+  mapRecordToSnakeCase,
+} from '../base-repository.js';
 
 /**
  * Repository for conversation events (raw message ingestion).

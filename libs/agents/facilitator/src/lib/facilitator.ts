@@ -14,7 +14,11 @@ import type { Question, Family } from '@sobremesa/shared-types';
 export interface MessageSender {
   sendMessage(
     role: 'facilitator',
-    message: { chatId: string | number; text: string; parseMode?: 'Markdown' | 'HTML' }
+    message: {
+      chatId: string | number;
+      text: string;
+      parseMode?: 'Markdown' | 'HTML';
+    }
   ): Promise<number>;
 }
 
@@ -110,7 +114,12 @@ export class FacilitatorAgent {
       const externalMessageId = await this.sendQuestion(family, question);
 
       // 5. Mark as asked with the external message ID for answer detection
-      await this.questionRepo.markAsked(familyId, question.id, undefined, externalMessageId);
+      await this.questionRepo.markAsked(
+        familyId,
+        question.id,
+        undefined,
+        externalMessageId
+      );
 
       // 6. Log the event
       await this.eventLog.log({
@@ -137,8 +146,12 @@ export class FacilitatorAgent {
         questionContent: question.contentOriginal,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error({ familyId, error: errorMessage }, 'Failed to ask question');
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        { familyId, error: errorMessage },
+        'Failed to ask question'
+      );
       return { success: false, error: errorMessage };
     }
   }
@@ -147,7 +160,10 @@ export class FacilitatorAgent {
    * Send a question to the family chat.
    * Returns the Telegram message_id of the sent message.
    */
-  private async sendQuestion(family: Family, question: Question): Promise<number> {
+  private async sendQuestion(
+    family: Family,
+    question: Question
+  ): Promise<number> {
     // Format the question with warmth
     // The question should already be warm from Scribe, but we can add context
     const message = question.contentOriginal;

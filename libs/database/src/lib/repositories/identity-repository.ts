@@ -1,6 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { Identity, ChatProvider } from '@sobremesa/shared-types';
-import { BaseRepository, mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
+import {
+  BaseRepository,
+  mapRowToCamelCase,
+  mapRecordToSnakeCase,
+} from '../base-repository.js';
 
 /**
  * Repository for chat provider identities (e.g., Telegram users).
@@ -30,7 +34,9 @@ export class IdentityRepository extends BaseRepository<Identity> {
       if (error.code === 'PGRST116') {
         return null;
       }
-      throw new Error(`Failed to find identity by provider user ID: ${error.message}`);
+      throw new Error(
+        `Failed to find identity by provider user ID: ${error.message}`
+      );
     }
 
     return this.mapFromDb(data);
@@ -47,7 +53,11 @@ export class IdentityRepository extends BaseRepository<Identity> {
     username?: string
   ): Promise<Identity> {
     // Try to find existing identity
-    const existing = await this.findByProviderUserId(familyId, source, providerUserId);
+    const existing = await this.findByProviderUserId(
+      familyId,
+      source,
+      providerUserId
+    );
 
     if (existing) {
       // Update display name/username if changed
@@ -86,13 +96,18 @@ export class IdentityRepository extends BaseRepository<Identity> {
     identityId: string,
     personId: string
   ): Promise<Identity> {
-    return await this.update(familyId, identityId, { personId } as Partial<Identity>);
+    return await this.update(familyId, identityId, {
+      personId,
+    } as Partial<Identity>);
   }
 
   /**
    * Unlink an identity from a person.
    */
-  async unlinkFromPerson(familyId: string, identityId: string): Promise<Identity> {
+  async unlinkFromPerson(
+    familyId: string,
+    identityId: string
+  ): Promise<Identity> {
     const { data, error } = await this.client
       .from(this.tableName)
       .update({ person_id: null })
@@ -102,7 +117,9 @@ export class IdentityRepository extends BaseRepository<Identity> {
       .single();
 
     if (error) {
-      throw new Error(`Failed to unlink identity from person: ${error.message}`);
+      throw new Error(
+        `Failed to unlink identity from person: ${error.message}`
+      );
     }
 
     return this.mapFromDb(data);
@@ -111,7 +128,10 @@ export class IdentityRepository extends BaseRepository<Identity> {
   /**
    * Find all identities linked to a person.
    */
-  async findByPersonId(familyId: string, personId: string): Promise<Identity[]> {
+  async findByPersonId(
+    familyId: string,
+    personId: string
+  ): Promise<Identity[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')

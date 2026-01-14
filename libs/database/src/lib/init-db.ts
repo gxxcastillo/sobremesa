@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { getServiceClient } from './client.js';
+import { getServiceClient } from './client';
 
 /**
  * Initialize the database schema.
@@ -12,7 +12,10 @@ export async function initDb(): Promise<void> {
   // Find schema file relative to project root
   const possiblePaths = [
     join(process.cwd(), '.claude/SCHEMA.sql'),
-    join(process.cwd(), 'apps/db/supabase/migrations/20260112074715_init_schema.sql'),
+    join(
+      process.cwd(),
+      'apps/db/supabase/migrations/20260112074715_init_schema.sql'
+    ),
   ];
 
   let schemaPath: string | null = null;
@@ -44,18 +47,20 @@ export async function initDb(): Promise<void> {
     // If the RPC doesn't exist, fall back to running statements individually
     // This is a limitation - Supabase JS client doesn't support raw SQL execution
     // We need to use the REST API or pg directly
-    console.warn('Note: exec_sql RPC not available, using alternative method...');
+    console.warn(
+      'Note: exec_sql RPC not available, using alternative method...'
+    );
 
     // For Supabase, we can use the management API or just instruct the user
     throw new Error(
       'Direct SQL execution not supported via Supabase JS client.\n\n' +
-      'Please run the schema manually:\n' +
-      '1. Go to your Supabase dashboard\n' +
-      '2. Open SQL Editor\n' +
-      '3. Copy contents of .claude/SCHEMA.sql\n' +
-      '4. Run the query\n\n' +
-      'Or use the Supabase CLI:\n' +
-      '  supabase db push'
+        'Please run the schema manually:\n' +
+        '1. Go to your Supabase dashboard\n' +
+        '2. Open SQL Editor\n' +
+        '3. Copy contents of .claude/SCHEMA.sql\n' +
+        '4. Run the query\n\n' +
+        'Or use the Supabase CLI:\n' +
+        '  supabase db push'
     );
   }
 
@@ -70,10 +75,7 @@ export async function isDbInitialized(): Promise<boolean> {
 
   try {
     // Try to query the families table
-    const { error } = await client
-      .from('families')
-      .select('id')
-      .limit(1);
+    const { error } = await client.from('families').select('id').limit(1);
 
     return !error;
   } catch {

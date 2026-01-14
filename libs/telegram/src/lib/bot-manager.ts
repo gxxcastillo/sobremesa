@@ -1,10 +1,10 @@
 import { Telegraf } from 'telegraf';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
-import type { BotManagerConfig, BotRole, OutgoingMessage } from './types.js';
-import { ScribeBotHandler } from './scribe-bot.js';
-import { AdminBotHandler } from './admin-bot.js';
-import { FacilitatorBotHandler } from './facilitator-bot.js';
+import type { BotManagerConfig, BotRole, OutgoingMessage } from './types';
+import { ScribeBotHandler } from './scribe-bot';
+import { AdminBotHandler } from './admin-bot';
+import { FacilitatorBotHandler } from './facilitator-bot';
 
 /**
  * Managed bot instance.
@@ -79,7 +79,10 @@ export class BotManager {
 
     // Error handling
     bot.catch((err, ctx) => {
-      this.logger.error({ role, error: err, updateType: ctx.updateType }, 'Bot error');
+      this.logger.error(
+        { role, error: err, updateType: ctx.updateType },
+        'Bot error'
+      );
     });
 
     this.bots.set(role, { role, bot, token });
@@ -147,21 +150,33 @@ export class BotManager {
     }
 
     try {
-      const result = await managed.bot.telegram.sendMessage(message.chatId, message.text, {
-        parse_mode: message.parseMode,
-        reply_parameters: message.replyToMessageId
-          ? { message_id: message.replyToMessageId }
-          : undefined,
-      });
+      const result = await managed.bot.telegram.sendMessage(
+        message.chatId,
+        message.text,
+        {
+          parse_mode: message.parseMode,
+          reply_parameters: message.replyToMessageId
+            ? { message_id: message.replyToMessageId }
+            : undefined,
+        }
+      );
 
       this.logger.info(
-        { role, chatId: message.chatId, textLength: message.text.length, messageId: result.message_id },
+        {
+          role,
+          chatId: message.chatId,
+          textLength: message.text.length,
+          messageId: result.message_id,
+        },
         'Message sent'
       );
 
       return result.message_id;
     } catch (error) {
-      this.logger.error({ role, chatId: message.chatId, error }, 'Failed to send message');
+      this.logger.error(
+        { role, chatId: message.chatId, error },
+        'Failed to send message'
+      );
       throw error;
     }
   }

@@ -13,7 +13,7 @@ import {
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
-import { detectClaimConflict, subjectsMatch } from './conflict-detector.js';
+import { detectClaimConflict, subjectsMatch } from './conflict-detector';
 
 /**
  * Options for creating a RegistrarAgent.
@@ -83,7 +83,8 @@ export class RegistrarAgent {
     this.eventRepo = options.eventRepo || new TimelineEventRepository();
     this.storyRepo = options.storyRepo || new StoryRepository();
     this.claimRepo = options.claimRepo || new ClaimRepository();
-    this.relationshipRepo = options.relationshipRepo || new RelationshipRepository();
+    this.relationshipRepo =
+      options.relationshipRepo || new RelationshipRepository();
     this.questionRepo = options.questionRepo || new QuestionRepository();
     this.eventLog = options.eventLog || new EventLogRepository();
     this.conversationEventRepo =
@@ -127,9 +128,7 @@ export class RegistrarAgent {
       sourceEventId
     );
     const claimedBy =
-      sourceEvent?.actorDisplayName ||
-      sourceEvent?.actorUsername ||
-      'Unknown';
+      sourceEvent?.actorDisplayName || sourceEvent?.actorUsername || 'Unknown';
 
     // Build maps for name -> ID resolution
     const personIdMap = new Map<string, string>();
@@ -145,7 +144,11 @@ export class RegistrarAgent {
         );
 
         if (matchResult) {
-          const { person: existingPerson, confidence, matchReason } = matchResult;
+          const {
+            person: existingPerson,
+            confidence,
+            matchReason,
+          } = matchResult;
 
           this.logger.debug(
             {
@@ -350,7 +353,11 @@ export class RegistrarAgent {
             subjectsMatch(existing.subject, claim.subject) &&
             detectClaimConflict(existing.claimValue, claim.claimValue)
           ) {
-            await this.claimRepo.addConflict(familyId, newClaim.id, existing.id);
+            await this.claimRepo.addConflict(
+              familyId,
+              newClaim.id,
+              existing.id
+            );
             result.conflictsDetected++;
             this.logger.info(
               {
@@ -464,7 +471,11 @@ export class RegistrarAgent {
           result.imageReferencesProcessed++;
         } catch (error) {
           this.logger.warn(
-            { imageId: imageRef.imageId, referenceType: imageRef.referenceType, error },
+            {
+              imageId: imageRef.imageId,
+              referenceType: imageRef.referenceType,
+              error,
+            },
             'Failed to process image reference'
           );
         }
@@ -481,7 +492,10 @@ export class RegistrarAgent {
         eventData: result as unknown as Record<string, unknown>,
       });
 
-      this.logger.info({ familyId, sourceEventId, ...result }, 'Registrar persist complete');
+      this.logger.info(
+        { familyId, sourceEventId, ...result },
+        'Registrar persist complete'
+      );
     } catch (error) {
       this.logger.error(
         { familyId, sourceEventId, error },

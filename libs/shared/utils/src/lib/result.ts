@@ -24,14 +24,18 @@ export function err<E>(error: E): Result<never, E> {
 /**
  * Check if a result is successful.
  */
-export function isOk<T, E>(result: Result<T, E>): result is { ok: true; value: T } {
+export function isOk<T, E>(
+  result: Result<T, E>
+): result is { ok: true; value: T } {
   return result.ok;
 }
 
 /**
  * Check if a result is an error.
  */
-export function isErr<T, E>(result: Result<T, E>): result is { ok: false; error: E } {
+export function isErr<T, E>(
+  result: Result<T, E>
+): result is { ok: false; error: E } {
   return !result.ok;
 }
 

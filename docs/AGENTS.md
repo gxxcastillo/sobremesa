@@ -8,14 +8,14 @@ For detailed specifications, see individual agent files in this directory.
 
 ## The Six Agents
 
-| Agent | Role | Visible? | Calls Claude API? | Model | Prompt File |
-|-------|------|----------|-------------------|-------|-------------|
-| **Facilitator** | Asks warm questions | ✅ Yes | ✅ Yes | Sonnet | `prompts/facilitator.md` |
-| **Admin** | Celebrates & mediates | ✅ Yes | ✅ Yes | Sonnet | `prompts/admin.md` |
-| **Scribe** | Extracts data | ❌ No | ✅ Yes | Sonnet | `prompts/scribe.md` |
-| **Curator** | Analyzes photos | ❌ No | ✅ Yes | Sonnet | `prompts/curator.md` |
-| **Intern** | Filters & links images | ❌ No | ✅ Yes | Haiku | None (code prompts) |
-| **Registrar** | Saves to database | ❌ No | ❌ No | N/A | None (pure logic) |
+| Agent           | Role                   | Visible? | Calls Claude API? | Model  | Prompt File              |
+| --------------- | ---------------------- | -------- | ----------------- | ------ | ------------------------ |
+| **Facilitator** | Asks warm questions    | ✅ Yes   | ✅ Yes            | Sonnet | `prompts/facilitator.md` |
+| **Admin**       | Celebrates & mediates  | ✅ Yes   | ✅ Yes            | Sonnet | `prompts/admin.md`       |
+| **Scribe**      | Extracts data          | ❌ No    | ✅ Yes            | Sonnet | `prompts/scribe.md`      |
+| **Curator**     | Analyzes photos        | ❌ No    | ✅ Yes            | Sonnet | `prompts/curator.md`     |
+| **Intern**      | Filters & links images | ❌ No    | ✅ Yes            | Haiku  | None (code prompts)      |
+| **Registrar**   | Saves to database      | ❌ No    | ❌ No             | N/A    | None (pure logic)        |
 
 ---
 
@@ -28,6 +28,7 @@ For detailed specifications, see individual agent files in this directory.
 **How:** Uses 4-part warmth formula: [Warmth] + [Question] + [Permission] + [Gratitude]
 
 **Key Decisions:**
+
 - Should I ask this question now? (10-step decision logic)
 - Is the conversation active? (real-time flow detection)
 - Is this too soon after sensitive content?
@@ -44,6 +45,7 @@ For detailed specifications, see individual agent files in this directory.
 **How:** 5-part celebration structure, conflict mediation framework, coaching signals
 
 **Key Responsibilities:**
+
 - **Celebrate** - 10, 25, 50, 100 story milestones
 - **Mediate** - Handle conflicting claims (never take sides)
 - **Re-engage** - Gently prompt after prolonged silence
@@ -60,6 +62,7 @@ For detailed specifications, see individual agent files in this directory.
 **How:** Claude API processes message → outputs domain model → detects conflicts
 
 **Key Outputs:**
+
 - **Entities** - People, places, events, stories
 - **Claims** - Every fact with source and confidence
 - **Questions** - Generated from detected gaps
@@ -77,6 +80,7 @@ For detailed specifications, see individual agent files in this directory.
 **How:** Claude vision API → analysis → questions for Facilitator
 
 **Key Outputs:**
+
 - Visual description (people, setting, objects)
 - OCR text extraction (signs, handwriting)
 - Era estimation (based on photo technology, clothing, etc.)
@@ -94,11 +98,13 @@ For detailed specifications, see individual agent files in this directory.
 **How:** Uses Claude Haiku (`claude-3-5-haiku-20241022`) for quick classification tasks
 
 **Key Functions:**
+
 - **Filter** - Determines if a message is relevant for Scribe processing
 - **Image Link** - Detects when text messages reference recently shared images
 - **Augment** - Adds image references to domain model if Scribe missed them
 
 **Image Reference Types:**
+
 - `describes` - Text describes what's in the image
 - `identifies_people` - Text identifies people in the image
 - `provides_context` - Text provides context about the image (date, location, event)
@@ -115,6 +121,7 @@ For detailed specifications, see individual agent files in this directory.
 **How:** Pure TypeScript logic (no AI)
 
 **Key Functions:**
+
 - **Map** - Domain model → database schema
 - **Deduplicate** - Fuzzy match on names/aliases
 - **Save** - Insert/update in Supabase
@@ -158,24 +165,24 @@ For detailed specifications, see individual agent files in this directory.
 
 A “question” is a first-class object with its own lifecycle. Multiple agents participate, but only the Facilitator speaks to the family.
 
-1) Propose (Scribe / Curator)
-	•	Scribe proposes questions when it detects gaps in a story, and stores them in the questions table with priority + context.
-	•	Curator proposes questions when an image/document is analyzed (identification, era, text, connections), also stored in questions.
+1. Propose (Scribe / Curator)
+   • Scribe proposes questions when it detects gaps in a story, and stores them in the questions table with priority + context.
+   • Curator proposes questions when an image/document is analyzed (identification, era, text, connections), also stored in questions.
 
-2) Decide if/when to ask (Facilitator)
-	•	Facilitator is the only agent allowed to ask questions in the group.
-	•	It reads pending questions and applies: real-time levers → coaching signal → rate limits → timing rules.
-	•	If it asks, it must use: [Warmth] + [Question] + [Permission] + [Gratitude].
+2. Decide if/when to ask (Facilitator)
+   • Facilitator is the only agent allowed to ask questions in the group.
+   • It reads pending questions and applies: real-time levers → coaching signal → rate limits → timing rules.
+   • If it asks, it must use: [Warmth] + [Question] + [Permission] + [Gratitude].
 
-3) Detect answers (Scribe)
-	•	Scribe processes every new message and checks whether it answers any pending question(s).
-	•	Answer detection produces a structured “answered” signal tied to the source message.
+3. Detect answers (Scribe)
+   • Scribe processes every new message and checks whether it answers any pending question(s).
+   • Answer detection produces a structured “answered” signal tied to the source message.
 
-4) Persist state (Registrar)
-	•	Registrar is the single writer that updates canonical persistence: question status changes (asked/answered/retired), links to messages, and any resulting claims/entities.
+4. Persist state (Registrar)
+   • Registrar is the single writer that updates canonical persistence: question status changes (asked/answered/retired), links to messages, and any resulting claims/entities.
 
-5) Adapt behavior (Admin)
-	•	Admin monitors engagement outcomes (ignored vs answered) and adjusts facilitator_rules / real-time levers over time (rate-limited), never changing content or facts.
+5. Adapt behavior (Admin)
+   • Admin monitors engagement outcomes (ignored vs answered) and adjusts facilitator_rules / real-time levers over time (rate-limited), never changing content or facts.
 
 Key rule: Scribe/Curator propose questions, Facilitator asks, Scribe detects answers, Registrar writes state, Admin tunes behavior.
 
@@ -184,6 +191,7 @@ Key rule: Scribe/Curator propose questions, Facilitator asks, Scribe detects ans
 ## Decision Hierarchy
 
 ### Static Configuration (Set by User)
+
 ```
 config.bots.facilitator.personality
   ↓
@@ -191,6 +199,7 @@ Initial values for formality, verbosity, engagement, etc.
 ```
 
 ### Dynamic Rules (Adjusted by Coach)
+
 ```
 facilitator_rules table
   ↓
@@ -200,6 +209,7 @@ current_signal: "neutral"
 ```
 
 ### Real-Time Levers (Immediate)
+
 ```
 real_time_levers table
   ↓
@@ -215,24 +225,31 @@ emotional_keywords: ["died", "death", "war"...]
 ## Key Design Principles
 
 ### 1. Warmth is Non-Negotiable
+
 Every question MUST use the 4-part formula. No exceptions.
 
 ### 2. Claims Over Facts
+
 Everything is a claim with a source. Provenance for everything.
 
 ### 3. Preserve Conflicts
+
 Different memories are honored, never auto-resolved.
 
 ### 4. Single Writer Pattern
+
 ONLY Registrar modifies core database tables.
 
 ### 5. Sequential Processing
+
 One message at a time, in order. Context matters.
 
 ### 6. Adaptive Behavior
+
 System learns and optimizes based on family response patterns.
 
 ### 7. Complete Audit Trail
+
 Every decision logged in event_log.
 
 ---
@@ -241,14 +258,14 @@ Every decision logged in event_log.
 
 All access scoped by family_id
 
-| Agent | **Reads** | **Writes** |
-|-------|-----------|------------|
-| **Facilitator** | questions, facilitator_rules, real_time_levers, messages (activity) | event_log (decisions only) |
-| **Admin** | All tables | facilitator_rules, real_time_levers, event_log |
-| **Intern** | conversation_events, images (recent) | event_log (filter/link decisions) |
-| **Scribe** | messages, people, places, questions (to detect answers) | None (outputs domain model) |
-| **Curator** | messages, images, stories (for connections) | None (outputs to Registrar) |
-| **Registrar** | All tables (for deduplication) | people, places, events, stories, claims, questions, images |
+| Agent           | **Reads**                                                           | **Writes**                                                 |
+| --------------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Facilitator** | questions, facilitator_rules, real_time_levers, messages (activity) | event_log (decisions only)                                 |
+| **Admin**       | All tables                                                          | facilitator_rules, real_time_levers, event_log             |
+| **Intern**      | conversation_events, images (recent)                                | event_log (filter/link decisions)                          |
+| **Scribe**      | messages, people, places, questions (to detect answers)             | None (outputs domain model)                                |
+| **Curator**     | messages, images, stories (for connections)                         | None (outputs to Registrar)                                |
+| **Registrar**   | All tables (for deduplication)                                      | people, places, events, stories, claims, questions, images |
 
 **Key:** Only Registrar modifies core tables. Agents output domain models or signals.
 
@@ -298,6 +315,7 @@ Repeat every 24 hours
 ```
 
 **Rate limits:**
+
 - Max 1 rule change per day
 - No reversals within 48 hours
 - Only adjust when thresholds hit
@@ -331,6 +349,7 @@ libs/agents/
 ```
 
 **Agent Model Allocation:**
+
 - **Intern** uses Claude Haiku (`claude-3-5-haiku-20241022`) for fast, low-cost preprocessing
 - **Scribe, Curator, Facilitator, Admin** use Claude Sonnet for complex reasoning
 - **Registrar** requires no LLM (pure TypeScript logic)

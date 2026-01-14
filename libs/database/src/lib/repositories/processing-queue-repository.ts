@@ -36,7 +36,10 @@ export class ProcessingQueueRepository {
     if (error) {
       // Handle unique constraint violation (already queued)
       if (error.code === '23505') {
-        const existing = await this.findByEventId(familyId, conversationEventId);
+        const existing = await this.findByEventId(
+          familyId,
+          conversationEventId
+        );
         if (existing) return existing;
       }
       throw new Error(`Failed to enqueue event: ${error.message}`);
@@ -88,7 +91,9 @@ export class ProcessingQueueRepository {
         locked_at: new Date().toISOString(),
         locked_by: workerId,
       })
-      .or(`status.eq.queued,and(status.eq.processing,locked_at.lt.${lockExpiry})`)
+      .or(
+        `status.eq.queued,and(status.eq.processing,locked_at.lt.${lockExpiry})`
+      )
       .eq('family_id', familyId)
       .order('queued_at', { ascending: true })
       .limit(1)
@@ -233,7 +238,12 @@ export class ProcessingQueueRepository {
     done: number;
     error: number;
   }> {
-    const statuses: QueueItemStatus[] = ['queued', 'processing', 'done', 'error'];
+    const statuses: QueueItemStatus[] = [
+      'queued',
+      'processing',
+      'done',
+      'error',
+    ];
     const stats: Record<string, number> = {};
 
     for (const status of statuses) {
@@ -250,7 +260,12 @@ export class ProcessingQueueRepository {
       stats[status] = count || 0;
     }
 
-    return stats as { queued: number; processing: number; done: number; error: number };
+    return stats as {
+      queued: number;
+      processing: number;
+      done: number;
+      error: number;
+    };
   }
 
   /**

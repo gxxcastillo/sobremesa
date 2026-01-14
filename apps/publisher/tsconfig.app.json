@@ -3,13 +3,12 @@
   "compilerOptions": {
     "outDir": "dist",
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "rootDir": "src",
     "module": "esnext",
     "moduleResolution": "bundler",
-    "tsBuildInfoFile": "dist/tsconfig.app.tsbuildinfo",
     "jsx": "preserve",
     "jsxImportSource": "solid-js"
   },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": [
     "out-tsc",
     "dist",
@@ -25,11 +24,5 @@
     "src/**/*.spec.js",
     "src/**/*.test.jsx",
     "src/**/*.spec.jsx"
-  ],
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "references": [
-    {
-      "path": "../../libs/api-client/tsconfig.lib.json"
-    }
   ]
 }

@@ -1,4 +1,7 @@
-import { ConversationEventRepository, ImageRepository } from '@sobremesa/database';
+import {
+  ConversationEventRepository,
+  ImageRepository,
+} from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 import type { Image } from '@sobremesa/shared-types';
@@ -156,12 +159,18 @@ export class InternAgent {
       const event = await this.eventRepo.findById(familyId, eventId);
       if (!event) {
         this.logger.warn({ eventId }, 'Event not found for filtering');
-        return { relevant: true, reason: 'Event not found, defaulting to relevant' };
+        return {
+          relevant: true,
+          reason: 'Event not found, defaulting to relevant',
+        };
       }
 
       // Skip non-text events (photos, documents) - let Scribe handle those
       if (event.eventType !== 'message') {
-        return { relevant: true, reason: `Non-text event type: ${event.eventType}` };
+        return {
+          relevant: true,
+          reason: `Non-text event type: ${event.eventType}`,
+        };
       }
 
       // Skip empty messages
@@ -186,7 +195,9 @@ export class InternAgent {
       const contextMessages = recentMessages
         .filter((m) => m.id !== eventId && m.contentOriginal)
         .slice(0, this.config.recentMessageCount)
-        .map((m) => `- ${m.actorDisplayName || 'Someone'}: "${m.contentOriginal}"`)
+        .map(
+          (m) => `- ${m.actorDisplayName || 'Someone'}: "${m.contentOriginal}"`
+        )
         .join('\n');
 
       // Build user message
@@ -205,7 +216,10 @@ export class InternAgent {
       // Parse response
       const content = response.content[0];
       if (content.type !== 'text') {
-        this.logger.warn({ eventId }, 'Unexpected response type, defaulting to relevant');
+        this.logger.warn(
+          { eventId },
+          'Unexpected response type, defaulting to relevant'
+        );
         return { relevant: true, reason: 'Unexpected response type' };
       }
 
@@ -213,7 +227,8 @@ export class InternAgent {
 
       // Calculate tokens used
       const tokensUsed =
-        (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
+        (response.usage?.input_tokens || 0) +
+        (response.usage?.output_tokens || 0);
 
       this.logger.debug(
         {
@@ -228,8 +243,12 @@ export class InternAgent {
 
       return { ...result, tokensUsed };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error({ eventId, error: errorMessage }, 'Filter error, defaulting to relevant');
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        { eventId, error: errorMessage },
+        'Filter error, defaulting to relevant'
+      );
       // Default to relevant on error - don't skip messages due to filter failures
       return { relevant: true, reason: `Filter error: ${errorMessage}` };
     }
@@ -238,23 +257,36 @@ export class InternAgent {
   /**
    * Parse the JSON response from the filter prompt.
    */
-  private parseFilterResponse(text: string): { relevant: boolean; reason: string } {
+  private parseFilterResponse(text: string): {
+    relevant: boolean;
+    reason: string;
+  } {
     try {
       // Try to extract JSON from the response
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        return { relevant: true, reason: 'Could not parse response, defaulting to relevant' };
+        return {
+          relevant: true,
+          reason: 'Could not parse response, defaulting to relevant',
+        };
       }
 
       const parsed = JSON.parse(jsonMatch[0]);
 
       // Validate and extract fields
-      const relevant = typeof parsed.relevant === 'boolean' ? parsed.relevant : true;
-      const reason = typeof parsed.reason === 'string' ? parsed.reason : 'No reason provided';
+      const relevant =
+        typeof parsed.relevant === 'boolean' ? parsed.relevant : true;
+      const reason =
+        typeof parsed.reason === 'string'
+          ? parsed.reason
+          : 'No reason provided';
 
       return { relevant, reason };
     } catch {
-      return { relevant: true, reason: 'JSON parse error, defaulting to relevant' };
+      return {
+        relevant: true,
+        reason: 'JSON parse error, defaulting to relevant',
+      };
     }
   }
 
@@ -262,7 +294,10 @@ export class InternAgent {
    * Check if a message references a recently shared image.
    * This helps Scribe understand when text messages are describing photos.
    */
-  async linkToImage(eventId: string, familyId: string): Promise<ImageLinkResult> {
+  async linkToImage(
+    eventId: string,
+    familyId: string
+  ): Promise<ImageLinkResult> {
     try {
       // Load the event
       const event = await this.eventRepo.findById(familyId, eventId);
@@ -273,7 +308,10 @@ export class InternAgent {
 
       // Only process text messages
       if (event.eventType !== 'message') {
-        return { linked: false, reason: `Non-text event type: ${event.eventType}` };
+        return {
+          linked: false,
+          reason: `Non-text event type: ${event.eventType}`,
+        };
       }
 
       const messageText = event.contentOriginal?.trim();
@@ -311,7 +349,10 @@ export class InternAgent {
       // Parse response
       const content = response.content[0];
       if (content.type !== 'text') {
-        this.logger.warn({ eventId }, 'Unexpected response type for image link');
+        this.logger.warn(
+          { eventId },
+          'Unexpected response type for image link'
+        );
         return { linked: false, reason: 'Unexpected response type' };
       }
 
@@ -319,7 +360,8 @@ export class InternAgent {
 
       // Calculate tokens used
       const tokensUsed =
-        (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
+        (response.usage?.input_tokens || 0) +
+        (response.usage?.output_tokens || 0);
 
       this.logger.debug(
         {
@@ -336,7 +378,8 @@ export class InternAgent {
 
       return { ...result, tokensUsed };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       this.logger.error({ eventId, error: errorMessage }, 'Image link error');
       return { linked: false, reason: `Error: ${errorMessage}` };
     }
@@ -383,14 +426,18 @@ export class InternAgent {
       const parsed = JSON.parse(jsonMatch[0]);
 
       const linked = typeof parsed.linked === 'boolean' ? parsed.linked : false;
-      const reason = typeof parsed.reason === 'string' ? parsed.reason : 'No reason provided';
+      const reason =
+        typeof parsed.reason === 'string'
+          ? parsed.reason
+          : 'No reason provided';
 
       if (!linked) {
         return { linked: false, reason };
       }
 
       // Validate image_id
-      const imageId = typeof parsed.image_id === 'string' ? parsed.image_id : undefined;
+      const imageId =
+        typeof parsed.image_id === 'string' ? parsed.image_id : undefined;
       if (!imageId) {
         return { linked: false, reason: 'No image ID in response' };
       }

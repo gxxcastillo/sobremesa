@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { RegistrarAgent } from './registrar.js';
-import type { ScribeDomainModel, ImageReference } from '@sobremesa/shared-types';
+import { RegistrarAgent } from './registrar';
+import type {
+  ScribeDomainModel,
+  ImageReference,
+} from '@sobremesa/shared-types';
 import { Confidence } from '@sobremesa/shared-types';
 
 // Mock repositories
@@ -73,10 +76,12 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     });
 
     mockPersonRepo.findBestMatch.mockResolvedValue(null);
-    mockPersonRepo.findOrCreate.mockImplementation(async (_familyId, person) => ({
-      id: `person-${person.name.toLowerCase().replace(/\s+/g, '-')}`,
-      ...person,
-    }));
+    mockPersonRepo.findOrCreate.mockImplementation(
+      async (_familyId, person) => ({
+        id: `person-${person.name.toLowerCase().replace(/\s+/g, '-')}`,
+        ...person,
+      })
+    );
 
     mockPlaceRepo.findOrCreate.mockImplementation(async (_familyId, place) => ({
       id: `place-${place.name.toLowerCase().replace(/\s+/g, '-')}`,
@@ -85,10 +90,12 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     }));
 
     mockClaimRepo.findActiveBySubject.mockResolvedValue([]);
-    mockClaimRepo.createFromExtracted.mockImplementation(async (_familyId, claim) => ({
-      id: `claim-${Date.now()}`,
-      ...claim,
-    }));
+    mockClaimRepo.createFromExtracted.mockImplementation(
+      async (_familyId, claim) => ({
+        id: `claim-${Date.now()}`,
+        ...claim,
+      })
+    );
 
     mockEventLog.log.mockResolvedValue(undefined);
     mockImageRepo.addConnectedPeople.mockResolvedValue({});
@@ -236,7 +243,8 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-456',
           referenceType: 'provides_context',
-          contextProvided: 'This was taken at the wedding in Buenos Aires, 1962',
+          contextProvided:
+            'This was taken at the wedding in Buenos Aires, 1962',
           confidence: Confidence.HIGH,
         },
       ]);
@@ -287,7 +295,8 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-789',
           referenceType: 'describes',
-          contextProvided: 'A family gathering with about 20 people at a long table',
+          contextProvided:
+            'A family gathering with about 20 people at a long table',
           confidence: Confidence.MEDIUM,
         },
       ]);

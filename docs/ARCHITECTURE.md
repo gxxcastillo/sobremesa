@@ -3,15 +3,17 @@
 ## Quick Reference
 
 **Core Roles (Internal Names):**
+
 - `BotRole.FACILITATOR` - Asks questions
 - `BotRole.ADMIN` - Manages project
 - `BotRole.SCRIBE` - Extracts data
 - `BotRole.CURATOR` - Analyzes photos (hidden)
-- `BotRole.REGISTRAR` - Persists data to database (hidden) 
+- `BotRole.REGISTRAR` - Persists data to database (hidden)
 
 **Default Names For "Public" Agents (Configurable):**
+
 - Facilitator: "Carmencita"
-- Admin: "La Directora"  
+- Admin: "La Directora"
 - Scribe: "Don Rubén"
 
 ---
@@ -44,6 +46,7 @@ Chat Message
 ```
 
 **Processing Pipeline:**
+
 1. **Intern (filter)** - Uses Haiku to quickly determine if message is relevant for extraction
 2. **Scribe** - Uses Sonnet to extract entities, claims, and questions from relevant messages
 3. **Intern (image link)** - Uses Haiku to detect if message references a recent image (catches what Scribe missed)
@@ -55,7 +58,7 @@ Ordering rule: Text messages are processed sequentially and in order (context-se
 
 ## Sequence Diagram
 
-``` mermaid
+```mermaid
 sequenceDiagram
   autonumber
   participant User as Family Member
@@ -133,18 +136,23 @@ sequenceDiagram
 ## Key Architectural Decisions
 
 ### 1. Configurable Library (Not Single-Family App)
+
 - Internal: Generic role names (`BotRole.FACILITATOR`)
 - Configuration: Display names ("Carmencita", "Annie", "Yui")
 - Reusable across cultures and languages
 
 ### 2. Bilingual+ Storage
+
 Every text stored in 3 forms:
+
 - `content_original` - Exact words (sacred)
 - `content_{primary}` - Primary language version
 - `content_{secondary}` - Secondary language version
 
 ### 3. Claims-Based Data Model
+
 Instead of storing facts directly, store **claims**:
+
 ```sql
 CREATE TABLE claims (
   id UUID,
@@ -160,6 +168,7 @@ CREATE TABLE claims (
 ```
 
 Benefits:
+
 - Clear provenance
 - Easy conflict detection
 - Multiple claims about same thing
@@ -170,15 +179,18 @@ Benefits:
 **Two-tier control system:**
 
 **Static Rules (User Config):**
+
 - Bot personalities
 - Initial engagement phase
 
 **Dynamic Rules (Coach Adjusts):**
+
 - Question frequency (1-5 per window)
 - Wait times (12-72 hours)
 - Coaching signals (hold_back/neutral/jump_in)
 
 **Real-Time Levers (Immediate Response):**
+
 - `activeConversationCooldown` - Prevent interruptions
 - `sensitiveTopicCooldown` - Space after grief/trauma
 - `emotionalKeywords` - Trigger detection
@@ -186,21 +198,27 @@ Benefits:
 - `skipIfAnsweredRecently` - Avoid redundancy
 
 ### 5. Single Writer Pattern
+
 ONLY Registrar modifies core tables:
+
 - Prevents race conditions
 - Ensures data integrity
 - Clear audit trail
 - Transaction management
 
 ### 6. Web3 Integration Hook
+
 Optional Solana integration:
+
 - Write content hashes to blockchain
 - Tamper-proof audit trail
 - Verify data integrity
 - Configurable (on/off)
 
 ### 7. Event Log
+
 Complete audit trail:
+
 ```sql
 CREATE TABLE event_log (
   id UUID,
@@ -212,6 +230,7 @@ CREATE TABLE event_log (
 ```
 
 ### 8. Redaction System
+
 - Soft delete (mark as redacted, keep for audit)
 - Hard delete (GDPR compliance)
 - Cascade to derived claims
@@ -222,6 +241,7 @@ CREATE TABLE event_log (
 ## Database Schema (High-Level)
 
 **Core Tables:**
+
 - `conversation_events` - Raw message ingestion (provider-agnostic)
 - `claims` - All factual claims with sources
 - `people` - Family members
@@ -232,11 +252,13 @@ CREATE TABLE event_log (
 - `questions` - Question lifecycle
 
 **System Tables:**
+
 - `facilitator_rules` - Dynamic engagement rules
 - `event_log` - Complete audit trail
 - `project_config` - Configuration storage
 
 **All content tables have:**
+
 - `content_original`, `language_original`
 - `content_{primary}`, `content_{secondary}`
 - `source_message_id`, `created_by`
@@ -244,7 +266,7 @@ CREATE TABLE event_log (
 - `redacted`, `redacted_at`, `redaction_reason`
 - `content_hash`, `solana_tx_hash` (if web3 enabled)
 
-**Multi-family scoping** 
+**Multi-family scoping**
 All persisted data and all agent reads/writes are scoped by family_id. Every queue item, message, claim, question, and event_log entry must include family_id, and every query must filter by it.
 
 ---
@@ -256,18 +278,21 @@ Questions are proposed by Scribe/Curator, asked by Facilitator, answered-detecte
 See AGENTS.md for complete specifications.
 
 ### Facilitator
+
 - Asks questions using warmth formula
 - Checks real-time levers before asking
 - Respects coaching signals
 - Tracks activity (not content)
 
 ### Admin
+
 - Celebrates milestones
 - Mediates conflicts (validates both sides)
 - Runs coaching module
 - Manages system health
 
 ### Scribe
+
 - Extracts entities, relationships, events
 - Generates questions about gaps
 - Detects answers to pending questions
@@ -275,6 +300,7 @@ See AGENTS.md for complete specifications.
 - Outputs domain model (not DB schema)
 
 ### Registrar
+
 - Maps domain model to database
 - Deduplicates entities
 - Creates claims (not facts)
@@ -282,6 +308,7 @@ See AGENTS.md for complete specifications.
 - Optional web3 writes
 
 ### Coaching Module
+
 - Monitors facilitator performance
 - Adjusts engagement rules dynamically
 - Sends real-time signals
@@ -294,16 +321,19 @@ See AGENTS.md for complete specifications.
 See CONFIGURATION.md for complete guide.
 
 **Layer 1: Identity**
+
 - Project name
 - Languages
 - Bot names
 
 **Layer 2: Personality**
+
 - Formality, verbosity, emoji
 - Engagement style
 - Authority level
 
 **Layer 3: Technical**
+
 - Performance thresholds
 - Rate limits
 - Context windows
@@ -324,6 +354,7 @@ See CONFIGURATION.md for complete guide.
 ---
 
 See other documentation files for details:
+
 - CONFIGURATION.md - How to configure
 - AGENTS.md - Agent specifications
 - IMPLEMENTATION.md - Build plan

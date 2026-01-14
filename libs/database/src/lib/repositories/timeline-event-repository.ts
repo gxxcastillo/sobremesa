@@ -1,6 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { TimelineEvent, ExtractedEvent } from '@sobremesa/shared-types';
-import { BaseRepository, mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
+import {
+  BaseRepository,
+  mapRowToCamelCase,
+  mapRecordToSnakeCase,
+} from '../base-repository.js';
 
 /**
  * Repository for timeline events derived from claims.
@@ -13,7 +17,10 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
   /**
    * Find an event by title.
    */
-  async findByTitle(familyId: string, title: string): Promise<TimelineEvent | null> {
+  async findByTitle(
+    familyId: string,
+    title: string
+  ): Promise<TimelineEvent | null> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
@@ -59,7 +66,10 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
   /**
    * Find events involving a specific person.
    */
-  async findByPerson(familyId: string, personId: string): Promise<TimelineEvent[]> {
+  async findByPerson(
+    familyId: string,
+    personId: string
+  ): Promise<TimelineEvent[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
@@ -78,7 +88,10 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
   /**
    * Find events by type.
    */
-  async findByType(familyId: string, eventType: string): Promise<TimelineEvent[]> {
+  async findByType(
+    familyId: string,
+    eventType: string
+  ): Promise<TimelineEvent[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')

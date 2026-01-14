@@ -1,4 +1,4 @@
-import { LanguageConfig } from './languages.js';
+import { LanguageConfig } from './languages';
 
 /**
  * Bot personality configuration.

@@ -3,6 +3,7 @@
 ## Overview
 
 The **Persons system** represents real-world people in the family tree. It balances:
+
 - **Complete information** when available (name, birth year, death year)
 - **Incomplete information** when not yet discovered (placeholders)
 - **Fuzzy matching** to find the same person mentioned in different ways
@@ -37,34 +38,34 @@ Person Record
 CREATE TABLE people (
   id UUID PRIMARY KEY,
   family_id UUID NOT NULL,
-  
+
   -- Identity
   name VARCHAR(255) NOT NULL,
   aliases JSONB DEFAULT '[]',          -- JSON array of alternate names
-  
+
   -- Derived summaries (from claims, not primary source)
   birth_year INTEGER,
   birth_year_confidence VARCHAR(20),   -- 'high', 'medium', 'low'
   death_year INTEGER,
   death_year_confidence VARCHAR(20),
-  
+
   -- Placeholder flag
   is_placeholder BOOLEAN DEFAULT FALSE,
-  
+
   -- Notes in original language
   notes_original TEXT,
   language_original VARCHAR(10),
-  
+
   -- Provenance
   first_mentioned_event_id UUID,
   created_by VARCHAR(255),
-  
+
   -- Privacy
   redacted BOOLEAN DEFAULT FALSE,
   redacted_at TIMESTAMPTZ,
   redacted_by VARCHAR(255),
   redaction_reason TEXT,
-  
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -73,13 +74,17 @@ CREATE TABLE people (
 ### Key Fields
 
 #### `name`
+
 The primary name. Examples:
+
 - "Gabriel Barreto"
 - "Rosa María"
 - "Unknown" (for placeholders)
 
 #### `aliases`
+
 Alternative names the person is known by (JSON array):
+
 ```json
 ["Gabe", "Gabriel", "Gab", "Gabriel Barreto"]
 ```
@@ -87,17 +92,21 @@ Alternative names the person is known by (JSON array):
 Updated as new mentions are found.
 
 #### `birth_year` & `death_year`
+
 Derived from claims, not primary source. Can be NULL if unknown.
 
 #### `is_placeholder`
+
 `true` if this is a placeholder person (unknown intermediate in family tree).
 
 Examples:
+
 - "Unknown parent of Maria"
 - "Unknown spouse of Juan"
 - "Unknown sibling's child"
 
 #### `first_mentioned_event_id`
+
 The conversation event that first mentioned this person.
 
 ---
@@ -117,29 +126,33 @@ async findByFuzzyMatch(
 ```
 
 **Search order:**
+
 1. Exact matches (case-insensitive)
 2. Similarity matches (Levenshtein distance > 0.8)
 
 **Examples:**
 
-| Search | Found | Match Type |
-|--------|-------|-----------|
-| "Gabriel" | "Gabriel Barreto" | Exact |
-| "Gabe" | "Gabriel" (in aliases) | Exact |
-| "Gabriela" | "Gabriel" | Similarity (typo?) |
-| "José" | "Jose" (in aliases) | Exact |
+| Search     | Found                  | Match Type         |
+| ---------- | ---------------------- | ------------------ |
+| "Gabriel"  | "Gabriel Barreto"      | Exact              |
+| "Gabe"     | "Gabriel" (in aliases) | Exact              |
+| "Gabriela" | "Gabriel"              | Similarity (typo?) |
+| "José"     | "Jose" (in aliases)    | Exact              |
 
 ### Confidence
 
 **High confidence:**
+
 - Exact name match
 - Name in existing aliases
 - Very similar (Levenshtein > 0.95)
 
 **Medium confidence:**
+
 - Fuzzy match (0.8-0.95)
 
 **Low confidence:**
+
 - Common first names
 - Multiple candidates
 - Need manual review
@@ -159,10 +172,10 @@ const personRepo = new PersonRepository();
 const person = await personRepo.findOrCreate(
   familyId,
   {
-    name: "Gabriel Barreto",
-    aliases: ["Gabe", "Gabriel"],
+    name: 'Gabriel Barreto',
+    aliases: ['Gabe', 'Gabriel'],
     birthYear: 1985,
-    confidence: Confidence.MEDIUM
+    confidence: Confidence.MEDIUM,
   },
   sourceEventId,
   createdBy
@@ -193,7 +206,7 @@ for (const extracted of people) {
     extracted,
     sourceEventId
   );
-  
+
   // If not found, creates new
   // If found, updates aliases
 }
@@ -204,18 +217,17 @@ for (const extracted of people) {
 #### Find by Exact Name
 
 ```typescript
-const person = await personRepo.findByName(familyId, "Gabriel");
+const person = await personRepo.findByName(familyId, 'Gabriel');
 ```
 
 #### Find by Fuzzy Match
 
 ```typescript
 // Search for Gabriel or his known aliases
-const person = await personRepo.findByFuzzyMatch(
-  familyId,
-  "Gabriel",
-  ["Gabe", "Gabriel Barreto"]
-);
+const person = await personRepo.findByFuzzyMatch(familyId, 'Gabriel', [
+  'Gabe',
+  'Gabriel Barreto',
+]);
 ```
 
 #### Find All Active
@@ -231,11 +243,10 @@ const people = await personRepo.findAllActive(familyId);
 
 ```typescript
 // Add new aliases as we discover them
-await personRepo.updateAliases(
-  familyId,
-  personId,
-  [...existingAliases, "NewAlias"]
-);
+await personRepo.updateAliases(familyId, personId, [
+  ...existingAliases,
+  'NewAlias',
+]);
 ```
 
 ---
@@ -264,8 +275,8 @@ const personRepo = new PersonRepository();
 // Create placeholder
 const placeholder = await personRepo.createPlaceholder(
   familyId,
-  "parent of Maria",          // description
-  [mariaPersonId],            // related people
+  'parent of Maria', // description
+  [mariaPersonId], // related people
   sourceEventId,
   createdBy
 );
@@ -282,7 +293,7 @@ const placeholder = await personRepo.createPlaceholder(
 // Check if placeholder already exists
 const placeholder = await personRepo.findOrCreatePlaceholder(
   familyId,
-  "parent of Maria",
+  'parent of Maria',
   [mariaPersonId],
   sourceEventId
 );
@@ -296,7 +307,7 @@ const placeholder = await personRepo.findOrCreatePlaceholder(
 // Check if we already have this placeholder
 const existing = await personRepo.findPlaceholderByDescription(
   familyId,
-  "parent of Maria"
+  'parent of Maria'
 );
 ```
 
@@ -310,7 +321,7 @@ const personRepo = new PersonRepository();
 // 1. Create real person
 const realPerson = await personRepo.insert({
   familyId,
-  name: "Juan García",
+  name: 'Juan García',
   aliases: [],
   // ... other fields
 });
@@ -337,11 +348,13 @@ await personRepo.mergePlaceholderIntoPerson(
 Fields like `birth_year` and `death_year` are **derived from claims**, not primary source:
 
 ✅ **Benefits:**
+
 - Quick lookup: "Who was born in 1950?"
 - UI convenience: Don't need to query claims every time
 - Performance: No join needed for basic queries
 
 ❌ **Trade-off:**
+
 - **Redundant** - Real truth lives in claims table
 - **Stale** - Need to update if conflicting claims emerge
 
@@ -351,24 +364,26 @@ Fields like `birth_year` and `death_year` are **derived from claims**, not prima
 
 People are mentioned many ways:
 
-| Mention | Stored |
-|---------|--------|
-| "Gabriel" | Gabriel Barreto |
-| "Gabe" | Gabriel Barreto |
-| "Gabriela" | Gabriel Barreto (typo?) |
-| "José Luis" | J.L. or just "José" |
+| Mention     | Stored                  |
+| ----------- | ----------------------- |
+| "Gabriel"   | Gabriel Barreto         |
+| "Gabe"      | Gabriel Barreto         |
+| "Gabriela"  | Gabriel Barreto (typo?) |
+| "José Luis" | J.L. or just "José"     |
 
 Fuzzy matching prevents creating duplicate people for typos/nicknames.
 
 ### Why Placeholders?
 
 Instead of forcing "Unknown" names, placeholders let us:
+
 - Link relationships even with missing data
 - Build partial family trees
 - Merge later when real person identified
 - Avoid orphaned relationship records
 
 Example:
+
 ```
 Maria and Pedro are cousins
 But neither knows Pedro's grandfather's name
@@ -475,6 +490,7 @@ Returns: 0 (completely different) to 1 (identical)
 **Threshold:** 0.8 (80% similar)
 
 **Examples:**
+
 ```
 similarity("Gabriel", "Gabriel") = 1.0    ✓
 similarity("Gabriel", "Gabriela") = 0.85  ✓

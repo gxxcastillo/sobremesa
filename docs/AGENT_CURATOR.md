@@ -1,13 +1,15 @@
-
 ## 🎨 Curator (Hidden)
 
 ### Role
+
 Analyze images and documents (backend only).
 
 ### Internal Name
+
 `BotRole.CURATOR`
 
 ### Trigger
+
 Text Scribe detects image in message.
 
 ### Inputs
@@ -39,13 +41,13 @@ Text Scribe detects image in message.
     ocrLanguages: ["English", "Yiddish"],
     photoQuality: "fair, corner damage"
   },
-  
+
   potentialConnections: [{
     storyId: "001",
     reason: "mentions 'the shop', timeframe matches",
     confidence: 0.75
   }],
-  
+
   questions: [{
     text: "Who are the three people in the doorway?",
     priority: "high",
@@ -55,6 +57,7 @@ Text Scribe detects image in message.
 ```
 
 ### Processing
+
 - Async (doesn't block text processing)
 - Uses Claude vision API
 - OCR for text extraction
@@ -63,11 +66,13 @@ Text Scribe detects image in message.
 ### Database Access
 
 **Read:**
+
 - `messages`, `people`, `stories`, `events`, `images`
 
 **Write:** None (outputs to Registrar)
 
 ### Common Mistakes
+
 - ❌ Blocking text processing
 - ❌ Missing OCR opportunities
 - ❌ Not cross-referencing stories

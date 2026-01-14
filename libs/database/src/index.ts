@@ -6,7 +6,7 @@ export {
   resetClients,
   getDatabaseConfig,
   type DatabaseConfig,
-} from './lib/client.js';
+} from './lib/client';
 
 // Base repository
 export {
@@ -15,10 +15,10 @@ export {
   camelToSnake,
   mapRowToCamelCase,
   mapRecordToSnakeCase,
-} from './lib/base-repository.js';
+} from './lib/base-repository';
 
 // Repositories
-export * from './lib/repositories/index.js';
+export * from './lib/repositories/index';
 
 // Database initialization utilities
-export { initDb, isDbInitialized, getMissingTables } from './lib/init-db.js';
+export { initDb, isDbInitialized, getMissingTables } from './lib/init-db';

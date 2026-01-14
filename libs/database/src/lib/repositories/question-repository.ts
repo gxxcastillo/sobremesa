@@ -202,7 +202,9 @@ export class QuestionRepository {
       if (error.code === 'PGRST116') {
         return null;
       }
-      throw new Error(`Failed to find question by external message id: ${error.message}`);
+      throw new Error(
+        `Failed to find question by external message id: ${error.message}`
+      );
     }
 
     return this.mapFromDb(data);

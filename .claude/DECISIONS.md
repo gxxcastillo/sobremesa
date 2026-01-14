@@ -3,6 +3,7 @@
 This document explains WHY we made key architectural decisions.
 
 Format: ADR (Architecture Decision Record)
+
 - **Date:** When decided
 - **Status:** Accepted / Superseded
 - **Context:** What problem we're solving
@@ -21,12 +22,14 @@ Initial design was specific to one Nicaraguan family (Spanish/English, Carmencit
 
 **Decision:**  
 Build as configurable library:
+
 - Internal code uses generic role names (`BotRole.FACILITATOR`)
 - Configuration provides display names ("Carmencita", "Annie", "Yui")
 - All personality traits configurable
 - Language support configurable (any primary + secondaries)
 
 **Consequences:**
+
 - **Positive:** Reusable product, can serve many families
 - **Positive:** Forces clean architecture (separation of concerns)
 - **Positive:** Can adapt to different cultures and languages
@@ -42,6 +45,7 @@ Build as configurable library:
 
 **Context:**
 Family is multi-lingual. Need to:
+
 - Support code-switching (natural language mixing)
 - Preserve what was actually said
 - Make content accessible in any language
@@ -49,12 +53,14 @@ Family is multi-lingual. Need to:
 
 **Decision:**
 Store content in original language only:
+
 - `content_original` - Exact words (sacred, never changed)
 - `language_original` - ISO code of original language
 
 Translations generated on-read when needed (not pre-computed).
 
 **Consequences:**
+
 - **Positive:** Preserves authentic voice
 - **Positive:** Simpler storage (no duplicate columns)
 - **Positive:** No upfront translation API costs
@@ -71,18 +77,21 @@ Translations generated on-read when needed (not pre-computed).
 
 **Context:**  
 Family members disagree about facts:
+
 - "Arrived 1889" vs "Arrived 1891"
 - "Warsaw" vs "outside Warsaw"
-Need to preserve ALL versions without auto-resolving.
+  Need to preserve ALL versions without auto-resolving.
 
 **Decision:**  
 Create `claims` table where every fact is a claim with:
+
 - Source (who said it)
 - Confidence level
 - Certainty language ("definitely" vs "I think")
 - Links to conflicting claims
 
 **Consequences:**
+
 - **Positive:** Clear provenance for every fact
 - **Positive:** Easy to detect and preserve conflicts
 - **Positive:** Can track confidence and uncertainty
@@ -100,17 +109,20 @@ Create `claims` table where every fact is a claim with:
 
 **Context:**  
 Multiple agents need database access but:
+
 - Race conditions possible
 - Data integrity critical
 - Audit trail required
 
 **Decision:**  
 ONLY Registrar can modify core tables:
+
 - Scribes output domain models
 - Registrar maps to database schema
 - All writes go through single component
 
 **Consequences:**
+
 - **Positive:** No race conditions
 - **Positive:** Clear responsibility
 - **Positive:** Single point for validation
@@ -127,6 +139,7 @@ ONLY Registrar can modify core tables:
 
 **Context:**  
 Messages arrive in sequence, context matters:
+
 - "My grandfather" then "He ran a shop" - "He" refers to grandfather
 - Processing out of order breaks context
 
@@ -134,6 +147,7 @@ Messages arrive in sequence, context matters:
 Use ordered queue, process one message at a time sequentially.
 
 **Consequences:**
+
 - **Positive:** Context preserved
 - **Positive:** Correct entity resolution
 - **Positive:** Simpler reasoning
@@ -150,17 +164,20 @@ Use ordered queue, process one message at a time sequentially.
 
 **Context:**  
 Need to detect:
+
 - Active conversations (don't interrupt)
 - Silence (re-engage)
-But don't want duplicate content processing.
+  But don't want duplicate content processing.
 
 **Decision:**  
 Facilitator gets lightweight activity stream:
+
 - Timestamps, sender IDs, message counts
 - Does NOT get message content
 - Scribe handles all content processing
 
 **Consequences:**
+
 - **Positive:** Clear separation of concerns
 - **Positive:** No duplicate processing
 - **Positive:** Facilitator stays lightweight
@@ -176,6 +193,7 @@ Facilitator gets lightweight activity stream:
 
 **Context:**  
 Need to:
+
 - Debug issues ("why didn't it ask?")
 - Track system behavior
 - Provide analytics
@@ -183,12 +201,14 @@ Need to:
 
 **Decision:**  
 Create comprehensive event log:
+
 - All decisions (asked/didn't ask question)
 - All rule changes (coaching adjustments)
 - All conflicts detected
 - All system events
 
 **Consequences:**
+
 - **Positive:** Complete audit trail
 - **Positive:** Debugging power
 - **Positive:** Analytics capability
@@ -205,6 +225,7 @@ Create comprehensive event log:
 
 **Context:**  
 Mistakes happen:
+
 - Someone shares SSN by accident
 - Family wants to remove embarrassing story
 - GDPR "right to be forgotten"
@@ -213,16 +234,19 @@ Mistakes happen:
 Two-tier redaction:
 
 **Soft Delete (Default):**
+
 - Mark as redacted
 - Keep for audit
 - Cascade to derived claims
 
 **Hard Delete (GDPR):**
+
 - Permanently remove
 - Log intention first
 - Break audit trail (necessary)
 
 **Consequences:**
+
 - **Positive:** Privacy protection
 - **Positive:** GDPR compliance
 - **Positive:** Mistake recovery
@@ -241,18 +265,21 @@ Need chat platform integration. Many options exist (Telegram, WhatsApp, Discord,
 
 **Decision:**
 Build provider-agnostic interface:
+
 - Define `ChatProvider` interface in `libs/chat-provider/`
 - Each provider implements the interface (Telegram, WhatsApp, etc.)
 - Store provider-specific metadata in `conversation_events.metadata`
 - Core system never directly depends on specific provider
 
 **Interface Contract:**
+
 - Send message to chat
 - Receive messages from chat
 - Handle media (images, documents)
 - Manage group membership
 
 **Consequences:**
+
 - **Positive:** No lock-in to single platform
 - **Positive:** Families can use their preferred chat app
 - **Positive:** Provider abstraction enables future flexibility
@@ -271,12 +298,14 @@ Need database quickly for POC.
 
 **Decision:**  
 Use Supabase:
+
 - PostgreSQL (mature, reliable)
 - Fast setup
 - Generous free tier
 - Can migrate later if needed
 
 **Consequences:**
+
 - **Positive:** Quick start
 - **Positive:** PostgreSQL power
 - **Positive:** Low cost for POC
@@ -292,18 +321,21 @@ Use Supabase:
 
 **Context:**  
 Photo analysis takes time. Don't want to:
+
 - Block text message processing
 - Make family wait for response
 - Lose message order
 
 **Decision:**  
 Process media asynchronously:
+
 - Text Scribe detects image
 - Delegates to Curator (background)
 - Continues processing text
 - Media results feed back when ready
 
 **Consequences:**
+
 - **Positive:** Don't block text flow
 - **Positive:** Better user experience
 - **Positive:** Can process multiple images in parallel
@@ -322,11 +354,13 @@ Who checks if message answers pending question?
 
 **Decision:**  
 Scribe handles answer detection:
+
 - Already processing all message content
 - Has context of questions
 - Natural fit
 
 **Consequences:**
+
 - **Positive:** Single content processor
 - **Positive:** Avoids duplicate work
 - **Positive:** Scribe has full context
@@ -345,6 +379,7 @@ Could have 50+ configuration options. For MVP, need balance.
 
 **Decision:**  
 Start with 29 essential levers:
+
 - 13 personality (user-facing)
 - 11 technical backend
 - 5 real-time flow
@@ -352,6 +387,7 @@ Start with 29 essential levers:
 Can expand later based on actual needs.
 
 **Consequences:**
+
 - **Positive:** Not overwhelming
 - **Positive:** Covers 90% of cases
 - **Positive:** Can add more later
@@ -371,11 +407,13 @@ Words like "pulpería", "gallo pinto" don't translate well.
 
 **Decision:**  
 Maintain list of cultural terms that are:
+
 - Never translated
 - Explained in parentheses when needed
 - Preserved in both language versions
 
 **Consequences:**
+
 - **Positive:** Preserves cultural identity
 - **Positive:** Educates family about heritage
 - **Positive:** Richer, more authentic
@@ -394,12 +432,14 @@ Warmth is not a "nice feature" - it's the mechanism that makes collection work.
 
 **Decision:**  
 Make warmth a core architectural requirement:
+
 - Four-part formula mandatory
 - System prompts enforce it
 - Testing checks for it
 - Documentation emphasizes it
 
 **Consequences:**
+
 - **Positive:** Consistent user experience
 - **Positive:** Higher engagement
 - **Positive:** Better data quality
@@ -416,17 +456,20 @@ Make warmth a core architectural requirement:
 **Context:**  
 Sobremesa is designed to preserve the history of individual families.  
 Multiple families may use the system, but their data must remain fully isolated:
+
 - No cross-family deduplication
 - No shared timelines or entities
 - No accidental data bleed
 
 **Decision:**  
 All persisted data is scoped by `family_id`:
+
 - Every content and system table includes `family_id`
 - All reads, writes, and deduplication are constrained within a family
 - Queues, coaching rules, and configuration are all family-specific
 
 **Consequences:**
+
 - **Positive:** Strong isolation guarantees
 - **Positive:** Clear domain boundary
 - **Positive:** Prevents cross-family data corruption
@@ -443,6 +486,7 @@ All persisted data is scoped by `family_id`:
 **Context:**  
 Collecting family history requires asking questions carefully and at the right time.
 Questions are not just messages — they have:
+
 - Intent
 - Timing constraints
 - Outcomes (answered, ignored, retired)
@@ -451,6 +495,7 @@ Multiple agents participate in the process.
 
 **Decision:**  
 Questions are treated as first-class entities with a lifecycle:
+
 - Scribe and Curator propose questions
 - Facilitator decides if/when to ask
 - Scribe detects answers
@@ -458,6 +503,7 @@ Questions are treated as first-class entities with a lifecycle:
 - Admin adapts behavior based on outcomes
 
 **Consequences:**
+
 - **Positive:** Clear separation of responsibilities
 - **Positive:** Better timing and warmth
 - **Positive:** Enables analytics and coaching
@@ -480,6 +526,7 @@ Deduplication is applied only to entity identity (people, places, events).
 Claims are never deduplicated or merged; conflicting claims are preserved and linked.
 
 **Consequences:**
+
 - **Positive:** Preserves divergent memories
 - **Positive:** Maintains provenance
 - **Positive:** Avoids false certainty
@@ -498,6 +545,7 @@ Family members naturally ask questions in conversation (e.g., “Who is in this 
 
 **Decision:**  
 Store family-member questions in the `questions` table as first-class records, marked with `origin='human'` and attributed to the asking person/message. Human-origin questions:
+
 - are eligible for answer detection and claim generation
 - are linkable to stories/entities via context
 - are **never** placed into the Facilitator’s outbound question queue
@@ -506,6 +554,7 @@ Store family-member questions in the `questions` table as first-class records, m
 System-generated questions (from Scribe/Curator) continue to follow the standard lifecycle (proposed → asked → answered/retired).
 
 **Consequences:**
+
 - **Positive:** Preserves organic family curiosity as part of history
 - **Positive:** Improves provenance (“this answer responded to Aunt Sarah’s question”)
 - **Positive:** Avoids duplicate or intrusive re-asking by the system
@@ -522,17 +571,20 @@ System-generated questions (from Scribe/Curator) continue to follow the standard
 
 **Context:**
 Need to decide deployment model for multi-family support:
+
 - Option A: Single bot instance handles multiple families (shared infrastructure)
 - Option B: Separate bot instance per family (complete isolation)
 
 **Decision:**
 Deploy one bot instance per family:
+
 - Each family gets its own running process
 - Family ID configured via environment variable
 - Complete process isolation between families
 - Can scale families independently
 
 **Deployment:**
+
 ```bash
 # Family A
 FAMILY_ID=family-a-uuid npm start
@@ -542,6 +594,7 @@ FAMILY_ID=family-b-uuid npm start
 ```
 
 **Consequences:**
+
 - **Positive:** Complete isolation (bugs can't affect other families)
 - **Positive:** Easy to scale per family
 - **Positive:** Simpler code (no multi-tenant routing)
@@ -558,6 +611,7 @@ FAMILY_ID=family-b-uuid npm start
 
 **Context:**
 The Scribe agent uses Claude Sonnet for high-quality entity extraction, but:
+
 - Many messages don't contain relevant family history content
 - Running Sonnet on every message is expensive
 - Some tasks (filtering, image linking) don't require Sonnet's full capabilities
@@ -567,21 +621,25 @@ The Scribe agent uses Claude Sonnet for high-quality entity extraction, but:
 Create an "Intern" agent that uses Claude Haiku (`claude-3-5-haiku-20241022`) for lightweight preprocessing tasks:
 
 **Tasks:**
+
 1. **Message Filtering** - Determines if a message is relevant for Scribe extraction
 2. **Image Linking** - Detects when text messages reference recently shared images
 
 **Pipeline Position:**
+
 ```
 Message → Intern (filter) → Scribe → Intern (image link) → Registrar
 ```
 
 **Image Reference Types:**
+
 - `describes` - Text describes image content
 - `identifies_people` - Text identifies people in image
 - `provides_context` - Text provides date, location, or event context
 - `asks_about` - Text asks a question about the image
 
 **Consequences:**
+
 - **Positive:** Significant cost savings (Haiku is ~10x cheaper than Sonnet)
 - **Positive:** Faster preprocessing (Haiku has lower latency)
 - **Positive:** Catches image references Scribe might miss (specialized task)
@@ -602,12 +660,14 @@ Scribe extracts domain models from messages, but may miss certain patterns (e.g.
 
 **Decision:**
 Implement domain model augmentation pattern:
+
 1. Scribe produces initial domain model
 2. Subsequent agents (e.g., Intern image linker) can add to the model
 3. Registrar receives the final augmented model
 4. Augmentations are marked with lower confidence (e.g., `MEDIUM` vs Scribe's `HIGH`)
 
 **Implementation:**
+
 ```typescript
 // If Scribe missed image reference, Intern adds it
 if (!alreadyDetected) {
@@ -623,6 +683,7 @@ if (!alreadyDetected) {
 ```
 
 **Consequences:**
+
 - **Positive:** Specialized agents can improve extraction quality
 - **Positive:** Clear confidence attribution (who detected what)
 - **Positive:** Extensible for future augmentation agents
@@ -653,6 +714,7 @@ if (!alreadyDetected) {
 ---
 
 These decisions create a system that is:
+
 - Technically sound
 - Emotionally intelligent
 - Culturally adaptable

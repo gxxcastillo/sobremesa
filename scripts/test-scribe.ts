@@ -5,9 +5,15 @@
  */
 import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';
-import { buildSystemPrompt, buildUserMessage } from '../libs/agents/scribe/src/lib/prompt-builder.js';
+import {
+  buildSystemPrompt,
+  buildUserMessage,
+} from '../libs/agents/scribe/src/lib/prompt-builder.js';
 import { parseScribeResponse } from '../libs/agents/scribe/src/lib/response-parser.js';
-import type { ScribeConfig, ScribeContext } from '../libs/agents/scribe/src/lib/types.js';
+import type {
+  ScribeConfig,
+  ScribeContext,
+} from '../libs/agents/scribe/src/lib/types.js';
 
 const TEST_MESSAGE = `My grandfather Abraham came to America sometime in the 1920s.
 I think he came from Poland but I'm not 100% sure. He opened a small grocery store
@@ -78,11 +84,17 @@ async function main() {
     console.log('=== Generated Questions ===\n');
     for (const q of domainModel.questions) {
       console.log(`- "${q.content}"`);
-      console.log(`  Priority: ${q.priority}, Target: ${q.targetPerson || q.targetEvent || q.targetPlace || 'none'}`);
+      console.log(
+        `  Priority: ${q.priority}, Target: ${
+          q.targetPerson || q.targetEvent || q.targetPlace || 'none'
+        }`
+      );
     }
   } else {
     console.log('*** NO QUESTIONS GENERATED ***');
-    console.log('This might indicate Claude is not outputting questions in its response.');
+    console.log(
+      'This might indicate Claude is not outputting questions in its response.'
+    );
   }
 }
 

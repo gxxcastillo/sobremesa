@@ -9,7 +9,10 @@ import { getServiceClient } from '../libs/database/src/lib/client.js';
 
 async function main() {
   console.log('=== Environment Check ===\n');
-  console.log('TELEGRAM_BOT_TOKEN_FACILITATOR:', process.env['TELEGRAM_BOT_TOKEN_FACILITATOR'] ? 'SET' : 'NOT SET');
+  console.log(
+    'TELEGRAM_BOT_TOKEN_FACILITATOR:',
+    process.env['TELEGRAM_BOT_TOKEN_FACILITATOR'] ? 'SET' : 'NOT SET'
+  );
   console.log('');
 
   const familyRepo = new FamilyRepository();
@@ -56,7 +59,10 @@ async function main() {
       console.log('Content:', mostRecent.contentOriginal.slice(0, 50) + '...');
       console.log('Asked at:', mostRecent.askedAt);
       console.log('Minutes ago:', minutesAgo.toFixed(1));
-      console.log('Rate limit (5 min) would block:', minutesAgo < 5 ? 'YES' : 'NO');
+      console.log(
+        'Rate limit (5 min) would block:',
+        minutesAgo < 5 ? 'YES' : 'NO'
+      );
     }
   }
   console.log('');
@@ -73,8 +79,10 @@ async function main() {
   if (!logs?.length) {
     console.log('No facilitator events found');
   } else {
-    logs.forEach(l => {
-      const data = l.event_data ? JSON.stringify(l.event_data).slice(0, 80) : '';
+    logs.forEach((l) => {
+      const data = l.event_data
+        ? JSON.stringify(l.event_data).slice(0, 80)
+        : '';
       console.log(`  ${l.event_type}: ${data}`);
       console.log(`    at: ${l.created_at}`);
     });

@@ -1,6 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { Claim, ExtractedClaim } from '@sobremesa/shared-types';
-import { BaseRepository, mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
+import {
+  BaseRepository,
+  mapRowToCamelCase,
+  mapRecordToSnakeCase,
+} from '../base-repository.js';
 
 /**
  * Repository for atomic factual claims with provenance.
@@ -32,7 +36,10 @@ export class ClaimRepository extends BaseRepository<Claim> {
   /**
    * Find active claims by subject (for conflict detection).
    */
-  async findActiveBySubject(familyId: string, subject: string): Promise<Claim[]> {
+  async findActiveBySubject(
+    familyId: string,
+    subject: string
+  ): Promise<Claim[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
@@ -43,7 +50,9 @@ export class ClaimRepository extends BaseRepository<Claim> {
       .order('claimed_at', { ascending: false });
 
     if (error) {
-      throw new Error(`Failed to find active claims by subject: ${error.message}`);
+      throw new Error(
+        `Failed to find active claims by subject: ${error.message}`
+      );
     }
 
     return (data || []).map((row) => this.mapFromDb(row));
@@ -85,7 +94,9 @@ export class ClaimRepository extends BaseRepository<Claim> {
       .eq('claim_id', claimId);
 
     if (conflictError) {
-      throw new Error(`Failed to find claim conflicts: ${conflictError.message}`);
+      throw new Error(
+        `Failed to find claim conflicts: ${conflictError.message}`
+      );
     }
 
     if (!conflicts || conflicts.length === 0) {

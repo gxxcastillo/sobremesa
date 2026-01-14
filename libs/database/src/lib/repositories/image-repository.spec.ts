@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ImageRepository } from './image-repository.js';
+import { ImageRepository } from './image-repository';
 
 // Mock Supabase client
 const mockSupabaseClient = {
@@ -18,7 +18,8 @@ const createChainableMock = (finalResult: { data: any; error: any }) => {
   chain.limit = vi.fn().mockReturnValue(chain);
   chain.single = vi.fn().mockResolvedValue(finalResult);
   // For operations that don't call single()
-  chain.then = (resolve: (value: { data: unknown; error: unknown }) => void) => resolve(finalResult);
+  chain.then = (resolve: (value: { data: unknown; error: unknown }) => void) =>
+    resolve(finalResult);
   return chain;
 };
 
@@ -52,7 +53,10 @@ describe('ImageRepository - addConnectedPeople', () => {
     // First call: findById
     const findChain = createChainableMock({ data: existingImage, error: null });
     // Second call: update
-    const updateChain = createChainableMock({ data: updatedImage, error: null });
+    const updateChain = createChainableMock({
+      data: updatedImage,
+      error: null,
+    });
 
     let callCount = 0;
     mockSupabaseClient.from.mockImplementation(() => {
@@ -60,11 +64,10 @@ describe('ImageRepository - addConnectedPeople', () => {
       return callCount === 1 ? findChain : updateChain;
     });
 
-    await imageRepo.addConnectedPeople(
-      'family-abc',
-      'img-123',
-      ['person-3', 'person-4']
-    );
+    await imageRepo.addConnectedPeople('family-abc', 'img-123', [
+      'person-3',
+      'person-4',
+    ]);
 
     // Verify update was called with merged array
     expect(updateChain.update).toHaveBeenCalledWith(
@@ -98,7 +101,10 @@ describe('ImageRepository - addConnectedPeople', () => {
     };
 
     const findChain = createChainableMock({ data: existingImage, error: null });
-    const updateChain = createChainableMock({ data: updatedImage, error: null });
+    const updateChain = createChainableMock({
+      data: updatedImage,
+      error: null,
+    });
 
     let callCount = 0;
     mockSupabaseClient.from.mockImplementation(() => {
@@ -115,7 +121,11 @@ describe('ImageRepository - addConnectedPeople', () => {
     // Verify update was called with deduplicated array (person-2 not duplicated)
     expect(updateChain.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        connected_people: expect.arrayContaining(['person-1', 'person-2', 'person-3']),
+        connected_people: expect.arrayContaining([
+          'person-1',
+          'person-2',
+          'person-3',
+        ]),
       })
     );
 
@@ -156,7 +166,10 @@ describe('ImageRepository - addConnectedPeople', () => {
     };
 
     const findChain = createChainableMock({ data: existingImage, error: null });
-    const updateChain = createChainableMock({ data: updatedImage, error: null });
+    const updateChain = createChainableMock({
+      data: updatedImage,
+      error: null,
+    });
 
     let callCount = 0;
     mockSupabaseClient.from.mockImplementation(() => {
@@ -191,9 +204,7 @@ describe('ImageRepository - addContext', () => {
       family_id: 'family-abc',
       analysis: {
         description: 'AI analysis of the image',
-        userContexts: [
-          { text: 'Previous context', sourceEventId: 'event-1' },
-        ],
+        userContexts: [{ text: 'Previous context', sourceEventId: 'event-1' }],
       },
       connected_people: [],
       connected_stories: [],
@@ -216,7 +227,10 @@ describe('ImageRepository - addContext', () => {
     };
 
     const findChain = createChainableMock({ data: existingImage, error: null });
-    const updateChain = createChainableMock({ data: updatedImage, error: null });
+    const updateChain = createChainableMock({
+      data: updatedImage,
+      error: null,
+    });
 
     let callCount = 0;
     mockSupabaseClient.from.mockImplementation(() => {
@@ -267,7 +281,10 @@ describe('ImageRepository - addContext', () => {
     };
 
     const findChain = createChainableMock({ data: existingImage, error: null });
-    const updateChain = createChainableMock({ data: updatedImage, error: null });
+    const updateChain = createChainableMock({
+      data: updatedImage,
+      error: null,
+    });
 
     let callCount = 0;
     mockSupabaseClient.from.mockImplementation(() => {
@@ -275,7 +292,12 @@ describe('ImageRepository - addContext', () => {
       return callCount === 1 ? findChain : updateChain;
     });
 
-    await imageRepo.addContext('family-abc', 'img-123', 'First context', 'event-1');
+    await imageRepo.addContext(
+      'family-abc',
+      'img-123',
+      'First context',
+      'event-1'
+    );
 
     expect(updateChain.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -304,12 +326,17 @@ describe('ImageRepository - addContext', () => {
     const updatedImage = {
       ...existingImage,
       analysis: {
-        userContexts: [{ text: 'Context for unanalyzed image', sourceEventId: 'event-1' }],
+        userContexts: [
+          { text: 'Context for unanalyzed image', sourceEventId: 'event-1' },
+        ],
       },
     };
 
     const findChain = createChainableMock({ data: existingImage, error: null });
-    const updateChain = createChainableMock({ data: updatedImage, error: null });
+    const updateChain = createChainableMock({
+      data: updatedImage,
+      error: null,
+    });
 
     let callCount = 0;
     mockSupabaseClient.from.mockImplementation(() => {
@@ -363,7 +390,10 @@ describe('ImageRepository - addContext', () => {
     };
 
     const findChain = createChainableMock({ data: existingImage, error: null });
-    const updateChain = createChainableMock({ data: existingImage, error: null });
+    const updateChain = createChainableMock({
+      data: existingImage,
+      error: null,
+    });
 
     let callCount = 0;
     mockSupabaseClient.from.mockImplementation(() => {

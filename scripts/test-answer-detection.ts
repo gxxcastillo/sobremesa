@@ -30,7 +30,9 @@ async function main() {
   console.log('=== Questions with External Message IDs ===');
   const { data: questionsWithExternalId } = await client
     .from('questions')
-    .select('id, content_original, status, asked_external_message_id, asked_at, answered_at')
+    .select(
+      'id, content_original, status, asked_external_message_id, asked_at, answered_at'
+    )
     .eq('family_id', family.id)
     .not('asked_external_message_id', 'is', null)
     .order('asked_at', { ascending: false })
@@ -38,9 +40,13 @@ async function main() {
 
   if (!questionsWithExternalId?.length) {
     console.log('No questions with external message IDs yet.');
-    console.log('Run test-send-question.ts or send a message to trigger the facilitator.');
+    console.log(
+      'Run test-send-question.ts or send a message to trigger the facilitator.'
+    );
   } else {
-    console.log(`Found ${questionsWithExternalId.length} questions with external IDs:\n`);
+    console.log(
+      `Found ${questionsWithExternalId.length} questions with external IDs:\n`
+    );
     for (const q of questionsWithExternalId) {
       console.log(`  [${q.status}] ${q.content_original.slice(0, 50)}...`);
       console.log(`    External ID: ${q.asked_external_message_id}`);
@@ -66,13 +72,22 @@ async function main() {
     console.log('No answer detection events yet.');
     console.log('\nTo test:');
     console.log('1. The facilitator asks a question');
-    console.log('2. Reply to that question in Telegram (use the reply feature)');
-    console.log('3. The system should detect the reply and mark the question as answered');
+    console.log(
+      '2. Reply to that question in Telegram (use the reply feature)'
+    );
+    console.log(
+      '3. The system should detect the reply and mark the question as answered'
+    );
   } else {
     console.log(`Found ${answerEvents.length} answer detection events:\n`);
     for (const e of answerEvents) {
       const data = e.event_data as Record<string, unknown>;
-      console.log(`  Question: ${(data.questionContent as string || '').slice(0, 50)}...`);
+      console.log(
+        `  Question: ${((data.questionContent as string) || '').slice(
+          0,
+          50
+        )}...`
+      );
       console.log(`  Detected at: ${e.created_at}`);
       console.log('');
     }

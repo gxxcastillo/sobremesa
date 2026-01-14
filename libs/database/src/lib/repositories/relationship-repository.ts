@@ -47,7 +47,10 @@ export class RelationshipRepository {
   /**
    * Find all relationships involving a person.
    */
-  async findByPerson(familyId: string, personId: string): Promise<Relationship[]> {
+  async findByPerson(
+    familyId: string,
+    personId: string
+  ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
@@ -56,7 +59,9 @@ export class RelationshipRepository {
       .order('created_at', { ascending: false });
 
     if (error) {
-      throw new Error(`Failed to find relationships by person: ${error.message}`);
+      throw new Error(
+        `Failed to find relationships by person: ${error.message}`
+      );
     }
 
     return (data || []).map((row) => this.mapFromDb(row));
@@ -83,7 +88,9 @@ export class RelationshipRepository {
       if (error.code === 'PGRST116') {
         return null;
       }
-      throw new Error(`Failed to find relationship between people: ${error.message}`);
+      throw new Error(
+        `Failed to find relationship between people: ${error.message}`
+      );
     }
 
     return this.mapFromDb(data);
@@ -116,7 +123,11 @@ export class RelationshipRepository {
     );
 
     // Check if relationship already exists (using normalized IDs)
-    const existing = await this.findBetween(familyId, normalized.personAId, normalized.personBId);
+    const existing = await this.findBetween(
+      familyId,
+      normalized.personAId,
+      normalized.personBId
+    );
 
     if (existing) {
       return existing;
@@ -216,7 +227,10 @@ export class RelationshipRepository {
   /**
    * Find relationships by type.
    */
-  async findByType(familyId: string, relationshipType: string): Promise<Relationship[]> {
+  async findByType(
+    familyId: string,
+    relationshipType: string
+  ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
@@ -234,7 +248,10 @@ export class RelationshipRepository {
   /**
    * Find relationships by category.
    */
-  async findByCategory(familyId: string, category: RelationshipCategory): Promise<Relationship[]> {
+  async findByCategory(
+    familyId: string,
+    category: RelationshipCategory
+  ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
@@ -243,7 +260,9 @@ export class RelationshipRepository {
       .order('created_at', { ascending: false });
 
     if (error) {
-      throw new Error(`Failed to find relationships by category: ${error.message}`);
+      throw new Error(
+        `Failed to find relationships by category: ${error.message}`
+      );
     }
 
     return (data || []).map((row) => this.mapFromDb(row));
@@ -274,7 +293,13 @@ export class RelationshipRepository {
   async findByPersonWithPerspective(
     familyId: string,
     personId: string
-  ): Promise<Array<{ relationship: Relationship; toPersonId: string; perspectiveType: string }>> {
+  ): Promise<
+    Array<{
+      relationship: Relationship;
+      toPersonId: string;
+      perspectiveType: string;
+    }>
+  > {
     const relationships = await this.findByPerson(familyId, personId);
 
     return relationships.map((rel) => {
@@ -296,7 +321,10 @@ export class RelationshipRepository {
   /**
    * Find parents of a person.
    */
-  async findParents(familyId: string, personId: string): Promise<Relationship[]> {
+  async findParents(
+    familyId: string,
+    personId: string
+  ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
@@ -315,7 +343,10 @@ export class RelationshipRepository {
   /**
    * Find children of a person.
    */
-  async findChildren(familyId: string, personId: string): Promise<Relationship[]> {
+  async findChildren(
+    familyId: string,
+    personId: string
+  ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
@@ -334,7 +365,10 @@ export class RelationshipRepository {
   /**
    * Find spouse(s) of a person.
    */
-  async findSpouses(familyId: string, personId: string): Promise<Relationship[]> {
+  async findSpouses(
+    familyId: string,
+    personId: string
+  ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')

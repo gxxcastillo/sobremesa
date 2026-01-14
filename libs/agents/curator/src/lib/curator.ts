@@ -200,7 +200,9 @@ export class Curator {
 
     // Create a minimal analysis based on available metadata
     const analysis: ImageAnalysis = {
-      description: `${image.fileType || 'media'} shared by ${image.sharedBy || 'unknown'}`,
+      description: `${image.fileType || 'media'} shared by ${
+        image.sharedBy || 'unknown'
+      }`,
       visibleText: [],
       imageType: image.fileType === 'document' ? 'document' : 'photo',
     };
@@ -230,10 +232,15 @@ export class Curator {
     const parts: string[] = [];
 
     if (!image.analyzed) {
-      parts.push(`[${image.id.slice(0, 8)}] ${image.fileType || 'image'} (not yet analyzed)`);
+      parts.push(
+        `[${image.id.slice(0, 8)}] ${
+          image.fileType || 'image'
+        } (not yet analyzed)`
+      );
     } else {
-      const desc = (image.analysis as Record<string, unknown>)?.description as string
-        || `${image.fileType || 'image'}`;
+      const desc =
+        ((image.analysis as Record<string, unknown>)?.description as string) ||
+        `${image.fileType || 'image'}`;
       parts.push(`[${image.id.slice(0, 8)}] ${desc}`);
 
       if (image.peopleCount) {
@@ -268,9 +275,14 @@ export class Curator {
 
       return {
         description: parsed.description || 'No description available',
-        peopleCount: typeof parsed.people_count === 'number' ? parsed.people_count : undefined,
+        peopleCount:
+          typeof parsed.people_count === 'number'
+            ? parsed.people_count
+            : undefined,
         estimatedEra: parsed.estimated_era || undefined,
-        visibleText: Array.isArray(parsed.visible_text) ? parsed.visible_text : [],
+        visibleText: Array.isArray(parsed.visible_text)
+          ? parsed.visible_text
+          : [],
         imageType: parsed.image_type || undefined,
         settingHints: parsed.setting_hints || undefined,
       };

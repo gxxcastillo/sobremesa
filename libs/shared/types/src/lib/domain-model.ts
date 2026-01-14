@@ -1,5 +1,5 @@
-import { Confidence } from './confidence.js';
-import { LanguageCode } from './languages.js';
+import { Confidence } from './confidence';
+import { LanguageCode } from './languages';
 
 /**
  * Extracted entity from Scribe processing.
@@ -101,7 +101,11 @@ export interface ImageReference {
   /** The image ID (short form from context) */
   imageId: string;
   /** How the message relates to the image */
-  referenceType: 'describes' | 'identifies_people' | 'provides_context' | 'asks_about';
+  referenceType:
+    | 'describes'
+    | 'identifies_people'
+    | 'provides_context'
+    | 'asks_about';
   /** People identified in the image by this message */
   peopleIdentified?: string[];
   /** Additional context provided about the image */

@@ -12,10 +12,10 @@ The Sobremesa relationships system is built on a **structural graph model** wher
 
 Only two relationship types form the **backbone** of the family tree:
 
-| Type | Definition | Storage |
-|------|-----------|---------|
-| **parent** | `personA` is the parent, `personB` is the child | Direct |
-| **spouse** | Two people in a committed relationship | Direct (normalized by UUID) |
+| Type       | Definition                                      | Storage                     |
+| ---------- | ----------------------------------------------- | --------------------------- |
+| **parent** | `personA` is the parent, `personB` is the child | Direct                      |
+| **spouse** | Two people in a committed relationship          | Direct (normalized by UUID) |
 
 All other relationships (sibling, grandparent, cousin, aunt/uncle, etc.) are **computed** via graph traversal.
 
@@ -44,19 +44,19 @@ These are calculated on-demand from structural relationships:
 CREATE TABLE relationships (
   id UUID PRIMARY KEY,
   family_id UUID NOT NULL,
-  
+
   person_a_id UUID NOT NULL,
   person_b_id UUID NOT NULL,
-  
+
   relationship_type VARCHAR(50) NOT NULL,  -- 'parent', 'spouse', 'guardian', etc.
   category VARCHAR(20) DEFAULT 'biological',  -- biological, legal, functional, honorary, social
   status VARCHAR(20) DEFAULT 'active',        -- active, ended, deceased
   qualifier VARCHAR(30),                      -- half, step, adoptive, maternal, paternal, etc.
-  
+
   confidence VARCHAR(20) DEFAULT 'medium',
   source_event_id UUID,
   claimed_by VARCHAR(255),
-  
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -65,12 +65,16 @@ CREATE TABLE relationships (
 ### Key Fields
 
 #### `relationship_type`
+
 The type of relationship. Examples:
+
 - Structural: `'parent'`, `'spouse'`
 - Extended narrative: `'guardian'`, `'godparent'`, `'mentor'`, `'friend'`, `'caregiver'`
 
 #### `category`
+
 Distinguishes the **nature** of the relationship:
+
 - `'biological'` - Blood relations
 - `'legal'` - Adoption, marriage, legal guardianship
 - `'functional'` - Raised by, de facto guardian
@@ -78,13 +82,17 @@ Distinguishes the **nature** of the relationship:
 - `'social'` - Family friend, mentor, best friend
 
 #### `status`
+
 Lifecycle state of the relationship:
+
 - `'active'` - Currently active
 - `'ended'` - Divorced, separated, estranged
 - `'deceased'` - Ended due to death
 
 #### `qualifier`
+
 Nuance for the relationship:
+
 - `'half'` - Half-brother, half-sister
 - `'step'` - Step-parent, step-sibling
 - `'adoptive'` - Adoptive parent
@@ -99,26 +107,29 @@ Nuance for the relationship:
 The system automatically normalizes relationships for consistent storage:
 
 ### Rule 1: Parent Relationships
+
 ```typescript
 // Input: (childId, parentId, 'child')
 // Stored as: (parentId, childId, 'parent')
-normalizeRelationship(childId, parentId, 'child')
+normalizeRelationship(childId, parentId, 'child');
 // → {personAId: parentId, personBId: childId, relationshipType: 'parent'}
 ```
 
 ### Rule 2: Symmetric Relationships (Spouse, Friend)
+
 ```typescript
 // Input: (person1Id, person2Id, 'spouse')
 // Stored with consistent order (lower UUID first):
-normalizeRelationship(person1Id, person2Id, 'spouse')
+normalizeRelationship(person1Id, person2Id, 'spouse');
 // → {personAId: lower_uuid, personBId: higher_uuid, relationshipType: 'spouse'}
 ```
 
 ### Rule 3: Asymmetric Relationships
+
 ```typescript
 // Input: (godparentId, godchildId, 'godparent')
 // Stored as-is: personA is role-holder, personB is recipient
-normalizeRelationship(godparentId, godchildId, 'godparent')
+normalizeRelationship(godparentId, godchildId, 'godparent');
 // → {personAId: godparentId, personBId: godchildId, relationshipType: 'godparent'}
 ```
 
@@ -134,46 +145,28 @@ normalizeRelationship(godparentId, godchildId, 'godparent')
 const relationshipRepo = new RelationshipRepository();
 
 // Create parent-child relationship
-await relationshipRepo.findOrCreate(
-  familyId,
-  parentId,
-  childId,
-  'parent',
-  {
-    category: 'biological',
-    status: 'active',
-    confidence: Confidence.HIGH,
-    sourceEventId: eventId,
-    claimedBy: 'Gabriel'
-  }
-);
+await relationshipRepo.findOrCreate(familyId, parentId, childId, 'parent', {
+  category: 'biological',
+  status: 'active',
+  confidence: Confidence.HIGH,
+  sourceEventId: eventId,
+  claimedBy: 'Gabriel',
+});
 
 // Create spouse relationship (order-independent)
-await relationshipRepo.findOrCreate(
-  familyId,
-  spouse1Id,
-  spouse2Id,
-  'spouse',
-  {
-    category: 'legal',
-    status: 'active',
-    qualifier: 'divorced',  // optional
-    sourceEventId: eventId
-  }
-);
+await relationshipRepo.findOrCreate(familyId, spouse1Id, spouse2Id, 'spouse', {
+  category: 'legal',
+  status: 'active',
+  qualifier: 'divorced', // optional
+  sourceEventId: eventId,
+});
 
 // Create step-parent relationship
-await relationshipRepo.findOrCreate(
-  familyId,
-  stepparentId,
-  childId,
-  'parent',
-  {
-    category: 'legal',
-    qualifier: 'step',
-    sourceEventId: eventId
-  }
-);
+await relationshipRepo.findOrCreate(familyId, stepparentId, childId, 'parent', {
+  category: 'legal',
+  qualifier: 'step',
+  sourceEventId: eventId,
+});
 ```
 
 ### Querying Relationships
@@ -236,20 +229,20 @@ interface FamilyTreeService {
   findGrandparents(familyId: string, personId: string): Promise<Person[]>;
   findAuntsUncles(familyId: string, personId: string): Promise<Person[]>;
   findCousins(familyId: string, personId: string): Promise<Person[]>;
-  
+
   // Path finding
   findRelationshipPath(
     familyId: string,
     personAId: string,
     personBId: string
   ): Promise<RelationshipPath>;
-  
+
   // Human-readable
   describeRelationship(
     familyId: string,
     personAId: string,
     personBId: string
-  ): Promise<string>;  // e.g., "first cousin twice removed"
+  ): Promise<string>; // e.g., "first cousin twice removed"
 }
 ```
 
@@ -260,12 +253,14 @@ interface FamilyTreeService {
 ### Why Only Store Parent + Spouse?
 
 ✅ **Benefits:**
+
 - **Single source of truth** - No denormalized duplicate records
 - **Handles complex families** - Remarriage, step-relations, multiple parents
 - **Scalable** - Works for 10 people or 10,000 without denormalization
 - **Audit trail** - Every explicit relationship is tracked with provenance
 
 ❌ **Trade-off:**
+
 - **Computation** - Deriving extended relationships requires graph traversal
 - **Complexity** - Need careful handling of qualifiers (half, step, adoptive)
 
@@ -296,11 +291,14 @@ Normalization prevents duplicate/contradictory relationships:
 
 ```typescript
 // Without normalization, could store both:
-(personA, personB, 'parent')
-(personB, personA, 'child')     // Confusing! Same relationship twice
+(personA, personB, 'parent')(personB, personA, 'child')(
+  // Confusing! Same relationship twice
 
-// With normalization, always stored as:
-(personA, personB, 'parent')    // Only one canonical form
+  // With normalization, always stored as:
+  personA,
+  personB,
+  'parent'
+); // Only one canonical form
 ```
 
 ---
@@ -317,10 +315,11 @@ export function normalizeRelationship(
   personBId: string,
   relationshipType: string,
   category?: RelationshipCategory
-): NormalizedRelationship
+): NormalizedRelationship;
 ```
 
 Features:
+
 - Handles 'child' input by converting to 'parent' with swapped order
 - Orders symmetric types (spouse, friend) by UUID
 - Preserves asymmetric order (godparent stays as-is)
@@ -336,10 +335,11 @@ export function getRelationshipPerspective(
   personBId: string,
   relationshipType: string,
   fromPersonId: string
-): { toPersonId: string; relationshipType: string }
+): { toPersonId: string; relationshipType: string };
 ```
 
 Automatically computes inverse relationships:
+
 - Parent → Child
 - Guardian → Ward
 - Godparent → Godchild
@@ -356,11 +356,11 @@ The schema enforces data integrity:
 CONSTRAINT no_self_relationship CHECK (person_a_id != person_b_id),
 
 -- Validate category values
-CONSTRAINT relationships_category_check 
+CONSTRAINT relationships_category_check
   CHECK (category IN ('biological', 'legal', 'functional', 'honorary', 'social')),
 
 -- Validate status values
-CONSTRAINT relationships_status_check 
+CONSTRAINT relationships_status_check
   CHECK (status IN ('active', 'ended', 'deceased'))
 ```
 
@@ -399,6 +399,7 @@ Gabriel = Rosa (spouse)
 ```
 
 **Relationships stored:**
+
 ```
 1. (Gabriel, Rosa, 'spouse', biological→legal)
 2. (Gabriel, Carmen, 'parent', biological)
@@ -421,6 +422,7 @@ Maria = Carlos
 ```
 
 **Relationships stored:**
+
 ```
 1. (Juan, Maria, 'spouse')
 2. (Juan, Pedro, 'parent')
@@ -443,6 +445,7 @@ but we don't know Carmen's cousin's name
 ```
 
 **Solution:** Create a placeholder person:
+
 - Name: "Unknown"
 - isPlaceholder: true
 - aliases: ["parent of Carmen's cousin", "related-to:person-uuid"]

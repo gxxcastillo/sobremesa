@@ -4,7 +4,7 @@ import type {
   QuestionRepository,
   ImageRepository,
 } from '@sobremesa/database';
-import type { ScribeContext, ImageContext } from './types.js';
+import type { ScribeContext, ImageContext } from './types';
 
 /**
  * Options for building Scribe context.
@@ -45,14 +45,23 @@ export async function buildScribeContext(
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
   // Fetch data in parallel for efficiency
-  const [recentEvents, pendingQuestions, recentClaims, recentImages] = await Promise.all([
-    repos.eventRepo.findRecent(familyId, conversationId, opts.recentMessageCount),
-    repos.questionRepo.findPending(familyId, opts.maxQuestions),
-    repos.claimRepo.findAllActive(familyId),
-    repos.imageRepo
-      ? repos.imageRepo.findRecentInConversation(familyId, conversationId, opts.maxImages)
-      : Promise.resolve([]),
-  ]);
+  const [recentEvents, pendingQuestions, recentClaims, recentImages] =
+    await Promise.all([
+      repos.eventRepo.findRecent(
+        familyId,
+        conversationId,
+        opts.recentMessageCount
+      ),
+      repos.questionRepo.findPending(familyId, opts.maxQuestions),
+      repos.claimRepo.findAllActive(familyId),
+      repos.imageRepo
+        ? repos.imageRepo.findRecentInConversation(
+            familyId,
+            conversationId,
+            opts.maxImages
+          )
+        : Promise.resolve([]),
+    ]);
 
   // Transform recent events to context format
   const recentMessages = recentEvents
@@ -71,7 +80,7 @@ export async function buildScribeContext(
     sharedAt: new Date(img.createdAt),
     analyzed: img.analyzed,
     description: img.analyzed
-      ? (img.analysis as Record<string, unknown>)?.description as string
+      ? ((img.analysis as Record<string, unknown>)?.description as string)
       : undefined,
     peopleCount: img.peopleCount,
     estimatedEra: img.estimatedEra,
@@ -85,11 +94,13 @@ export async function buildScribeContext(
   }));
 
   // Transform claims to context format
-  const recentClaimsContext = recentClaims.slice(0, opts.maxClaims).map((c) => ({
-    subject: c.subject,
-    claimValue: c.claimValue,
-    claimedBy: c.claimedBy,
-  }));
+  const recentClaimsContext = recentClaims
+    .slice(0, opts.maxClaims)
+    .map((c) => ({
+      subject: c.subject,
+      claimValue: c.claimValue,
+      claimedBy: c.claimedBy,
+    }));
 
   return {
     recentMessages,

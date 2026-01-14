@@ -24,23 +24,24 @@ This directory contains AI-specific context and development notes. For human-rea
 See `../docs/README.md` for complete index.
 
 **Key documents:**
+
 - [../docs/PRODUCT.md](../docs/PRODUCT.md) - Product vision
 - [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - System design
 - [../docs/AGENTS.md](../docs/AGENTS.md) - Agent overview
-- [../docs/AGENT_*.md](../docs/) - Individual agent specs
+- [../docs/AGENT\_\*.md](../docs/) - Individual agent specs
 - [../docs/QUICKSTART.md](../docs/QUICKSTART.md) - Setup guide
 - [../docs/IMPLEMENTATION.md](../docs/IMPLEMENTATION.md) - Build roadmap
 
 ### AI Assistant Context (this directory)
 
-| Document | Purpose |
-|----------|---------|
-| [NX.md](NX.md) | Nx MCP server instructions for AI assistants |
-| [CONFIGURATION.md](CONFIGURATION.md) | Configuration notes |
-| [DECISIONS.md](DECISIONS.md) | Architecture Decision Records (ADRs) |
-| [SCHEMA.sql](SCHEMA.sql) | PostgreSQL database schema (for AI reference) |
-| [SCHEMA-UPDATES.md](SCHEMA-UPDATES.md) | Migration notes |
-| settings.local.json | AI assistant settings |
+| Document                               | Purpose                                       |
+| -------------------------------------- | --------------------------------------------- |
+| [NX.md](NX.md)                         | Nx MCP server instructions for AI assistants  |
+| [CONFIGURATION.md](CONFIGURATION.md)   | Configuration notes                           |
+| [DECISIONS.md](DECISIONS.md)           | Architecture Decision Records (ADRs)          |
+| [SCHEMA.sql](SCHEMA.sql)               | PostgreSQL database schema (for AI reference) |
+| [SCHEMA-UPDATES.md](SCHEMA-UPDATES.md) | Migration notes                               |
+| settings.local.json                    | AI assistant settings                         |
 
 ---
 
@@ -135,3 +136,4 @@ This documentation set was created for the initial implementation. As the system
 ---
 
 **For humans:** See [../docs/README.md](../docs/README.md) for complete documentation index.
+```

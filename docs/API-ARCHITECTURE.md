@@ -62,6 +62,7 @@ To extend this system, you can:
 2. **Implement book generation**: Fill in the `generateBook` method to generate PDFs or other formats
 
 3. **Add more API endpoints**: Create routes for:
+
    - Filtering data by date ranges
    - Searching people/places
    - Custom narrative templates per audience
@@ -73,7 +74,7 @@ To extend this system, you can:
 ## Files Changed
 
 - ✅ Created `apps/api/` - Bun.js Express server
-- ✅ Created `apps/publisher/` - Solid.js frontend app  
+- ✅ Created `apps/publisher/` - Solid.js frontend app
 - ✅ Created `libs/api-client/` - TypeScript API client library
 - ✅ Updated `apps/publisher/src/app/App.tsx` - Now uses api-client
 - ✅ Updated `libs/api-client/src/lib/api-client.ts` - Implements HTTP calls

@@ -15,13 +15,14 @@ Identity Record (provider_user_id: "123456789")
     ↓
 Person Record (name: "Gabriel")
     ├── Other Telegram accounts
-    ├── WhatsApp account  
+    ├── WhatsApp account
     └── SMS contact
 ```
 
 ### Key Insight
 
 A **person** (real-world human) can have **multiple identities**:
+
 - Same person with different Telegram accounts
 - Same person via Telegram + WhatsApp
 - Same person across multiple chat channels
@@ -36,23 +37,23 @@ A **person** (real-world human) can have **multiple identities**:
 CREATE TABLE identities (
   id UUID PRIMARY KEY,
   family_id UUID NOT NULL,
-  
+
   -- Provider account
   source VARCHAR(50) NOT NULL,         -- 'telegram', 'whatsapp', 'sms'
   provider_user_id VARCHAR(255) NOT NULL,  -- e.g., Telegram user ID (string)
-  
+
   -- Profile snapshot (read from provider)
   display_name VARCHAR(255),           -- Latest known name from provider
   username VARCHAR(255),               -- Latest known username from provider
-  
+
   -- Link to family tree person
   person_id UUID NULL,                 -- Optional: link to canonical Person
-  
+
   is_active BOOLEAN DEFAULT TRUE,
-  
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  
+
   UNIQUE (family_id, source, provider_user_id),
   CONSTRAINT fk_identities_person_family
     FOREIGN KEY (family_id, person_id)
@@ -64,19 +65,24 @@ CREATE TABLE identities (
 ### Key Fields
 
 #### `source`
+
 The chat provider:
+
 - `'telegram'` - Telegram
 - `'whatsapp'` - WhatsApp
 - `'sms'` - SMS
 - Others as needed
 
 #### `provider_user_id`
+
 The unique identifier on the provider:
+
 - For Telegram: `from.id` as string (e.g., `"123456789"`)
 - For WhatsApp: JID (e.g., `"5511999999999@c.us"`)
 - For SMS: Phone number
 
 #### `display_name` & `username`
+
 Latest known profile info from the provider. **Updated automatically** if the user changes their profile:
 
 ```typescript
@@ -85,18 +91,21 @@ await identityRepo.findOrCreate(
   familyId,
   'telegram',
   '123456789',
-  'Gabriel Updated Name',  // Changed
-  '@gabriel_new'           // Changed
+  'Gabriel Updated Name', // Changed
+  '@gabriel_new' // Changed
 );
 // → Updates existing identity with new names
 ```
 
 #### `person_id`
+
 Optional link to the canonical `Person` in the family tree. Can be:
+
 - `NULL` - Identity not yet linked to a real person
 - UUID - Linked to a specific person
 
 **Linking is not automatic** - done manually or via coaching:
+
 ```typescript
 await identityRepo.linkToPerson(familyId, identityId, personId);
 ```
@@ -132,7 +141,7 @@ In the message ingester, identities are created automatically:
 ```typescript
 async ingestTextMessage(ctx: TextMessageContext) {
   const msg = ctx.message;
-  
+
   // Auto-create identity
   await this.identityRepo.findOrCreate(
     this.familyId,
@@ -141,7 +150,7 @@ async ingestTextMessage(ctx: TextMessageContext) {
     this.getDisplayName(msg.from),
     msg.from.username
   );
-  
+
   // Then ingest the message...
 }
 ```
@@ -186,11 +195,7 @@ const identities = await identityRepo.findAllActive(familyId);
 
 ```typescript
 // Link Telegram identity to Gabriel
-await identityRepo.linkToPerson(
-  familyId,
-  identityId,
-  gabrielPersonId
-);
+await identityRepo.linkToPerson(familyId, identityId, gabrielPersonId);
 
 // Now queries for Gabriel's identities return this one
 ```
@@ -260,6 +265,7 @@ await identityRepo.unlinkFromPerson(familyId, identityId);
 ### Why Separate Identity from Person?
 
 ✅ **Benefits:**
+
 - **Flexibility** - One person can have multiple chat accounts
 - **Decoupling** - Don't need to know real name to accept messages
 - **Multi-channel** - Same family tree person on Telegram, WhatsApp, SMS
@@ -267,11 +273,13 @@ await identityRepo.unlinkFromPerson(familyId, identityId);
 - **Audit** - Tracks all provider accounts used by each family
 
 ❌ **Trade-off:**
+
 - **Linking complexity** - Must explicitly link identity → person
 
 ### Why Not Merge Identity with Person?
 
 If identity fields were directly on `people` table:
+
 - Hard to have multiple chat accounts
 - Can't add new chat providers without schema changes
 - Identity updates could collide (username changes)
@@ -280,11 +288,13 @@ If identity fields were directly on `people` table:
 ### Why Auto-Update Profile Fields?
 
 Telegram users frequently change:
+
 - Display name
 - Username
 - Profile picture
 
 Storing latest snapshot means:
+
 - Facilitator can address user correctly
 - Event log reflects current state
 - No stale profile data
@@ -309,6 +319,7 @@ CREATE POLICY "family_isolation_select" ON identities
 ### Sensitive Data
 
 ⚠️ **Provider user IDs are identifiers**, treat as sensitive:
+
 - Don't log full provider_user_id publicly
 - Use family_id + identity_id references in audit logs
 - Encrypt at rest if needed

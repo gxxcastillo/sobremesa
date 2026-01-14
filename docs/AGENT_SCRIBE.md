@@ -1,19 +1,22 @@
-
 ## 📝 Scribe (Default: "Don Rubén")
 
 ### Role
+
 Silent data extractor and question generator.
 
 ### Internal Name
+
 `BotRole.SCRIBE`
 
 ### Inputs
 
 **Live Chat Provider Messages (via ordered queue):**
+
 - All messages sequentially
 - One at a time, in order
 
 **Database (for context):**
+
 - Recent messages (5 full + 15 summaries)
 - Existing people, places, events, stories
 - Pending questions
@@ -22,6 +25,7 @@ Silent data extractor and question generator.
 ### Outputs
 
 **Domain Model (to Registrar):**
+
 ```typescript
 {
   // Entities
@@ -32,14 +36,14 @@ Silent data extractor and question generator.
     birth_year: 1865,
     confidence: "high"
   }],
-  
+
   places: [{
     name: "Nalewki Street",
     type: "address",
     city: "Warsaw",
     context: "location of family shop"
   }],
-  
+
   events: [{
     title: "Immigration to America",
     description: "Family left Warsaw for New York",
@@ -47,7 +51,7 @@ Silent data extractor and question generator.
     people: ["Abraham Goldstein", "Rose Goldstein"],
     significance: "major family transition"
   }],
-  
+
   // Stories
   stories: [{
     title: "The Shop on Nalewki Street",
@@ -61,7 +65,7 @@ Silent data extractor and question generator.
     completeness: "partial",
     confidence: "high"
   }],
-  
+
   // Claims (NEW - preferred over direct facts)
   claims: [{
     claim_type: "event_date",
@@ -71,7 +75,7 @@ Silent data extractor and question generator.
     confidence: "high",
     certainty_language: "definitely"
   }],
-  
+
   // Questions
   questions: [{
     question: "What kind of shop did Abraham run?",
@@ -80,7 +84,7 @@ Silent data extractor and question generator.
     context: {story_id: "001", topic: "shop details"},
     best_person_to_ask: "Uncle David"
   }],
-  
+
   // Answered questions
   answeredQuestions: [{
     questionId: "q_042",
@@ -88,7 +92,7 @@ Silent data extractor and question generator.
     completeness: "full",
     messageId: "msg_234"
   }],
-  
+
   // Conflicts
   conflicts: [{
     topic: "arrival_date",
@@ -115,6 +119,7 @@ Silent data extractor and question generator.
 ### Context Strategy
 
 **Tiered context (cost optimization):**
+
 - Recent 5 messages: Full text
 - Messages 6-20: Summaries
 - Active entities: Last 20 messages
@@ -127,10 +132,10 @@ Silent data extractor and question generator.
 async processMessage(message: Message): Promise<DomainModel> {
   // 1. Detect language
   const language = detectLanguage(message.content);
-  
+
   // 2. Store original
   const original = message.content;
-  
+
   // 3. Translate (preserve cultural terms)
   const translations = await translateWithCulturalTerms(
     original,
@@ -138,10 +143,10 @@ async processMessage(message: Message): Promise<DomainModel> {
     config.languages,
     config.culturalTerms
   );
-  
+
   // 4. Extract from original language (better accuracy)
   const extraction = await extractEntities(original, language);
-  
+
   // 5. Attach bilingual content to all extracted items
   return {
     ...extraction,
@@ -158,9 +163,10 @@ async processMessage(message: Message): Promise<DomainModel> {
 
 ### Database Access
 
-Context loads must be scoped by family_id 
+Context loads must be scoped by family_id
 
 **Read:**
+
 - `messages` (recent context)
 - `people`, `places`, `events`, `stories` (existing entities)
 - `questions` (pending, to check for answers)
@@ -197,6 +203,7 @@ OUTPUT: Domain model (not database schema)
 ```
 
 ### Common Mistakes
+
 - ❌ Writing directly to database
 - ❌ Auto-resolving conflicts
 - ❌ Missing answer detection

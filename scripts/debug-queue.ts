@@ -27,8 +27,15 @@ async function main() {
     console.log('Select error:', selectError.message);
   } else {
     console.log('Queued items found:', selectData?.length || 0);
-    selectData?.forEach(item => {
-      console.log('  -', item.id?.slice(0, 8), 'event:', item.conversation_event_id?.slice(0, 8), 'status:', item.status);
+    selectData?.forEach((item) => {
+      console.log(
+        '  -',
+        item.id?.slice(0, 8),
+        'event:',
+        item.conversation_event_id?.slice(0, 8),
+        'status:',
+        item.status
+      );
     });
   }
   console.log('');

@@ -7,11 +7,13 @@ Complete technical specification for Sobremesa implementation.
 ## Core Technologies
 
 ### Language & Runtime
+
 - **TypeScript** 5.x (latest stable)
 - **Node.js** 22 LTS
 - **Package Manager:** pnpm
 
 ### Monorepo Framework
+
 - **Nx** 22+ (latest stable)
 - **Nx Plugins:**
   - `@nx/js` - TypeScript libraries
@@ -20,6 +22,7 @@ Complete technical specification for Sobremesa implementation.
   - `@nx/eslint` - Linting
 
 ### Database
+
 - **Supabase** (PostgreSQL 14+)
   - Local development: Supabase CLI + Docker
   - Production: Supabase Cloud
@@ -28,30 +31,37 @@ Complete technical specification for Sobremesa implementation.
   - `pg_trgm` (optional) - Fuzzy text matching for deduplication
 
 ### AI Integration
+
 - **Anthropic Claude API**
   - Primary model: Claude 3.5 Sonnet (or latest)
   - Vision model: Claude 3.5 Sonnet (for Curator)
 - **SDK:** `@anthropic-ai/sdk`
 
 ### Message Queue
+
 **For POC/MVP:**
+
 - In-memory queue (simple array-based)
 - Persisted to database (`message_queue` table)
 
 **For Production:**
+
 - **Redis** (recommended)
 - Alternative: **BullMQ** (Redis-based job queue)
 
 ### Chat Provider Integration
+
 - **Pluggable chat providers** - Telegram, WhatsApp, SMS, etc.
 - **Provider-specific SDKs** as needed
 - Webhook or polling-based message ingestion
 
 ### Translation (Optional)
+
 - **DeepL API** (higher quality than Claude for pure translation)
 - Alternative: Claude API (multi-modal, can translate + preserve cultural terms)
 
 ### Blockchain (Optional)
+
 - **Solana** @solana/kit (https://www.solanakit.com/)
 - Only if `config.web3Enabled = true`
 - Non-blocking async writes
@@ -61,27 +71,33 @@ Complete technical specification for Sobremesa implementation.
 ## Development Tools
 
 ### Bundling
+
 - **Vite** - Fast build tool and development server
 
 ### Testing
+
 - **Vitest** - Unit & integration tests
 - **Workspace Config:** `vitest.workspace.ts` (already present)
 - Coverage target: 70%+ for core libraries
 
 ### Linting & Formatting
+
 - **ESLint** 9+ (flat config: `eslint.config.mjs`)
 - **Prettier** (optional, personal preference)
 
 ### Type Checking
+
 - **TypeScript Compiler** (`tsc`)
 - Strict mode enabled across all projects
 - Path mapping via `tsconfig.base.json`
 
 ### Git Hooks (Optional)
+
 - **Husky** - Pre-commit hooks
 - **lint-staged** - Run linters on staged files
 
 ### UI
+
 - **SolidJs** (for building reactive user interfaces)
 
 ---
@@ -115,6 +131,7 @@ sobremesa/
 ## Environment Variables
 
 **Required:**
+
 ```bash
 # Database
 SUPABASE_URL=https://your-project.supabase.co
@@ -135,6 +152,7 @@ FAMILY_ID=uuid-of-family  # For single-family deployments
 ```
 
 **Optional:**
+
 ```bash
 # Translation
 DEEPL_API_KEY=your-deepl-key
@@ -202,28 +220,40 @@ const response = await anthropic.messages.create({
 const visionResponse = await anthropic.messages.create({
   model: 'claude-3-5-sonnet-20241022',
   max_tokens: 2000,
-  messages: [{
-    role: 'user',
-    content: [
-      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64Image } },
-      { type: 'text', text: 'Analyze this family photo...' }
-    ]
-  }],
+  messages: [
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/jpeg',
+            data: base64Image,
+          },
+        },
+        { type: 'text', text: 'Analyze this family photo...' },
+      ],
+    },
+  ],
 });
 ```
 
 ### Chat Provider Bot Setup
 
 **Example (Telegram):**
+
 ```typescript
 import TelegramBot from 'node-telegram-bot-api';
 
-const bot = new TelegramBot(process.env.CHAT_PROVIDER_BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(process.env.CHAT_PROVIDER_BOT_TOKEN, {
+  polling: true,
+});
 
 bot.on('message', async (msg) => {
   // Store in database
   await storeMessage(msg);
-  
+
   // Add to queue
   await queueMessage(msg.message_id);
 });
@@ -303,6 +333,7 @@ nx build telegram-bot --prod
 ### Deployment Options
 
 **Option 1: Docker**
+
 ```dockerfile
 FROM node:20-alpine
 WORKDIR /app
@@ -311,6 +342,7 @@ CMD ["node", "main.js"]
 ```
 
 **Option 2: Serverless**
+
 - AWS Lambda + API Gateway (webhook)
 - Vercel Serverless Functions
 - Railway, Render, Fly.io
@@ -322,23 +354,27 @@ CMD ["node", "main.js"]
 ### Rate Limits
 
 **Claude API:**
+
 - Tier 2: 50 requests/min
 - Implement exponential backoff
 - Queue requests if hitting limits
 
 **Chat Provider API:**
+
 - 30 messages/second per bot
 - Use message batching where possible
 
 ### Database Optimization
 
 **Indexes (from schema):**
+
 - `family_id` on ALL tables
 - `source_message_id` on claims
 - `status` on questions
 - Composite indexes for common queries
 
 **Query Optimization:**
+
 - Use database views for complex joins
 - Limit context loading (5 full + 15 summaries)
 - Paginate event log queries
@@ -346,11 +382,13 @@ CMD ["node", "main.js"]
 ### Caching Strategy
 
 **What to cache:**
+
 - Configuration (TTL: 1 hour)
 - Facilitator rules (TTL: 10 minutes)
 - Cultural terms (TTL: 24 hours)
 
 **What NOT to cache:**
+
 - Messages (always fresh)
 - Real-time levers (immediate)
 - Pending questions (stale risky)
@@ -360,16 +398,19 @@ CMD ["node", "main.js"]
 ## Security Considerations
 
 ### Environment Variables
+
 - **Never commit** `.env` files
 - Use secret management (Vercel Secrets, AWS Secrets Manager)
 - Rotate API keys regularly
 
 ### Database Security
+
 - **Row Level Security (RLS)** enabled on all tables
 - Service role key only in backend (never client)
 - Validate all inputs (prevent SQL injection)
 
 ### API Keys
+
 - Restrict Claude API key to backend only
 - Use separate keys per environment (dev/staging/prod)
 

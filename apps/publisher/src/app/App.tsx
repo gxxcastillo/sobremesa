@@ -31,7 +31,11 @@ export default function App() {
       </header>
 
       <main class="app-main">
-        <button class="generate-btn" onClick={generateSummary} disabled={isLoading()}>
+        <button
+          class="generate-btn"
+          onClick={generateSummary}
+          disabled={isLoading()}
+        >
           {isLoading() ? 'Generating...' : 'Generate Preview'}
         </button>
 
@@ -48,14 +52,19 @@ export default function App() {
                   {summary()!.people.map((p) => (
                     <li>
                       <strong>{p.name}</strong>
-                      {p.aliases?.length && <span> (aka {p.aliases.join(', ')})</span>}
+                      {p.aliases?.length && (
+                        <span> (aka {p.aliases.join(', ')})</span>
+                      )}
                       {(p.birth_year || p.death_year) && (
                         <span>
                           {' '}
-                          [{p.birth_year || '?'}–{p.death_year || (p.birth_year ? 'present' : '?')}]
+                          [{p.birth_year || '?'}–
+                          {p.death_year || (p.birth_year ? 'present' : '?')}]
                         </span>
                       )}
-                      {p.notes_original && <p class="notes">{p.notes_original}</p>}
+                      {p.notes_original && (
+                        <p class="notes">{p.notes_original}</p>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -68,7 +77,9 @@ export default function App() {
                 <ul>
                   {summary()!.relationships.map((r) => (
                     <li>
-                      {r.person_a?.name || 'Unknown'} → <strong>{r.relationship_type}</strong> → {r.person_b?.name || 'Unknown'}
+                      {r.person_a?.name || 'Unknown'} →{' '}
+                      <strong>{r.relationship_type}</strong> →{' '}
+                      {r.person_b?.name || 'Unknown'}
                     </li>
                   ))}
                 </ul>
@@ -83,10 +94,24 @@ export default function App() {
                     <li>
                       <strong>{p.name}</strong>
                       {p.type && <span> ({p.type})</span>}
-                      {[p.city, p.region, p.country].filter(Boolean).join(', ') && p.name !== [p.city, p.region, p.country].filter(Boolean).join(', ') && (
-                        <span> - {[p.city, p.region, p.country].filter(Boolean).join(', ')}</span>
+                      {[p.city, p.region, p.country]
+                        .filter(Boolean)
+                        .join(', ') &&
+                        p.name !==
+                          [p.city, p.region, p.country]
+                            .filter(Boolean)
+                            .join(', ') && (
+                          <span>
+                            {' '}
+                            -{' '}
+                            {[p.city, p.region, p.country]
+                              .filter(Boolean)
+                              .join(', ')}
+                          </span>
+                        )}
+                      {p.context_original && (
+                        <p class="notes">{p.context_original}</p>
                       )}
-                      {p.context_original && <p class="notes">{p.context_original}</p>}
                     </li>
                   ))}
                 </ul>
@@ -99,10 +124,19 @@ export default function App() {
                 <ul>
                   {summary()!.events.map((e) => (
                     <li>
-                      {e.date_year && <span class="date">[{e.date_month ? `${e.date_month}/` : ''}${e.date_year}]</span>}
-                      {e.event_type && <span class="event-type">({e.event_type})</span>}
+                      {e.date_year && (
+                        <span class="date">
+                          [{e.date_month ? `${e.date_month}/` : ''}$
+                          {e.date_year}]
+                        </span>
+                      )}
+                      {e.event_type && (
+                        <span class="event-type">({e.event_type})</span>
+                      )}
                       <strong>{e.title}</strong>
-                      {e.description_original && <p class="notes">{e.description_original}</p>}
+                      {e.description_original && (
+                        <p class="notes">{e.description_original}</p>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -116,11 +150,19 @@ export default function App() {
                   {summary()!.stories.map((s) => (
                     <li>
                       <span class="status">
-                        {s.completeness === 'complete' ? '✓' : s.completeness === 'partial' ? '◐' : '○'}
+                        {s.completeness === 'complete'
+                          ? '✓'
+                          : s.completeness === 'partial'
+                          ? '◐'
+                          : '○'}
                       </span>
                       <strong>{s.title || 'Untitled'}</strong>
-                      {s.themes?.length && <p class="themes">Themes: {s.themes.join(', ')}</p>}
-                      {s.content_original && <p class="notes">{s.content_original}</p>}
+                      {s.themes?.length && (
+                        <p class="themes">Themes: {s.themes.join(', ')}</p>
+                      )}
+                      {s.content_original && (
+                        <p class="notes">{s.content_original}</p>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -138,8 +180,10 @@ export default function App() {
 
             <footer class="summary-footer">
               <p>
-                <strong>TOTALS:</strong> {summary()!.people.length} people, {summary()!.places.length} places, {summary()!.events.length} events •{' '}
-                {summary()!.relationships.length} relationships, {summary()!.stories.length} stories
+                <strong>TOTALS:</strong> {summary()!.people.length} people,{' '}
+                {summary()!.places.length} places, {summary()!.events.length}{' '}
+                events • {summary()!.relationships.length} relationships,{' '}
+                {summary()!.stories.length} stories
               </p>
             </footer>
           </div>

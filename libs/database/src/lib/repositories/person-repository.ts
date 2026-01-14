@@ -1,6 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { Person, ExtractedPerson } from '@sobremesa/shared-types';
-import { BaseRepository, mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
+import {
+  BaseRepository,
+  mapRowToCamelCase,
+  mapRecordToSnakeCase,
+} from '../base-repository.js';
 
 /**
  * Match result with confidence level.
@@ -76,7 +80,9 @@ export class PersonRepository extends BaseRepository<Person> {
       .or('is_placeholder.is.null,is_placeholder.eq.false');
 
     if (error) {
-      throw new Error(`Failed to search people for fuzzy match: ${error.message}`);
+      throw new Error(
+        `Failed to search people for fuzzy match: ${error.message}`
+      );
     }
 
     if (!data || data.length === 0) {
@@ -123,7 +129,10 @@ export class PersonRepository extends BaseRepository<Person> {
         }
         // Also check if person's first name matches any search term's first name
         const searchFirstName = searchTerm.split(' ')[0];
-        if (searchFirstName === personFirstName && searchFirstName.length >= 3) {
+        if (
+          searchFirstName === personFirstName &&
+          searchFirstName.length >= 3
+        ) {
           firstNameMatches.push(person);
           break;
         }
@@ -154,7 +163,9 @@ export class PersonRepository extends BaseRepository<Person> {
             return {
               person,
               confidence: 'medium',
-              matchReason: `fuzzy match: "${searchTerm}" ~ "${personTerm}" (${(similarity * 100).toFixed(0)}%)`,
+              matchReason: `fuzzy match: "${searchTerm}" ~ "${personTerm}" (${(
+                similarity * 100
+              ).toFixed(0)}%)`,
             };
           }
         }
@@ -196,11 +207,10 @@ export class PersonRepository extends BaseRepository<Person> {
       );
 
       if (newAliases.length > 0) {
-        return await this.updateAliases(
-          familyId,
-          existing.id,
-          [...existing.aliases, ...newAliases]
-        );
+        return await this.updateAliases(familyId, existing.id, [
+          ...existing.aliases,
+          ...newAliases,
+        ]);
       }
 
       return existing;
@@ -284,7 +294,10 @@ export class PersonRepository extends BaseRepository<Person> {
     const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,
       name: 'Unknown',
-      aliases: [description, ...relatedToPersonIds.map(id => `related-to:${id}`)],
+      aliases: [
+        description,
+        ...relatedToPersonIds.map((id) => `related-to:${id}`),
+      ],
       isPlaceholder: true,
       firstMentionedEventId: sourceEventId,
       createdBy,
@@ -331,7 +344,10 @@ export class PersonRepository extends BaseRepository<Person> {
     sourceEventId?: string,
     createdBy?: string
   ): Promise<Person> {
-    const existing = await this.findPlaceholderByDescription(familyId, description);
+    const existing = await this.findPlaceholderByDescription(
+      familyId,
+      description
+    );
 
     if (existing) {
       return existing;

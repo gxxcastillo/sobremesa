@@ -1,4 +1,4 @@
-export { MessageIngester } from './lib/ingester.js';
+export { MessageIngester } from './lib/ingester';
 export type {
   ActorInfo,
   BaseMessageInput,
@@ -7,4 +7,4 @@ export type {
   DocumentMessageInput,
   VideoMessageInput,
   MediaMessageInput,
-} from './lib/ingester.js';
+} from './lib/ingester';

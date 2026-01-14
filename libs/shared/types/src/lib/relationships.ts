@@ -8,10 +8,7 @@
  * - Qualifiers capture nuances (half, step, adoptive, maternal, paternal)
  */
 
-import type {
-  RelationshipCategory,
-  RelationshipType,
-} from './entities.js';
+import type { RelationshipCategory, RelationshipType } from './entities';
 
 /**
  * Structural relationship types that form the family tree backbone.
@@ -81,9 +78,8 @@ export function normalizeRelationship(
 
   // Handle symmetric relationships - order by UUID for consistency
   if (SYMMETRIC_TYPES.includes(type as RelationshipType)) {
-    const [first, second] = personAId < personBId
-      ? [personAId, personBId]
-      : [personBId, personAId];
+    const [first, second] =
+      personAId < personBId ? [personAId, personBId] : [personBId, personAId];
 
     return {
       personAId: first,

@@ -76,7 +76,10 @@ export class FamilyRepository {
   /**
    * Create a new family.
    */
-  async create(name: string, config: Record<string, unknown> = {}): Promise<Family> {
+  async create(
+    name: string,
+    config: Record<string, unknown> = {}
+  ): Promise<Family> {
     const { data, error } = await this.client
       .from(this.tableName)
       .insert({ name, config })

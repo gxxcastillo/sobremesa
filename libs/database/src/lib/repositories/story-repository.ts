@@ -1,6 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { Story, Confidence, LanguageCode } from '@sobremesa/shared-types';
-import { BaseRepository, mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
+import {
+  BaseRepository,
+  mapRowToCamelCase,
+  mapRecordToSnakeCase,
+} from '../base-repository.js';
 
 /**
  * Repository for coherent narrative fragments.
@@ -73,7 +77,10 @@ export class StoryRepository extends BaseRepository<Story> {
   /**
    * Find a story by source event ID.
    */
-  async findBySourceEvent(familyId: string, sourceEventId: string): Promise<Story | null> {
+  async findBySourceEvent(
+    familyId: string,
+    sourceEventId: string
+  ): Promise<Story | null> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')

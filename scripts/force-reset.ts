@@ -8,7 +8,13 @@ async function main() {
   // Force reset all non-done items
   const { data, error } = await client
     .from('processing_queue')
-    .update({ status: 'queued', locked_at: null, locked_by: null, last_error: null, attempts: 0 })
+    .update({
+      status: 'queued',
+      locked_at: null,
+      locked_by: null,
+      last_error: null,
+      attempts: 0,
+    })
     .neq('status', 'done')
     .select();
 
@@ -18,7 +24,9 @@ async function main() {
   }
 
   console.log('Force reset', data?.length || 0, 'items');
-  data?.forEach(d => console.log(`  - ${d.conversation_event_id.slice(0, 8)}... now queued`));
+  data?.forEach((d) =>
+    console.log(`  - ${d.conversation_event_id.slice(0, 8)}... now queued`)
+  );
 }
 
 main().catch(console.error);

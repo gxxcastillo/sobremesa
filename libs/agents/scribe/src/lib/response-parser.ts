@@ -14,7 +14,7 @@ import {
   type ClaimSourceType,
 } from '@sobremesa/shared-types';
 import { createLogger } from '@sobremesa/shared-utils';
-import type { RawScribeResponse } from './types.js';
+import type { RawScribeResponse } from './types';
 
 const logger = createLogger({ name: 'scribe-parser' });
 
@@ -109,7 +109,10 @@ export function parseScribeResponse(
     const jsonStr = extractJson(rawText);
     raw = JSON.parse(jsonStr) as RawScribeResponse;
   } catch (error) {
-    logger.warn({ error, rawText: rawText.slice(0, 500) }, 'Failed to parse Scribe response JSON');
+    logger.warn(
+      { error, rawText: rawText.slice(0, 500) },
+      'Failed to parse Scribe response JSON'
+    );
     // Return empty domain model on parse failure
     return createEmptyDomainModel(sourceEventId, familyId);
   }

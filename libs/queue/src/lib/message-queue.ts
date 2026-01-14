@@ -37,7 +37,9 @@ export class MessageQueue {
     loggerOptions?: LoggerOptions;
   }) {
     this.repository = options?.repository || new ProcessingQueueRepository();
-    this.workerId = options?.workerId || `worker-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    this.workerId =
+      options?.workerId ||
+      `worker-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     this.options = {
       maxRetries: 3,
       retryDelayMs: 5000,
@@ -113,7 +115,10 @@ export class MessageQueue {
     }
 
     const familyId = item.familyId;
-    this.logger.debug({ itemId: item.id, eventId: item.conversationEventId, familyId }, 'Processing message');
+    this.logger.debug(
+      { itemId: item.id, eventId: item.conversationEventId, familyId },
+      'Processing message'
+    );
 
     try {
       const result = await this.handler(item.conversationEventId, familyId);
@@ -139,7 +144,8 @@ export class MessageQueue {
 
       return true;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       await this.repository.fail(
         familyId,
         item.id,
@@ -189,7 +195,10 @@ export class MessageQueue {
       this.pollTimeout = setTimeout(() => this.poll(), delay);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      this.logger.error({ err: err.message, stack: err.stack }, 'Error in poll loop');
+      this.logger.error(
+        { err: err.message, stack: err.stack },
+        'Error in poll loop'
+      );
       this.pollTimeout = setTimeout(() => this.poll(), this.pollIntervalMs);
     }
   }

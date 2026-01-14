@@ -9,9 +9,11 @@ Complete guide to configuring Sobremesa for different families, languages, and c
 Sobremesa is a **reusable library** designed to work for any family, in any language, with any cultural context.
 
 **Internal code uses generic role names:**
+
 - `BotRole.FACILITATOR`, `BotRole.ADMIN`, `BotRole.SCRIBE`
 
 **Configuration provides:**
+
 - Display names (what users see)
 - Languages (primary + original preservation)
 - Personalities (how bots behave)
@@ -29,7 +31,7 @@ interface SobremesaConfig {
 
   // === Languages ===
   languages: {
-    primary: string;              // ISO code: "es", "en", "ja"
+    primary: string; // ISO code: "es", "en", "ja"
   };
 
   // === Bot Configuration ===
@@ -56,6 +58,7 @@ interface SobremesaConfig {
 ```
 
 **Examples:**
+
 - Spanish family: `"Sobremesa"` (after-dinner conversation time)
 - English family: `"Family Stories"`, `"Our History"`
 - Japanese family: `"家族の記憶"` (Family Memories)
@@ -67,7 +70,7 @@ interface SobremesaConfig {
 ```typescript
 {
   languages: {
-    primary: "es"
+    primary: 'es';
   }
 }
 ```
@@ -75,6 +78,7 @@ interface SobremesaConfig {
 ### How It Works
 
 **Storage:** Content is stored in its original language only.
+
 - `content_original` - Exact words spoken (sacred, never modified)
 - `language_original` - ISO code of original language
 
@@ -136,11 +140,11 @@ interface FacilitatorConfig {
 
 **Personality Trait Guide:**
 
-| Trait | Options | Effect |
-|-------|---------|--------|
-| **formality** | casual, friendly, professional, formal | Tone of voice |
-| **emojiUsage** | none, minimal, moderate, generous | Emoji frequency |
-| **engagement** | gentle, curious, enthusiastic | Question energy |
+| Trait          | Options                                | Effect          |
+| -------------- | -------------------------------------- | --------------- |
+| **formality**  | casual, friendly, professional, formal | Tone of voice   |
+| **emojiUsage** | none, minimal, moderate, generous      | Emoji frequency |
+| **engagement** | gentle, curious, enthusiastic          | Question energy |
 
 ---
 
@@ -187,6 +191,7 @@ interface ScribeConfig {
 ```
 
 **thoroughness guide:**
+
 - `essential`: Main entities only (people, places, major events)
 - `standard`: Entities + relationships + basic context
 - `comprehensive`: Above + themes, objects, detailed relationships
@@ -209,16 +214,17 @@ interface ScribeConfig {
 ```typescript
 {
   culturalTerms: [
-    "pulpería",      // Nicaraguan corner store
-    "gallo pinto",   // Traditional rice and beans
-    "nacatamal"      // Nicaraguan tamale
-  ]
+    'pulpería', // Nicaraguan corner store
+    'gallo pinto', // Traditional rice and beans
+    'nacatamal', // Nicaraguan tamale
+  ];
 }
 ```
 
 **Purpose:** These words are NEVER translated, just explained in parentheses.
 
 **Example:**
+
 ```
 Spanish: "Abuela hacía gallo pinto todos los domingos"
 English: "Grandma made gallo pinto (rice and beans) every Sunday"
@@ -233,41 +239,41 @@ English: "Grandma made gallo pinto (rice and beans) every Sunday"
 
 ```typescript
 const nicaraguanFamilyConfig: SobremesaConfig = {
-  familyId: "family-uuid",
-  projectName: "Sobremesa",
+  familyId: 'family-uuid',
+  projectName: 'Sobremesa',
 
   languages: {
-    primary: "es"
+    primary: 'es',
   },
 
   bots: {
     facilitator: {
-      displayName: "Carmencita",
+      displayName: 'Carmencita',
       personality: {
         formality: 'friendly',
         emojiUsage: 'moderate',
-        engagement: 'curious'
-      }
+        engagement: 'curious',
+      },
     },
 
     admin: {
-      displayName: "La Directora",
+      displayName: 'La Directora',
       personality: {
         formality: 'friendly',
         emojiUsage: 'moderate',
-        celebration: 'enthusiastic'
-      }
+        celebration: 'enthusiastic',
+      },
     },
 
     scribe: {
-      displayName: "Don Rubén",
+      displayName: 'Don Rubén',
       personality: {
-        thoroughness: 'comprehensive'
-      }
-    }
+        thoroughness: 'comprehensive',
+      },
+    },
   },
 
-  culturalTerms: ["pulpería", "gallo pinto", "vigorón", "nacatamal"]
+  culturalTerms: ['pulpería', 'gallo pinto', 'vigorón', 'nacatamal'],
 };
 ```
 
@@ -277,41 +283,41 @@ const nicaraguanFamilyConfig: SobremesaConfig = {
 
 ```typescript
 const americanFamilyConfig: SobremesaConfig = {
-  familyId: "family-uuid",
-  projectName: "Family Stories",
+  familyId: 'family-uuid',
+  projectName: 'Family Stories',
 
   languages: {
-    primary: "en"
+    primary: 'en',
   },
 
   bots: {
     facilitator: {
-      displayName: "Annie",
+      displayName: 'Annie',
       personality: {
         formality: 'friendly',
         emojiUsage: 'minimal',
-        engagement: 'curious'
-      }
+        engagement: 'curious',
+      },
     },
 
     admin: {
-      displayName: "The Coordinator",
+      displayName: 'The Coordinator',
       personality: {
         formality: 'professional',
         emojiUsage: 'minimal',
-        celebration: 'warm'
-      }
+        celebration: 'warm',
+      },
     },
 
     scribe: {
-      displayName: "The Archivist",
+      displayName: 'The Archivist',
       personality: {
-        thoroughness: 'standard'
-      }
-    }
+        thoroughness: 'standard',
+      },
+    },
   },
 
-  culturalTerms: []
+  culturalTerms: [],
 };
 ```
 
@@ -321,41 +327,41 @@ const americanFamilyConfig: SobremesaConfig = {
 
 ```typescript
 const japaneseFamilyConfig: SobremesaConfig = {
-  familyId: "family-uuid",
-  projectName: "家族の記憶",
+  familyId: 'family-uuid',
+  projectName: '家族の記憶',
 
   languages: {
-    primary: "ja"
+    primary: 'ja',
   },
 
   bots: {
     facilitator: {
-      displayName: "ゆい (Yui)",
+      displayName: 'ゆい (Yui)',
       personality: {
         formality: 'formal',
         emojiUsage: 'minimal',
-        engagement: 'gentle'
-      }
+        engagement: 'gentle',
+      },
     },
 
     admin: {
-      displayName: "管理者",
+      displayName: '管理者',
       personality: {
         formality: 'formal',
         emojiUsage: 'none',
-        celebration: 'understated'
-      }
+        celebration: 'understated',
+      },
     },
 
     scribe: {
-      displayName: "記録者",
+      displayName: '記録者',
       personality: {
-        thoroughness: 'comprehensive'
-      }
-    }
+        thoroughness: 'comprehensive',
+      },
+    },
   },
 
-  culturalTerms: ["おばあちゃん", "おじいちゃん", "家族", "故郷"]
+  culturalTerms: ['おばあちゃん', 'おじいちゃん', '家族', '故郷'],
 };
 ```
 
@@ -389,6 +395,7 @@ const config = require('./sobremesa.config.json');
 ## Summary
 
 **~10 configuration points:**
+
 - 2 project identity (familyId, projectName)
 - 1 language setting
 - 6 bot personality traits (2 per bot)

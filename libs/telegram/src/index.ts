@@ -1,14 +1,14 @@
-export { BotManager } from './lib/bot-manager.js';
-export { ScribeBotHandler } from './lib/scribe-bot.js';
-export { AdminBotHandler } from './lib/admin-bot.js';
-export { FacilitatorBotHandler } from './lib/facilitator-bot.js';
+export { BotManager } from './lib/bot-manager';
+export { ScribeBotHandler } from './lib/scribe-bot';
+export { AdminBotHandler } from './lib/admin-bot';
+export { FacilitatorBotHandler } from './lib/facilitator-bot';
 export type {
   BotRole,
   BotConfig,
   BotManagerConfig,
   BotHandler,
   OutgoingMessage,
-} from './lib/types.js';
+} from './lib/types';
 
 // Re-export from @sobremesa/ingester for convenience
 export {

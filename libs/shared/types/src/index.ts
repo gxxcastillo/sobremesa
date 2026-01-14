@@ -1,21 +1,21 @@
 // Core enums and utilities
-export * from './lib/bot-role.js';
-export * from './lib/confidence.js';
-export * from './lib/languages.js';
-export * from './lib/relationships.js';
+export * from './lib/bot-role';
+export * from './lib/confidence';
+export * from './lib/languages';
+export * from './lib/relationships';
 
 // Entity types
-export * from './lib/entities.js';
-export * from './lib/conversation.js';
+export * from './lib/entities';
+export * from './lib/conversation';
 
 // Configuration
-export * from './lib/config.js';
+export * from './lib/config';
 
 // Domain models (Scribe/Curator output)
-export * from './lib/domain-model.js';
+export * from './lib/domain-model';
 
 // Queue types
-export * from './lib/queue.js';
+export * from './lib/queue';
 
 // Event log types
-export * from './lib/event-log.js';
+export * from './lib/event-log';

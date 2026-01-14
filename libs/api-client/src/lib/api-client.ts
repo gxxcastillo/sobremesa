@@ -61,12 +61,20 @@ export class PublisherApiClient {
 
   constructor(baseUrl = '') {
     // Prefer explicit env override, then passed-in value, then current origin (no explicit port), then fallback
-    const envBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) || '';
-    const originFallback = typeof window !== 'undefined' ? window.location.origin : '';
-    this.baseUrl = envBase || baseUrl || originFallback || 'https://sobremesa.x:3000';
+    const envBase =
+      (typeof import.meta !== 'undefined' &&
+        (import.meta as any).env?.VITE_API_URL) ||
+      '';
+    const originFallback =
+      typeof window !== 'undefined' ? window.location.origin : '';
+    this.baseUrl =
+      envBase || baseUrl || originFallback || 'https://sobremesa.x:3000';
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
     const url = `${this.baseUrl}/api${endpoint}`;
     const response = await fetch(url, {
       headers: {
@@ -77,7 +85,9 @@ export class PublisherApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: response.statusText }));
+      const error = await response
+        .json()
+        .catch(() => ({ error: response.statusText }));
       throw new Error(error.error || `API error: ${response.status}`);
     }
 
@@ -107,11 +117,17 @@ export class PublisherApiClient {
    * @param audience Target audience (e.g., 'child', 'graduate', 'researcher')
    * @returns Promise<string> The generated narrative
    */
-  async generateNarrative(familyId: string, audience = 'general'): Promise<string> {
-    const response = await this.request<{ narrative: string }>('/narrative/generate', {
-      method: 'POST',
-      body: JSON.stringify({ familyId, audience }),
-    });
+  async generateNarrative(
+    familyId: string,
+    audience = 'general'
+  ): Promise<string> {
+    const response = await this.request<{ narrative: string }>(
+      '/narrative/generate',
+      {
+        method: 'POST',
+        body: JSON.stringify({ familyId, audience }),
+      }
+    );
     return response.narrative;
   }
 
@@ -139,4 +155,3 @@ export class PublisherApiClient {
 }
 
 export default PublisherApiClient;
-

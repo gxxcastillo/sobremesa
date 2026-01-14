@@ -13,6 +13,7 @@ This document defines the domain model structure that Scribe and Curator must pr
 **Solution:** Domain Model - a standardized JSON structure that represents extracted family history data.
 
 **Flow:**
+
 ```
 Scribe → Domain Model → Registrar → Database
 Curator → Domain Model → Registrar → Database
@@ -26,22 +27,22 @@ Curator → Domain Model → Registrar → Database
 interface DomainModel {
   // Metadata
   metadata: DomainModelMetadata;
-  
+
   // Core entities
   entities: ExtractedEntities;
-  
+
   // Claims (facts with provenance)
   claims: Claim[];
-  
+
   // Questions to ask
   questions: ProposedQuestion[];
-  
+
   // Answers detected
   answers: AnsweredQuestion[];
-  
+
   // Detected conflicts
   conflicts: DetectedConflict[];
-  
+
   // Content translations
   translations: ContentTranslation[];
 }
@@ -56,23 +57,24 @@ Context about the domain model itself.
 ```typescript
 interface DomainModelMetadata {
   // Source information
-  sourceMessageId: string;           // UUID of processed message
-  familyId: string;                  // Family scope
+  sourceMessageId: string; // UUID of processed message
+  familyId: string; // Family scope
   processorAgent: 'scribe' | 'curator';
-  processorVersion: string;          // Agent version (for auditing)
-  
+  processorVersion: string; // Agent version (for auditing)
+
   // Processing metadata
-  processedAt: string;               // ISO timestamp
-  originalLanguage: string;          // Detected language (ISO code)
-  contentHash?: string;              // Optional content integrity hash
-  
+  processedAt: string; // ISO timestamp
+  originalLanguage: string; // Detected language (ISO code)
+  contentHash?: string; // Optional content integrity hash
+
   // Quality indicators
   confidence: 'high' | 'medium' | 'low';
-  uncertaintyFlags?: string[];       // ["fuzzy_date", "ambiguous_person", ...]
+  uncertaintyFlags?: string[]; // ["fuzzy_date", "ambiguous_person", ...]
 }
 ```
 
 **Example:**
+
 ```json
 {
   "sourceMessageId": "msg-uuid-123",
@@ -97,7 +99,7 @@ interface ExtractedEntities {
   places: Place[];
   events: Event[];
   stories: Story[];
-  images?: Image[];  // Only from Curator
+  images?: Image[]; // Only from Curator
 }
 ```
 
@@ -106,29 +108,30 @@ interface ExtractedEntities {
 ```typescript
 interface Person {
   // Identity
-  canonicalName: string;            // Best guess at full name
-  aliases: string[];                // Other names mentioned
-  
+  canonicalName: string; // Best guess at full name
+  aliases: string[]; // Other names mentioned
+
   // Relationships (as described)
   relationships?: Relationship[];
-  
+
   // Additional context
   approximateBirthYear?: number;
   approximateDeathYear?: number;
-  culturalContext?: string[];       // ["Nicaraguan", "Catholic", ...]
-  
+  culturalContext?: string[]; // ["Nicaraguan", "Catholic", ...]
+
   // Confidence
   confidence: 'definite' | 'likely' | 'uncertain';
 }
 
 interface Relationship {
-  relatedTo: string;                // Canonical name of related person
-  relationship: string;             // "father", "uncle", "wife", etc.
+  relatedTo: string; // Canonical name of related person
+  relationship: string; // "father", "uncle", "wife", etc.
   confidence: 'definite' | 'likely' | 'uncertain';
 }
 ```
 
 **Example:**
+
 ```json
 {
   "canonicalName": "Rafael García",
@@ -151,28 +154,29 @@ interface Relationship {
 ```typescript
 interface Place {
   // Identity
-  name: string;                     // Place name
-  aliases?: string[];               // Other names
-  
+  name: string; // Place name
+  aliases?: string[]; // Other names
+
   // Location hierarchy
   type: 'city' | 'neighborhood' | 'building' | 'country' | 'region' | 'other';
-  parentPlace?: string;             // "Managua" if this is "Barrio San Judas"
-  
+  parentPlace?: string; // "Managua" if this is "Barrio San Judas"
+
   // Coordinates (if mentioned/known)
   coordinates?: {
     latitude: number;
     longitude: number;
     confidence: 'exact' | 'approximate' | 'guess';
   };
-  
+
   // Cultural context
-  culturalSignificance?: string;    // "Historical market district"
-  
+  culturalSignificance?: string; // "Historical market district"
+
   confidence: 'definite' | 'likely' | 'uncertain';
 }
 ```
 
 **Example:**
+
 ```json
 {
   "name": "Managua",
@@ -189,24 +193,31 @@ interface Place {
 ```typescript
 interface Event {
   // Identity
-  title: string;                    // Short description
-  description: string;              // Full description
-  
+  title: string; // Short description
+  description: string; // Full description
+
   // Temporal
   date?: EventDate;
-  
+
   // Spatial
-  location?: string;                // Place name (links to Place entity)
-  
+  location?: string; // Place name (links to Place entity)
+
   // Participants
-  participants?: string[];          // Person names involved
-  
+  participants?: string[]; // Person names involved
+
   // Type
-  eventType?: 'birth' | 'death' | 'marriage' | 'migration' | 'celebration' | 'trauma' | 'other';
-  
+  eventType?:
+    | 'birth'
+    | 'death'
+    | 'marriage'
+    | 'migration'
+    | 'celebration'
+    | 'trauma'
+    | 'other';
+
   // Cultural context
   culturalContext?: string[];
-  
+
   confidence: 'definite' | 'likely' | 'uncertain';
 }
 
@@ -214,12 +225,13 @@ interface EventDate {
   year?: number;
   month?: number;
   day?: number;
-  era?: string;                     // "1950s", "post-earthquake", "during the war"
+  era?: string; // "1950s", "post-earthquake", "during the war"
   certainty: 'exact' | 'approximate' | 'era-only' | 'unknown';
 }
 ```
 
 **Example:**
+
 ```json
 {
   "title": "Rafael's arrival in Managua",
@@ -240,39 +252,40 @@ interface EventDate {
 ```typescript
 interface Story {
   // Identity
-  title: string;                    // Generated title
-  summary: string;                  // Brief summary
-  
+  title: string; // Generated title
+  summary: string; // Brief summary
+
   // Content (original + translations handled separately)
-  fragments: StoryFragment[];       // Multiple messages can contribute
-  
+  fragments: StoryFragment[]; // Multiple messages can contribute
+
   // Connections
-  relatedPeople: string[];          // Person names
-  relatedPlaces: string[];          // Place names
-  relatedEvents: string[];          // Event titles
-  
+  relatedPeople: string[]; // Person names
+  relatedPlaces: string[]; // Place names
+  relatedEvents: string[]; // Event titles
+
   // Temporal context
   timeframe?: EventDate;
-  
+
   // Themes
-  themes?: string[];                // ["family business", "resilience", "migration", ...]
-  emotions?: string[];              // ["pride", "loss", "joy", ...]
-  
+  themes?: string[]; // ["family business", "resilience", "migration", ...]
+  emotions?: string[]; // ["pride", "loss", "joy", ...]
+
   // Status
   completeness: 'fragment' | 'partial' | 'complete';
-  
+
   confidence: 'high' | 'medium' | 'low';
 }
 
 interface StoryFragment {
-  messageId: string;                // Source message
-  sequenceNumber: number;           // Order in story
-  contributorName: string;          // Who told this part
-  addedAt: string;                  // ISO timestamp
+  messageId: string; // Source message
+  sequenceNumber: number; // Order in story
+  contributorName: string; // Who told this part
+  addedAt: string; // ISO timestamp
 }
 ```
 
 **Example:**
+
 ```json
 {
   "title": "Rafael's pulpería in Managua",
@@ -302,31 +315,37 @@ interface StoryFragment {
 ```typescript
 interface Image {
   // Source
-  externalImageId: string;          // Chat Provider file_id or URL
-  
+  externalImageId: string; // Chat Provider file_id or URL
+
   // Analysis
-  description: string;              // What's visible
-  detectedPeople?: ImagePerson[];   // People identified
-  detectedText?: string;            // OCR results
-  
+  description: string; // What's visible
+  detectedPeople?: ImagePerson[]; // People identified
+  detectedText?: string; // OCR results
+
   // Context
-  estimatedEra?: string;            // "1940s", "1960s", etc.
-  estimatedLocation?: string;       // Place name if identifiable
-  
+  estimatedEra?: string; // "1940s", "1960s", etc.
+  estimatedLocation?: string; // Place name if identifiable
+
   // Visual attributes
-  photoType?: 'portrait' | 'group' | 'document' | 'landscape' | 'object' | 'other';
+  photoType?:
+    | 'portrait'
+    | 'group'
+    | 'document'
+    | 'landscape'
+    | 'object'
+    | 'other';
   condition?: 'excellent' | 'good' | 'fair' | 'poor' | 'damaged';
-  
+
   // Connections
-  relatedStories?: string[];        // Story titles this photo relates to
-  
+  relatedStories?: string[]; // Story titles this photo relates to
+
   confidence: 'high' | 'medium' | 'low';
 }
 
 interface ImagePerson {
-  name?: string;                    // If identified
-  position: string;                 // "front row, left", "center", etc.
-  estimatedAge?: string;            // "child", "young adult", "elderly"
+  name?: string; // If identified
+  position: string; // "front row, left", "center", etc.
+  estimatedAge?: string; // "child", "young adult", "elderly"
   confidence: 'definite' | 'likely' | 'guess';
 }
 ```
@@ -341,22 +360,22 @@ Every fact with provenance.
 interface Claim {
   // Identity
   claimType: ClaimType;
-  subject: string;                  // Who/what the claim is about
-  
+  subject: string; // Who/what the claim is about
+
   // The claim itself
   claimValue: ClaimValue;
-  
+
   // Provenance
   sourceMessageId: string;
-  claimedBy: string;                // Person who made the claim
-  claimedAt: string;                // ISO timestamp
-  
+  claimedBy: string; // Person who made the claim
+  claimedAt: string; // ISO timestamp
+
   // Confidence
   confidence: 'high' | 'medium' | 'low';
-  certaintyLanguage?: string;       // "definitely", "I think", "maybe", etc.
-  
+  certaintyLanguage?: string; // "definitely", "I think", "maybe", etc.
+
   // Conflict detection
-  potentialConflicts?: string[];    // Claim IDs that might conflict
+  potentialConflicts?: string[]; // Claim IDs that might conflict
 }
 
 type ClaimType =
@@ -374,6 +393,7 @@ type ClaimValue = string | number | { [key: string]: any };
 ```
 
 **Examples:**
+
 ```json
 [
   {
@@ -409,29 +429,29 @@ Questions the Scribe/Curator wants to ask.
 ```typescript
 interface ProposedQuestion {
   // Question content
-  questionText: string;             // The actual question (Facilitator will add warmth)
+  questionText: string; // The actual question (Facilitator will add warmth)
   questionType: QuestionType;
-  
+
   // Context
   relatedTo: QuestionContext;
-  
+
   // Priority
-  priority: 1 | 2 | 3 | 4 | 5;      // 1 = highest, 5 = lowest
-  reasoning?: string;               // Why ask this question
-  
+  priority: 1 | 2 | 3 | 4 | 5; // 1 = highest, 5 = lowest
+  reasoning?: string; // Why ask this question
+
   // Metadata
   proposedBy: 'scribe' | 'curator';
-  proposedAt: string;               // ISO timestamp
+  proposedAt: string; // ISO timestamp
 }
 
 type QuestionType =
-  | 'missing_detail'    // Gap in story (date, place, name)
-  | 'clarification'     // Ambiguous information
-  | 'expansion'         // Could tell more
-  | 'identification'    // Who is this person (photo)
-  | 'verification'      // Confirm conflicting info
-  | 'context'           // Background/cultural context
-  | 'connection';       // How does this relate to other stories
+  | 'missing_detail' // Gap in story (date, place, name)
+  | 'clarification' // Ambiguous information
+  | 'expansion' // Could tell more
+  | 'identification' // Who is this person (photo)
+  | 'verification' // Confirm conflicting info
+  | 'context' // Background/cultural context
+  | 'connection'; // How does this relate to other stories
 
 interface QuestionContext {
   storyTitle?: string;
@@ -444,6 +464,7 @@ interface QuestionContext {
 ```
 
 **Examples:**
+
 ```json
 [
   {
@@ -481,16 +502,16 @@ Questions that were answered in this message.
 ```typescript
 interface AnsweredQuestion {
   // Which question was answered
-  questionId: string;               // UUID from questions table
-  
+  questionId: string; // UUID from questions table
+
   // The answer
-  answerText: string;               // What was said
+  answerText: string; // What was said
   answerType: 'direct' | 'indirect' | 'partial';
-  
+
   // Source
-  answeredBy: string;               // Person name
-  answeredAt: string;               // ISO timestamp
-  
+  answeredBy: string; // Person name
+  answeredAt: string; // ISO timestamp
+
   // Quality
   completeness: 'full' | 'partial' | 'tangential';
   confidence: 'definite' | 'likely' | 'uncertain';
@@ -498,6 +519,7 @@ interface AnsweredQuestion {
 ```
 
 **Example:**
+
 ```json
 {
   "questionId": "question-uuid-123",
@@ -520,20 +542,20 @@ Conflicting information found.
 interface DetectedConflict {
   // What conflicts
   conflictType: ConflictType;
-  subject: string;                  // What the conflict is about
-  
+  subject: string; // What the conflict is about
+
   // The conflicting claims
-  claim1Id: string;                 // First claim (from this or prior processing)
-  claim2Id: string;                 // Conflicting claim (usually from current message)
-  
+  claim1Id: string; // First claim (from this or prior processing)
+  claim2Id: string; // Conflicting claim (usually from current message)
+
   // Details
-  description: string;              // Human-readable description
-  
+  description: string; // Human-readable description
+
   // Severity
   severity: 'minor' | 'moderate' | 'significant';
-  
+
   // Metadata
-  detectedAt: string;               // ISO timestamp
+  detectedAt: string; // ISO timestamp
 }
 
 type ConflictType =
@@ -546,6 +568,7 @@ type ConflictType =
 ```
 
 **Example:**
+
 ```json
 {
   "conflictType": "date_mismatch",
@@ -568,30 +591,31 @@ Translated versions of content.
 interface ContentTranslation {
   // Source
   originalContent: string;
-  originalLanguage: string;         // ISO code
-  
+  originalLanguage: string; // ISO code
+
   // Translations
   translations: Translation[];
-  
+
   // Cultural preservation
   culturalTerms?: CulturalTerm[];
 }
 
 interface Translation {
-  language: string;                 // ISO code
+  language: string; // ISO code
   translatedContent: string;
   translatorAgent: 'claude' | 'deepl';
-  translatedAt: string;             // ISO timestamp
+  translatedAt: string; // ISO timestamp
 }
 
 interface CulturalTerm {
-  term: string;                     // The term to preserve
-  explanation: string;              // Brief explanation
-  language: string;                 // Original language of term
+  term: string; // The term to preserve
+  explanation: string; // Brief explanation
+  language: string; // Original language of term
 }
 ```
 
 **Example:**
+
 ```json
 {
   "originalContent": "Mi abuelo tenía una pulpería en Managua",
@@ -761,35 +785,35 @@ When Registrar receives a DomainModel, it must:
 // Registrar MUST validate:
 function validateDomainModel(model: DomainModel): ValidationResult {
   const errors: string[] = [];
-  
+
   // Required fields
   if (!model.metadata.sourceMessageId) errors.push('Missing sourceMessageId');
   if (!model.metadata.familyId) errors.push('Missing familyId');
-  
+
   // Family ID consistency
   const allFamilyIds = [
     model.metadata.familyId,
-    ...model.claims.map(c => extractFamilyId(c))
+    ...model.claims.map((c) => extractFamilyId(c)),
   ];
   if (new Set(allFamilyIds).size > 1) {
     errors.push('Inconsistent family_id across domain model');
   }
-  
+
   // Claim validation
-  model.claims.forEach(claim => {
+  model.claims.forEach((claim) => {
     if (!claim.subject) errors.push('Claim missing subject');
     if (!claim.sourceMessageId) errors.push('Claim missing sourceMessageId');
   });
-  
+
   // Question validation
-  model.questions.forEach(q => {
+  model.questions.forEach((q) => {
     if (!q.questionText) errors.push('Question missing text');
     if (q.priority < 1 || q.priority > 5) errors.push('Invalid priority');
   });
-  
+
   return {
     valid: errors.length === 0,
-    errors
+    errors,
   };
 }
 ```
@@ -805,8 +829,14 @@ libs/domain/src/lib/domain-model.ts
 ```
 
 Usage:
+
 ```typescript
-import { DomainModel, Claim, Person, ProposedQuestion } from '@sobremesa/domain';
+import {
+  DomainModel,
+  Claim,
+  Person,
+  ProposedQuestion,
+} from '@sobremesa/domain';
 ```
 
 ---

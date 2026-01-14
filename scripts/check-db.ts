@@ -21,7 +21,7 @@ async function main() {
     console.error('Error fetching families:', famErr.message);
   } else {
     console.log('Families:', families?.length || 0);
-    families?.forEach(f => console.log(`  - ${f.name} (${f.id})`));
+    families?.forEach((f) => console.log(`  - ${f.name} (${f.id})`));
   }
   console.log('');
 
@@ -36,9 +36,13 @@ async function main() {
     console.error('Error fetching events:', evtErr.message);
   } else {
     console.log('Recent conversation events:', events?.length || 0);
-    events?.forEach(e => {
-      const content = e.content_original?.slice(0, 50) + (e.content_original?.length > 50 ? '...' : '');
-      console.log(`  - ${e.id.slice(0, 8)}... processed=${e.processed} "${content}"`);
+    events?.forEach((e) => {
+      const content =
+        e.content_original?.slice(0, 50) +
+        (e.content_original?.length > 50 ? '...' : '');
+      console.log(
+        `  - ${e.id.slice(0, 8)}... processed=${e.processed} "${content}"`
+      );
     });
   }
   console.log('');
@@ -54,8 +58,12 @@ async function main() {
     console.error('Error fetching questions:', qErr.message);
   } else {
     console.log('Questions in database:', questions?.length || 0);
-    questions?.forEach(q => {
-      console.log(`  - [${q.priority}] "${q.content_original?.slice(0, 60)}..." (${q.status})`);
+    questions?.forEach((q) => {
+      console.log(
+        `  - [${q.priority}] "${q.content_original?.slice(0, 60)}..." (${
+          q.status
+        })`
+      );
     });
   }
   console.log('');
@@ -71,7 +79,11 @@ async function main() {
     console.error('Error fetching queue:', queErr.message);
   } else {
     console.log('Processing queue:', queue?.length || 0);
-    queue?.forEach(q => console.log(`  - ${q.conversation_event_id?.slice(0, 8)}... status=${q.status}`));
+    queue?.forEach((q) =>
+      console.log(
+        `  - ${q.conversation_event_id?.slice(0, 8)}... status=${q.status}`
+      )
+    );
   }
   console.log('');
 
@@ -86,8 +98,10 @@ async function main() {
     console.error('Error fetching logs:', logErr.message);
   } else {
     console.log('Recent event log entries:', logs?.length || 0);
-    logs?.forEach(l => {
-      const data = l.event_data ? JSON.stringify(l.event_data).slice(0, 80) : '';
+    logs?.forEach((l) => {
+      const data = l.event_data
+        ? JSON.stringify(l.event_data).slice(0, 80)
+        : '';
       console.log(`  - ${l.event_type} by ${l.actor}: ${data}`);
     });
   }

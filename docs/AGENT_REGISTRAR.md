@@ -1,10 +1,11 @@
-
 ## 💾 Registrar (Backend)
 
 ### Role
+
 Database gatekeeper - ONLY component that writes to core tables.
 
 ### Inputs
+
 Domain models from Scribes (text and media).
 
 ### Responsibilities
@@ -30,7 +31,7 @@ async process(domainModel: DomainModel): Promise<void> {
   for (const person of domainModel.people) {
     // 1. Check if exists (fuzzy matching)
     const existing = await this.findPerson(person.name, person.aliases);
-    
+
     if (existing) {
       // Update (merge aliases, add relationships)
       await this.updatePerson(existing.id, person);
@@ -39,30 +40,30 @@ async process(domainModel: DomainModel): Promise<void> {
       await this.insertPerson(person);
     }
   }
-  
+
   // For each claim
   for (const claim of domainModel.claims) {
     // 1. Check for conflicting claims
     const existingClaims = await this.findClaimsBySubject(claim.subject);
-    
-    const conflicts = existingClaims.filter(ec => 
+
+    const conflicts = existingClaims.filter(ec =>
       this.isConflicting(ec, claim)
     );
-    
+
     if (conflicts.length > 0) {
       // Create claim with conflict links
       claim.conflicts_with = conflicts.map(c => c.id);
-      
+
       // Update existing claims to point back
       for (const conflict of conflicts) {
         await this.addConflictLink(conflict.id, claim.id);
       }
     }
-    
+
     // 2. Insert claim
     await this.insertClaim(claim);
   }
-  
+
   // Optional: Web3 write
   if (config.web3Enabled) {
     const hash = this.hashContent(domainModel);
@@ -78,6 +79,7 @@ async process(domainModel: DomainModel): Promise<void> {
 **Write:** All core tables (EXCLUSIVE access)
 
 ### Common Mistakes
+
 - ❌ Allowing other components to write
 - ❌ Auto-resolving conflicts
 - ❌ Missing provenance

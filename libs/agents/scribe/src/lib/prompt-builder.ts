@@ -1,4 +1,4 @@
-import type { ScribeConfig, ScribeContext } from './types.js';
+import type { ScribeConfig, ScribeContext } from './types';
 
 /**
  * Scribe system prompt template.
@@ -305,7 +305,9 @@ export function buildUserMessage(
     parts.push('## Recent Claims (check for conflicts)');
     for (const claim of context.recentClaims.slice(0, 10)) {
       parts.push(
-        `- ${claim.subject}: ${JSON.stringify(claim.claimValue)} (by ${claim.claimedBy})`
+        `- ${claim.subject}: ${JSON.stringify(claim.claimValue)} (by ${
+          claim.claimedBy
+        })`
       );
     }
     parts.push('');
@@ -323,7 +325,9 @@ export function buildUserMessage(
   // Add recent images for context
   if (context.recentImages && context.recentImages.length > 0) {
     parts.push('## Recent Images in Conversation');
-    parts.push('(If this message describes or references one of these images, note the connection)');
+    parts.push(
+      '(If this message describes or references one of these images, note the connection)'
+    );
     for (const img of context.recentImages) {
       const imgParts: string[] = [`[${img.id}]`];
       imgParts.push(img.fileType);

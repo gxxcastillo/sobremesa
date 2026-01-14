@@ -59,7 +59,9 @@ export class AllowedChatRepository {
   /**
    * List all allowed chats.
    */
-  async list(): Promise<Array<{ chatId: string; source: string; note: string | null }>> {
+  async list(): Promise<
+    Array<{ chatId: string; source: string; note: string | null }>
+  > {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('chat_id, source, note')

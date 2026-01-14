@@ -1,6 +1,6 @@
-import { Confidence } from './confidence.js';
-import { LanguageCode } from './languages.js';
-import { ClaimSourceType } from './domain-model.js';
+import { Confidence } from './confidence';
+import { LanguageCode } from './languages';
+import { ClaimSourceType } from './domain-model';
 
 /**
  * Base entity interface with common fields.
@@ -54,7 +54,13 @@ export interface Place extends BaseEntity {
  */
 export interface TimelineEvent extends BaseEntity {
   title: string;
-  eventType?: 'immigration' | 'birth' | 'death' | 'marriage' | 'business' | string;
+  eventType?:
+    | 'immigration'
+    | 'birth'
+    | 'death'
+    | 'marriage'
+    | 'business'
+    | string;
   descriptionOriginal?: string;
   descriptionLanguage?: LanguageCode;
   dateYear?: number;
@@ -111,19 +117,19 @@ export interface Claim extends BaseEntity {
  * Relationship categories.
  */
 export type RelationshipCategory =
-  | 'biological'  // Blood relations
-  | 'legal'       // Adoption, marriage, legal guardianship
-  | 'functional'  // Raised by, de facto guardian
-  | 'honorary'    // Godparent, "uncle" by respect, padrino
-  | 'social';     // Family friend, mentor, best friend
+  | 'biological' // Blood relations
+  | 'legal' // Adoption, marriage, legal guardianship
+  | 'functional' // Raised by, de facto guardian
+  | 'honorary' // Godparent, "uncle" by respect, padrino
+  | 'social'; // Family friend, mentor, best friend
 
 /**
  * Relationship status.
  */
 export type RelationshipStatus =
-  | 'active'      // Currently active
-  | 'ended'       // Divorced, separated, estranged
-  | 'deceased';   // Ended due to death
+  | 'active' // Currently active
+  | 'ended' // Divorced, separated, estranged
+  | 'deceased'; // Ended due to death
 
 /**
  * Core relationship types (structural backbone of the family tree).
@@ -134,16 +140,19 @@ export type CoreRelationshipType = 'parent' | 'spouse';
  * Extended relationship types (non-structural, narrative relationships).
  */
 export type ExtendedRelationshipType =
-  | 'guardian'    // Legal or de facto guardian
-  | 'godparent'   // Religious/cultural godparent
-  | 'mentor'      // Mentor relationship
-  | 'friend'      // Close family friend
-  | 'caregiver';  // Caregiver role
+  | 'guardian' // Legal or de facto guardian
+  | 'godparent' // Religious/cultural godparent
+  | 'mentor' // Mentor relationship
+  | 'friend' // Close family friend
+  | 'caregiver'; // Caregiver role
 
 /**
  * All relationship types.
  */
-export type RelationshipType = CoreRelationshipType | ExtendedRelationshipType | string;
+export type RelationshipType =
+  | CoreRelationshipType
+  | ExtendedRelationshipType
+  | string;
 
 /**
  * A relationship between two people.

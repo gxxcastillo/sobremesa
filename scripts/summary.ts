@@ -47,7 +47,11 @@ async function main() {
       }
       console.log(line);
       if (p.notes_original) {
-        console.log(`      "${p.notes_original.slice(0, 80)}${p.notes_original.length > 80 ? '...' : ''}"`);
+        console.log(
+          `      "${p.notes_original.slice(0, 80)}${
+            p.notes_original.length > 80 ? '...' : ''
+          }"`
+        );
       }
     }
     console.log('');
@@ -56,18 +60,24 @@ async function main() {
   // Relationships
   const { data: relationships } = await client
     .from('relationships')
-    .select(`
+    .select(
+      `
       relationship_type,
       person_a:person_a_id(name),
       person_b:person_b_id(name)
-    `)
+    `
+    )
     .eq('family_id', family.id);
 
   if (relationships?.length) {
     console.log(`RELATIONSHIPS (${relationships.length})`);
     console.log('-'.repeat(40));
     for (const r of relationships) {
-      const rel = r as unknown as { relationship_type: string; person_a: { name: string }, person_b: { name: string } }
+      const rel = r as unknown as {
+        relationship_type: string;
+        person_a: { name: string };
+        person_b: { name: string };
+      };
       const personA = rel.person_a?.name || 'Unknown';
       const personB = rel.person_b?.name || 'Unknown';
       console.log(`  • ${personA} → ${rel.relationship_type} → ${personB}`);
@@ -95,7 +105,11 @@ async function main() {
       }
       console.log(line);
       if (p.context_original) {
-        console.log(`      "${p.context_original.slice(0, 80)}${p.context_original.length > 80 ? '...' : ''}"`);
+        console.log(
+          `      "${p.context_original.slice(0, 80)}${
+            p.context_original.length > 80 ? '...' : ''
+          }"`
+        );
       }
     }
     console.log('');
@@ -115,13 +129,19 @@ async function main() {
     for (const e of events) {
       let date = '';
       if (e.date_year) {
-        date = e.date_month ? `${e.date_month}/${e.date_year}` : String(e.date_year);
+        date = e.date_month
+          ? `${e.date_month}/${e.date_year}`
+          : String(e.date_year);
       }
       const dateStr = date ? `[${date}] ` : '';
       const typeStr = e.event_type ? `(${e.event_type}) ` : '';
       console.log(`  • ${dateStr}${typeStr}${e.title}`);
       if (e.description_original) {
-        console.log(`      "${e.description_original.slice(0, 80)}${e.description_original.length > 80 ? '...' : ''}"`);
+        console.log(
+          `      "${e.description_original.slice(0, 80)}${
+            e.description_original.length > 80 ? '...' : ''
+          }"`
+        );
       }
     }
     console.log('');
@@ -140,13 +160,22 @@ async function main() {
     console.log('-'.repeat(40));
     for (const s of stories) {
       const title = s.title || 'Untitled';
-      const status = s.completeness === 'complete' ? '✓' : s.completeness === 'partial' ? '◐' : '○';
+      const status =
+        s.completeness === 'complete'
+          ? '✓'
+          : s.completeness === 'partial'
+          ? '◐'
+          : '○';
       console.log(`  ${status} ${title}`);
       if (s.themes?.length) {
         console.log(`      Themes: ${s.themes.join(', ')}`);
       }
       if (s.content_original) {
-        console.log(`      "${s.content_original.slice(0, 100)}${s.content_original.length > 100 ? '...' : ''}"`);
+        console.log(
+          `      "${s.content_original.slice(0, 100)}${
+            s.content_original.length > 100 ? '...' : ''
+          }"`
+        );
       }
     }
     console.log('');
@@ -159,9 +188,13 @@ async function main() {
     .eq('family_id', family.id);
 
   if (questionStats?.length) {
-    const proposed = questionStats.filter(q => q.status === 'proposed').length;
-    const asked = questionStats.filter(q => q.status === 'asked').length;
-    const answered = questionStats.filter(q => q.status === 'answered').length;
+    const proposed = questionStats.filter(
+      (q) => q.status === 'proposed'
+    ).length;
+    const asked = questionStats.filter((q) => q.status === 'asked').length;
+    const answered = questionStats.filter(
+      (q) => q.status === 'answered'
+    ).length;
 
     console.log('QUESTIONS');
     console.log('-'.repeat(40));
@@ -194,8 +227,16 @@ async function main() {
   // Summary stats
   console.log(`\n${'='.repeat(60)}`);
   console.log('TOTALS');
-  console.log(`  ${people?.length || 0} people, ${places?.length || 0} places, ${events?.length || 0} events`);
-  console.log(`  ${relationships?.length || 0} relationships, ${stories?.length || 0} stories`);
+  console.log(
+    `  ${people?.length || 0} people, ${places?.length || 0} places, ${
+      events?.length || 0
+    } events`
+  );
+  console.log(
+    `  ${relationships?.length || 0} relationships, ${
+      stories?.length || 0
+    } stories`
+  );
   console.log(`${'='.repeat(60)}\n`);
 }
 

@@ -11,6 +11,7 @@ How to adapt Sobremesa for different families, cultures, and languages.
 Warmth is universal. How it's expressed varies by culture.
 
 The four-part formula ([Warmth] + [Question] + [Permission] + [Gratitude]) works everywhere, but:
+
 - Word choice changes
 - Formality levels differ
 - Emoji usage varies
@@ -23,6 +24,7 @@ The four-part formula ([Warmth] + [Question] + [Permission] + [Gratitude]) works
 ### Spanish / Latino Cultures
 
 **Characteristics:**
+
 - More effusive expressions natural
 - Diminutives show affection ("abuelita", "Tía")
 - Higher emoji usage expected
@@ -30,9 +32,10 @@ The four-part formula ([Warmth] + [Question] + [Permission] + [Gratitude]) works
 - Code-switching common (Spanish + English mix)
 
 **Example question:**
+
 ```
-"¡Tía Martha, qué historia tan linda! Si te acuerdas, ¿en qué año fue 
-eso? No te preocupes si no recuerdas el detalle exacto. ¡Gracias por 
+"¡Tía Martha, qué historia tan linda! Si te acuerdas, ¿en qué año fue
+eso? No te preocupes si no recuerdas el detalle exacto. ¡Gracias por
 compartir! ❤️"
 ```
 
@@ -45,6 +48,7 @@ compartir! ❤️"
 ### English / American Cultures
 
 **Characteristics:**
+
 - Moderate warmth (not too effusive)
 - Direct but friendly
 - Casual tone acceptable
@@ -52,8 +56,9 @@ compartir! ❤️"
 - Efficiency valued
 
 **Example question:**
+
 ```
-"Uncle David, what a great story! Do you happen to remember what year 
+"Uncle David, what a great story! Do you happen to remember what year
 that was? No worries if not. Thanks for sharing!"
 ```
 
@@ -66,6 +71,7 @@ that was? No worries if not. Thanks for sharing!"
 ### Japanese / East Asian Cultures
 
 **Characteristics:**
+
 - More reserved expression
 - Respect and formality important
 - Less direct (indirect permission-giving)
@@ -73,9 +79,10 @@ that was? No worries if not. Thanks for sharing!"
 - Hierarchy respected (honorifics)
 
 **Example question:**
+
 ```
-"Thank you for sharing this meaningful story about your grandfather. 
-If I may respectfully ask, do you recall approximately when this 
+"Thank you for sharing this meaningful story about your grandfather.
+If I may respectfully ask, do you recall approximately when this
 occurred? Please feel free to share only what you remember comfortably."
 ```
 
@@ -90,6 +97,7 @@ occurred? Please feel free to share only what you remember comfortably."
 ### What Are Cultural Terms?
 
 Words/phrases that carry cultural meaning beyond translation:
+
 - Food names (gallo pinto, sushi, pasta)
 - Cultural roles (pulpería, izakaya, bodega)
 - Traditions (quinceañera, Bar Mitzvah, Diwali)
@@ -98,17 +106,21 @@ Words/phrases that carry cultural meaning beyond translation:
 ### Why Preserve Them?
 
 **Bad translation example:**
+
 ```
 Spanish: "Mi abuela hacía gallo pinto todos los domingos"
 English: "My grandmother made rice and beans every Sunday"
 ```
+
 ❌ Loses cultural specificity. "Gallo pinto" is not just "rice and beans."
 
 **Good preservation:**
+
 ```
 Spanish: "Mi abuela hacía gallo pinto todos los domingos"
 English: "My grandmother made gallo pinto (traditional rice and beans) every Sunday"
 ```
+
 ✅ Preserves term, provides explanation.
 
 ### How to Configure
@@ -117,14 +129,15 @@ Add to `culturalTerms` array in configuration:
 
 ```typescript
 culturalTerms: [
-  "pulpería",      // Nicaraguan corner store
-  "gallo pinto",   // Traditional rice and beans
-  "vigorón",       // Traditional dish
-  "nacatamal"      // Nicaraguan tamale
-]
+  'pulpería', // Nicaraguan corner store
+  'gallo pinto', // Traditional rice and beans
+  'vigorón', // Traditional dish
+  'nacatamal', // Nicaraguan tamale
+];
 ```
 
 Scribe will:
+
 - Never translate these words
 - Add brief explanation in parentheses when needed
 - Preserve in both language versions
@@ -136,21 +149,25 @@ Scribe will:
 ### When to Use Each Level
 
 **Casual:**
+
 - Close-knit families
 - Younger generations
 - Very informal cultures (some Latino, American)
 
 **Friendly (Default):**
+
 - Most families
 - Balances warmth and respect
 - Works across most cultures
 
 **Professional:**
+
 - More formal families
 - Business-like preference
 - Some American, European contexts
 
 **Formal:**
+
 - Highly respectful cultures (Japanese, some Asian)
 - Older generations
 - Cultures with strong hierarchy
@@ -160,21 +177,25 @@ Scribe will:
 ## Emoji Usage Guidelines
 
 ### None
+
 - Very formal cultures
 - Professional contexts
 - Older generations who find them confusing
 
 ### Minimal
+
 - Occasional use (❤️ for major milestones)
 - Conservative families
 - Professional but warm
 
 ### Moderate (Default)
+
 - Regular but not excessive (😊 ❤️ 🎉)
 - Most families comfortable
 - Balanced approach
 
 ### Generous
+
 - Frequent use
 - Very warm, expressive cultures
 - Younger family groups
@@ -279,23 +300,28 @@ Scribe will:
 ## Questions to Ask When Adapting
 
 1. **How direct is this culture?**
+
    - Very direct → Lower formality
    - Indirect → Higher formality
 
 2. **How is emotion expressed?**
+
    - Openly → More emoji, effusive language
    - Reserved → Less emoji, measured language
 
 3. **What's the age range?**
+
    - Younger → More casual, more emoji
    - Older → More formal, less emoji
    - Mixed → Moderate approach
 
 4. **Urban or traditional?**
+
    - Urban/modern → Can be more casual
    - Traditional → Respect formality
 
 5. **What are key cultural foods/places/traditions?**
+
    - Add to `culturalTerms`
 
 6. **How is family hierarchy?**
@@ -307,22 +333,27 @@ Scribe will:
 ## Common Cultural Mistakes to Avoid
 
 ### Mistake 1: Over-Translation
+
 **Bad:** Translate everything, lose cultural meaning  
 **Good:** Preserve cultural terms with explanations
 
 ### Mistake 2: Wrong Formality
+
 **Bad:** Too casual with formal culture (or vice versa)  
 **Good:** Match cultural expectations
 
 ### Mistake 3: Emoji Overload
+
 **Bad:** 🎉🎉🎉 in formal Japanese context  
 **Good:** Minimal or no emoji for reserved cultures
 
 ### Mistake 4: Ignoring Code-Switching
+
 **Bad:** Force pure Spanish or pure English  
 **Good:** Support natural mixing ("Fuimos al market")
 
 ### Mistake 5: Generic Approach
+
 **Bad:** Same config for everyone  
 **Good:** Customize for each family's culture
 
@@ -333,6 +364,7 @@ Scribe will:
 As you work with different families, add:
 
 **New cultural sections:**
+
 - Chinese families
 - Indian families
 - Middle Eastern families
@@ -340,15 +372,18 @@ As you work with different families, add:
 - etc.
 
 **Lessons learned:**
+
 - What worked
 - What didn't
 - Surprising insights
 
 **Cultural term lists:**
+
 - Expand lists for each culture
 - Note regional variations
 
 **Example configurations:**
+
 - Real families (anonymized)
 - What settings worked best
 

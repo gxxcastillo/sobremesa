@@ -1,5 +1,14 @@
-import { Confidence, type ProcessingResult, type ScribeDomainModel } from '@sobremesa/shared-types';
-import { ConversationEventRepository, EventLogRepository, QuestionRepository, ImageRepository } from '@sobremesa/database';
+import {
+  Confidence,
+  type ProcessingResult,
+  type ScribeDomainModel,
+} from '@sobremesa/shared-types';
+import {
+  ConversationEventRepository,
+  EventLogRepository,
+  QuestionRepository,
+  ImageRepository,
+} from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 
@@ -7,7 +16,7 @@ import type pino from 'pino';
  * Media event types that should create Image records.
  */
 const MEDIA_EVENT_TYPES = ['photo', 'document', 'video'] as const;
-type MediaEventType = typeof MEDIA_EVENT_TYPES[number];
+type MediaEventType = (typeof MEDIA_EVENT_TYPES)[number];
 
 /**
  * Filter result returned by the filter processor.
@@ -203,7 +212,11 @@ export class MessageProcessor {
 
       // Check if this message is a reply to a question (answer detection)
       if (event.externalReplyToId) {
-        await this.detectAndMarkAnswer(familyId, eventId, event.externalReplyToId);
+        await this.detectAndMarkAnswer(
+          familyId,
+          eventId,
+          event.externalReplyToId
+        );
       }
 
       // Log processing start
@@ -252,7 +265,8 @@ export class MessageProcessor {
         duration: Date.now() - startTime,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
 
       // Log processing error
       await this.eventLog.log({
@@ -279,7 +293,10 @@ export class MessageProcessor {
   /**
    * Create a handler function for the MessageQueue.
    */
-  createHandler(): (eventId: string, familyId: string) => Promise<ProcessingResult> {
+  createHandler(): (
+    eventId: string,
+    familyId: string
+  ) => Promise<ProcessingResult> {
     return (eventId, familyId) => this.process(eventId, familyId);
   }
 
@@ -299,7 +316,11 @@ export class MessageProcessor {
       if (!filterResult.relevant) {
         // Message is not relevant - skip Scribe
         this.logger.info(
-          { eventId, reason: filterResult.reason, tokensUsed: filterResult.tokensUsed },
+          {
+            eventId,
+            reason: filterResult.reason,
+            tokensUsed: filterResult.tokensUsed,
+          },
           'Message filtered out as not relevant'
         );
 
@@ -321,7 +342,11 @@ export class MessageProcessor {
         shouldProcess = false;
       } else {
         this.logger.debug(
-          { eventId, reason: filterResult.reason, tokensUsed: filterResult.tokensUsed },
+          {
+            eventId,
+            reason: filterResult.reason,
+            tokensUsed: filterResult.tokensUsed,
+          },
           'Message passed filter'
         );
       }
@@ -436,15 +461,25 @@ export class MessageProcessor {
     const fileUniqueId = (metadata.fileUniqueId as string) || '';
 
     if (!fileUniqueId) {
-      this.logger.warn({ eventId, eventType: event.eventType }, 'Media event missing fileUniqueId, skipping image creation');
+      this.logger.warn(
+        { eventId, eventType: event.eventType },
+        'Media event missing fileUniqueId, skipping image creation'
+      );
       return undefined;
     }
 
     // Check if we already have an Image record for this file
-    let image = await this.imageRepo.findByExternalFileId(familyId, event.source, fileUniqueId);
+    let image = await this.imageRepo.findByExternalFileId(
+      familyId,
+      event.source,
+      fileUniqueId
+    );
 
     if (image) {
-      this.logger.debug({ eventId, imageId: image.id }, 'Image record already exists');
+      this.logger.debug(
+        { eventId, imageId: image.id },
+        'Image record already exists'
+      );
       return image.id;
     }
 
@@ -481,7 +516,10 @@ export class MessageProcessor {
         this.onImageCreated(familyId, image.id, eventId);
       } catch (error) {
         // Don't fail processing if callback fails
-        this.logger.warn({ imageId: image.id, error }, 'onImageCreated callback failed');
+        this.logger.warn(
+          { imageId: image.id, error },
+          'onImageCreated callback failed'
+        );
       }
     }
 
@@ -518,7 +556,11 @@ export class MessageProcessor {
       }
 
       // Mark the question as answered
-      await this.questionRepo.markAnswered(familyId, question.id, answerEventId);
+      await this.questionRepo.markAnswered(
+        familyId,
+        question.id,
+        answerEventId
+      );
 
       // Log the answer detection
       await this.eventLog.log({
@@ -541,7 +583,8 @@ export class MessageProcessor {
       );
     } catch (error) {
       // Don't fail processing if answer detection fails
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       this.logger.warn(
         { familyId, replyToExternalId, error: errorMessage },
         'Answer detection failed (non-fatal)'

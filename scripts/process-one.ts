@@ -25,7 +25,9 @@ async function main() {
   // Set up processor
   const processor = new MessageProcessor();
   processor.setScribe((eventId, familyId) => scribe.process(eventId, familyId));
-  processor.setRegistrar((model, familyId) => registrar.persist(model, familyId));
+  processor.setRegistrar((model, familyId) =>
+    registrar.persist(model, familyId)
+  );
 
   // Dequeue one item
   console.log('=== Dequeuing one item ===\n');
@@ -46,14 +48,22 @@ async function main() {
   // Process it
   console.log('=== Processing message ===\n');
   try {
-    const result = await processor.process(item.conversationEventId, item.familyId);
+    const result = await processor.process(
+      item.conversationEventId,
+      item.familyId
+    );
     console.log('Result:', result);
 
     if (result.success) {
       await queueRepo.complete(item.familyId, item.id);
       console.log('\nMessage processed and completed successfully!');
     } else {
-      await queueRepo.fail(item.familyId, item.id, result.error || 'Unknown error', 3);
+      await queueRepo.fail(
+        item.familyId,
+        item.id,
+        result.error || 'Unknown error',
+        3
+      );
       console.log('\nMessage processing failed:', result.error);
     }
   } catch (error) {
@@ -63,7 +73,9 @@ async function main() {
 
   // Check questions table
   console.log('\n=== Checking questions table ===\n');
-  const { getServiceClient } = await import('../libs/database/src/lib/client.js');
+  const { getServiceClient } = await import(
+    '../libs/database/src/lib/client.js'
+  );
   const client = getServiceClient();
   const { data: questions } = await client
     .from('questions')
@@ -73,8 +85,12 @@ async function main() {
     .limit(5);
 
   console.log('Questions for this family:', questions?.length || 0);
-  questions?.forEach(q => {
-    console.log(`  - [${q.priority}] "${q.content_original?.slice(0, 60)}..." (${q.status})`);
+  questions?.forEach((q) => {
+    console.log(
+      `  - [${q.priority}] "${q.content_original?.slice(0, 60)}..." (${
+        q.status
+      })`
+    );
   });
 }
 

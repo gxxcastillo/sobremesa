@@ -51,16 +51,16 @@ CREATE TABLE admin_actions (
 
 ## UI Pages
 
-| Page | Purpose |
-|------|---------|
-| Dashboard | Queue health, recent errors, retry buttons |
-| Queue Manager | Table of queue items, bulk retry, unlock |
-| Event Explorer | Browse messages, reprocess, redact |
-| Story Editor | Edit title/themes, merge stories |
-| Person Manager | Edit people, merge duplicates |
-| Relationship Graph | Visual family tree editor |
-| Claim Review | Resolve conflicting claims |
-| Audit Log | Searchable event log |
+| Page               | Purpose                                    |
+| ------------------ | ------------------------------------------ |
+| Dashboard          | Queue health, recent errors, retry buttons |
+| Queue Manager      | Table of queue items, bulk retry, unlock   |
+| Event Explorer     | Browse messages, reprocess, redact         |
+| Story Editor       | Edit title/themes, merge stories           |
+| Person Manager     | Edit people, merge duplicates              |
+| Relationship Graph | Visual family tree editor                  |
+| Claim Review       | Resolve conflicting claims                 |
+| Audit Log          | Searchable event log                       |
 
 ## API Endpoints (Summary)
 

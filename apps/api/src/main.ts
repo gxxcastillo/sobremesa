@@ -7,7 +7,10 @@ const port = parseInt(process.env.PORT || '3000', 10);
 const hostname = process.env.HOST || '0.0.0.0';
 const tlsCertPath = process.env.TLS_CERT;
 const tlsKeyPath = process.env.TLS_KEY;
-const tlsConfig = tlsCertPath && tlsKeyPath ? { cert: Bun.file(tlsCertPath), key: Bun.file(tlsKeyPath) } : undefined;
+const tlsConfig =
+  tlsCertPath && tlsKeyPath
+    ? { cert: Bun.file(tlsCertPath), key: Bun.file(tlsKeyPath) }
+    : undefined;
 
 const app = new Elysia()
   .use(swagger())
@@ -23,7 +26,7 @@ const app = new Elysia()
         tags: ['Health'],
         description: 'Health check endpoint',
       },
-    },
+    }
   )
   /**
    * GET /api/family/summary
@@ -44,7 +47,14 @@ const app = new Elysia()
       }
 
       // Fetch all data in parallel
-      const [peopleRes, relationshipsRes, placesRes, eventsRes, storiesRes, questionsRes] = await Promise.all([
+      const [
+        peopleRes,
+        relationshipsRes,
+        placesRes,
+        eventsRes,
+        storiesRes,
+        questionsRes,
+      ] = await Promise.all([
         client
           .from('people')
           .select('name, aliases, birth_year, death_year, notes_original')
@@ -54,11 +64,13 @@ const app = new Elysia()
 
         client
           .from('relationships')
-          .select(`
+          .select(
+            `
           relationship_type,
           person_a:person_a_id(name),
           person_b:person_b_id(name)
-        `)
+        `
+          )
           .eq('family_id', family.id),
 
         client
@@ -70,7 +82,9 @@ const app = new Elysia()
 
         client
           .from('events')
-          .select('title, event_type, date_year, date_month, description_original')
+          .select(
+            'title, event_type, date_year, date_month, description_original'
+          )
           .eq('family_id', family.id)
           .eq('redacted', false)
           .order('date_year', { ascending: true, nullsFirst: false }),
@@ -92,9 +106,13 @@ const app = new Elysia()
       const stories = storiesRes.data || [];
       const questionStats = questionsRes.data || [];
 
-      const proposed = questionStats.filter((q) => q.status === 'proposed').length;
+      const proposed = questionStats.filter(
+        (q) => q.status === 'proposed'
+      ).length;
       const asked = questionStats.filter((q) => q.status === 'asked').length;
-      const answered = questionStats.filter((q) => q.status === 'answered').length;
+      const answered = questionStats.filter(
+        (q) => q.status === 'answered'
+      ).length;
 
       return {
         familyName: family.name,
@@ -109,9 +127,10 @@ const app = new Elysia()
     {
       detail: {
         tags: ['Family'],
-        description: 'Get the summary for the active family (first family with chatId)',
+        description:
+          'Get the summary for the active family (first family with chatId)',
       },
-    },
+    }
   )
   /**
    * GET /api/family/:familyId/summary
@@ -123,7 +142,15 @@ const app = new Elysia()
       const client = getServiceClient();
 
       // Fetch all data in parallel
-      const [peopleRes, relationshipsRes, placesRes, eventsRes, storiesRes, questionsRes, familyRes] = await Promise.all([
+      const [
+        peopleRes,
+        relationshipsRes,
+        placesRes,
+        eventsRes,
+        storiesRes,
+        questionsRes,
+        familyRes,
+      ] = await Promise.all([
         client
           .from('people')
           .select('name, aliases, birth_year, death_year, notes_original')
@@ -133,11 +160,13 @@ const app = new Elysia()
 
         client
           .from('relationships')
-          .select(`
+          .select(
+            `
           relationship_type,
           person_a:person_a_id(name),
           person_b:person_b_id(name)
-        `)
+        `
+          )
           .eq('family_id', familyId),
 
         client
@@ -149,7 +178,9 @@ const app = new Elysia()
 
         client
           .from('events')
-          .select('title, event_type, date_year, date_month, description_original')
+          .select(
+            'title, event_type, date_year, date_month, description_original'
+          )
           .eq('family_id', familyId)
           .eq('redacted', false)
           .order('date_year', { ascending: true, nullsFirst: false }),
@@ -177,9 +208,13 @@ const app = new Elysia()
       const stories = storiesRes.data || [];
       const questionStats = questionsRes.data || [];
 
-      const proposed = questionStats.filter((q) => q.status === 'proposed').length;
+      const proposed = questionStats.filter(
+        (q) => q.status === 'proposed'
+      ).length;
       const asked = questionStats.filter((q) => q.status === 'asked').length;
-      const answered = questionStats.filter((q) => q.status === 'answered').length;
+      const answered = questionStats.filter(
+        (q) => q.status === 'answered'
+      ).length;
 
       return {
         familyName: familyRes.data.name,
@@ -197,7 +232,7 @@ const app = new Elysia()
         tags: ['Family'],
         description: 'Get the summary for a specific family',
       },
-    },
+    }
   )
   /**
    * POST /api/narrative/generate
@@ -225,7 +260,7 @@ const app = new Elysia()
         tags: ['Narrative'],
         description: 'Generate a narrative for a family',
       },
-    },
+    }
   )
   /**
    * POST /api/book/generate
@@ -254,7 +289,7 @@ const app = new Elysia()
         tags: ['Book'],
         description: 'Generate a book for a family',
       },
-    },
+    }
   )
   // Error handling
   .onError(({ code, error }) => {
@@ -269,7 +304,9 @@ const app = new Elysia()
 app.listen({ port, hostname, tls: tlsConfig }, () => {
   const protocol = tlsConfig ? 'https' : 'http';
   const hostLabel = hostname === '0.0.0.0' ? 'localhost' : hostname;
-  console.log(`📚 Publisher API server running on ${protocol}://${hostLabel}:${port}`);
+  console.log(
+    `📚 Publisher API server running on ${protocol}://${hostLabel}:${port}`
+  );
   console.log(`   Health check: ${protocol}://${hostLabel}:${port}/health`);
   console.log(`   Swagger docs: ${protocol}://${hostLabel}:${port}/swagger`);
 });

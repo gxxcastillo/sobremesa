@@ -1,11 +1,13 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { getServiceClient } from './client.js';
+import { getServiceClient } from './client';
 
 /**
  * Base repository with common database operations.
  * All repositories should extend this class.
  */
-export abstract class BaseRepository<T extends { id: string; familyId: string }> {
+export abstract class BaseRepository<
+  T extends { id: string; familyId: string }
+> {
   protected client: SupabaseClient;
   protected tableName: string;
 
@@ -29,7 +31,9 @@ export abstract class BaseRepository<T extends { id: string; familyId: string }>
       if (error.code === 'PGRST116') {
         return null; // Not found
       }
-      throw new Error(`Failed to find ${this.tableName} by id: ${error.message}`);
+      throw new Error(
+        `Failed to find ${this.tableName} by id: ${error.message}`
+      );
     }
 
     return this.mapFromDb(data);
@@ -53,7 +57,10 @@ export abstract class BaseRepository<T extends { id: string; familyId: string }>
     }
 
     if (options?.offset) {
-      query = query.range(options.offset, options.offset + (options.limit || 100) - 1);
+      query = query.range(
+        options.offset,
+        options.offset + (options.limit || 100) - 1
+      );
     }
 
     const { data, error } = await query;
@@ -87,11 +94,7 @@ export abstract class BaseRepository<T extends { id: string; familyId: string }>
   /**
    * Update an existing record.
    */
-  async update(
-    familyId: string,
-    id: string,
-    updates: Partial<T>
-  ): Promise<T> {
+  async update(familyId: string, id: string, updates: Partial<T>): Promise<T> {
     const dbUpdates = this.mapToDb(updates as T);
 
     const { data, error } = await this.client
@@ -130,7 +133,9 @@ export abstract class BaseRepository<T extends { id: string; familyId: string }>
       .eq('id', id);
 
     if (error) {
-      throw new Error(`Failed to soft delete ${this.tableName}: ${error.message}`);
+      throw new Error(
+        `Failed to soft delete ${this.tableName}: ${error.message}`
+      );
     }
   }
 
@@ -175,7 +180,9 @@ export function mapRowToCamelCase<T>(row: Record<string, unknown>): T {
 /**
  * Convert all keys in an object from camelCase to snake_case.
  */
-export function mapRecordToSnakeCase(record: Record<string, unknown>): Record<string, unknown> {
+export function mapRecordToSnakeCase(
+  record: Record<string, unknown>
+): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
     if (value !== undefined) {

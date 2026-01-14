@@ -5,12 +5,14 @@
 ### Core Systems
 
 1. **[Relationships](./RELATIONSHIPS.md)** - How people are connected
+
    - Structural model (parent, spouse only)
    - Derived relationships (siblings, cousins via graph traversal)
    - Category/status/qualifier for relationship nuance
    - Normalization rules for consistent storage
 
 2. **[Identities](./IDENTITIES.md)** - Chat provider accounts
+
    - Maps Telegram/WhatsApp/SMS to family tree persons
    - Separates provider accounts from real people
    - One person can have multiple chat identities
@@ -82,6 +84,7 @@ Database (Supabase PostgreSQL)
 ### Family Event: "Gabriel's cousin Rosa arrived from Argentina"
 
 **Step 1: Chat Message → Identity**
+
 ```
 Message: "Gabriel's cousin Rosa arrived from Argentina"
 Source: Telegram (ID: 123456789)
@@ -99,13 +102,14 @@ From: @gabriel_dev (first_name: Gabriel)
 ```
 
 **Step 2: Scribe Extraction → Persons & Relationships**
+
 ```
 Scribe processes: "Gabriel's cousin Rosa arrived"
 
 → Extract persons:
   - "Gabriel" → PersonRepository.findByFuzzyMatch()
     → Found in system
-  
+
   - "Rosa" → New person
     → PersonRepository.create({
         name: 'Rosa',
@@ -133,6 +137,7 @@ Scribe processes: "Gabriel's cousin Rosa arrived"
 ```
 
 **Step 3: Registrar Persistence**
+
 ```
 Registrar receives DomainModel
 
@@ -164,6 +169,7 @@ Registrar receives DomainModel
 ```
 
 **Result:**
+
 - ✅ Gabriel's Telegram identity linked to family tree
 - ✅ Rosa added to family tree
 - ✅ Relationship recorded with full provenance
@@ -175,6 +181,7 @@ Registrar receives DomainModel
 ## Key Concepts
 
 ### Normalization
+
 Relationships stored in a canonical form to prevent duplicates:
 
 ```typescript
@@ -186,6 +193,7 @@ normalizeRelationship(personB, personA, 'child')
 ```
 
 ### Perspectives
+
 Relationships can be viewed from either person's perspective:
 
 ```typescript
@@ -201,6 +209,7 @@ Relationships can be viewed from either person's perspective:
 ```
 
 ### Categories
+
 Distinguish **nature** of relationship:
 
 ```typescript
@@ -218,6 +227,7 @@ Distinguish **nature** of relationship:
 ```
 
 ### Placeholders
+
 For unknown people in the family tree:
 
 ```typescript
@@ -243,6 +253,7 @@ For unknown people in the family tree:
 ## Common Queries
 
 ### "Who is sending messages from Telegram?"
+
 ```sql
 SELECT i.display_name, p.name
 FROM identities i
@@ -254,6 +265,7 @@ ORDER BY i.display_name;
 ```
 
 ### "What's Gabriel's relationship to Rosa?"
+
 ```sql
 SELECT *
 FROM relationships
@@ -263,6 +275,7 @@ WHERE family_id = ?
 ```
 
 ### "Who are Gabriel's parents?"
+
 ```sql
 SELECT p.*
 FROM relationships r
@@ -274,6 +287,7 @@ WHERE r.family_id = ?
 ```
 
 ### "Who are Gabriel's children?"
+
 ```sql
 SELECT p.*
 FROM relationships r
@@ -285,6 +299,7 @@ WHERE r.family_id = ?
 ```
 
 ### "Find all placeholders"
+
 ```sql
 SELECT *
 FROM people
@@ -320,6 +335,7 @@ families (top-level tenant)
 ```
 
 **Multi-tenancy guarantees:**
+
 - Each family isolated
 - No cross-family queries
 - RLS policies enforce family boundaries
@@ -361,18 +377,18 @@ INSERT INTO event_log (
 
 ## Implementation Progress
 
-| Feature | Status | File |
-|---------|--------|------|
-| Relationships table | ✅ | [init_schema.sql](../apps/db/supabase/migrations/20260112074715_init_schema.sql) |
-| Relationship normalization | ✅ | [relationships.ts](../libs/shared/types/src/lib/relationships.ts) |
-| RelationshipRepository | ✅ | [relationship-repository.ts](../libs/database/src/lib/repositories/relationship-repository.ts) |
-| Identities table | ✅ | [init_schema.sql](../apps/db/supabase/migrations/20260112074715_init_schema.sql) |
-| IdentityRepository | ✅ | [identity-repository.ts](../libs/database/src/lib/repositories/identity-repository.ts) |
-| Auto-create identities on ingestion | ✅ | [ingester.ts](../apps/chatbots/src/bot/ingester.ts) |
-| Placeholder persons | ✅ | [person-repository.ts](../libs/database/src/lib/repositories/person-repository.ts) |
-| Placeholder merging | ✅ | [person-repository.ts](../libs/database/src/lib/repositories/person-repository.ts) |
-| Fuzzy matching | ✅ | [person-repository.ts](../libs/database/src/lib/repositories/person-repository.ts) |
-| FamilyTreeService (derivation) | ⏳ | TBD |
+| Feature                             | Status | File                                                                                           |
+| ----------------------------------- | ------ | ---------------------------------------------------------------------------------------------- |
+| Relationships table                 | ✅     | [init_schema.sql](../apps/db/supabase/migrations/20260112074715_init_schema.sql)               |
+| Relationship normalization          | ✅     | [relationships.ts](../libs/shared/types/src/lib/relationships.ts)                              |
+| RelationshipRepository              | ✅     | [relationship-repository.ts](../libs/database/src/lib/repositories/relationship-repository.ts) |
+| Identities table                    | ✅     | [init_schema.sql](../apps/db/supabase/migrations/20260112074715_init_schema.sql)               |
+| IdentityRepository                  | ✅     | [identity-repository.ts](../libs/database/src/lib/repositories/identity-repository.ts)         |
+| Auto-create identities on ingestion | ✅     | [ingester.ts](../apps/chatbots/src/bot/ingester.ts)                                            |
+| Placeholder persons                 | ✅     | [person-repository.ts](../libs/database/src/lib/repositories/person-repository.ts)             |
+| Placeholder merging                 | ✅     | [person-repository.ts](../libs/database/src/lib/repositories/person-repository.ts)             |
+| Fuzzy matching                      | ✅     | [person-repository.ts](../libs/database/src/lib/repositories/person-repository.ts)             |
+| FamilyTreeService (derivation)      | ⏳     | TBD                                                                                            |
 
 ---
 

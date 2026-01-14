@@ -39,10 +39,10 @@ export default [
             },
             {
               sourceTag: 'scope:app',
-            },               
+            },
             {
               sourceTag: 'scope:provider',
-            },            
+            },
             {
               sourceTag: 'scope:service',
             },

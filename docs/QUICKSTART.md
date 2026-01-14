@@ -28,19 +28,23 @@ pnpm install
 Open Telegram and message [@BotFather](https://t.me/botfather):
 
 1. **Create Scribe Bot** (required)
+
    ```
    /newbot
    Name: Sobremesa Scribe
    Username: sobremesa_scribe_bot
    ```
+
    Save the token.
 
 2. **Create Facilitator Bot** (required for questions)
+
    ```
    /newbot
    Name: Sobremesa Facilitator
    Username: sobremesa_facilitator_bot
    ```
+
    Save the token.
 
 3. **Create Admin Bot** (optional)
@@ -64,6 +68,7 @@ Open Telegram and message [@BotFather](https://t.me/botfather):
 ### Get Connection Info
 
 From Project Settings > API:
+
 - **Project URL** (SUPABASE_URL)
 - **anon public** key (SUPABASE_ANON_KEY)
 - **service_role** key (SUPABASE_SERVICE_ROLE_KEY)
@@ -123,14 +128,17 @@ TELEGRAM_BOT_TOKEN_ADMIN=123456789:CCH...
 ## Step 6: Register the Family
 
 1. Start the gateway:
+
    ```bash
    nx serve chatbots
    ```
 
 2. In the Telegram group, send:
+
    ```
    /register YOUR_FAMILY_ID
    ```
+
    (Use the family ID from Step 3)
 
 3. You should see a confirmation message
@@ -140,11 +148,13 @@ TELEGRAM_BOT_TOKEN_ADMIN=123456789:CCH...
 ## Step 7: Test Message Flow
 
 Send a message in the group:
+
 ```
 My grandmother Rosa came to America from Poland in 1920.
 ```
 
 **Expected behavior:**
+
 1. Scribe bot ingests message
 2. Claude extracts: Rosa (person), Poland (place), America (place), immigration (event)
 3. Questions generated about gaps
@@ -153,6 +163,7 @@ My grandmother Rosa came to America from Poland in 1920.
 ### Verify in Database
 
 Check Supabase tables:
+
 - `conversation_events` - Should have your message
 - `people` - Should have "Rosa" and "grandmother"
 - `places` - Should have "America" and "Poland"

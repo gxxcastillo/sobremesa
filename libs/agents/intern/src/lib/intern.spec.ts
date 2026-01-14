@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { InternAgent, DEFAULT_INTERN_CONFIG } from './intern.js';
+import { InternAgent, DEFAULT_INTERN_CONFIG } from './intern';
 import type { Image } from '@sobremesa/shared-types';
 
 // Mock event repository
@@ -124,7 +124,12 @@ describe('InternAgent', () => {
 
       it('should call Anthropic with correct model', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: '{"relevant": true, "reason": "Family history"}' }],
+          content: [
+            {
+              type: 'text',
+              text: '{"relevant": true, "reason": "Family history"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 20 },
         });
 
@@ -140,7 +145,12 @@ describe('InternAgent', () => {
 
       it('should return relevant=true when Haiku determines message is relevant', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: '{"relevant": true, "reason": "Contains family immigration story"}' }],
+          content: [
+            {
+              type: 'text',
+              text: '{"relevant": true, "reason": "Contains family immigration story"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 20 },
         });
 
@@ -160,7 +170,12 @@ describe('InternAgent', () => {
         });
 
         mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: '{"relevant": false, "reason": "General greeting"}' }],
+          content: [
+            {
+              type: 'text',
+              text: '{"relevant": false, "reason": "General greeting"}',
+            },
+          ],
           usage: { input_tokens: 80, output_tokens: 15 },
         });
 
@@ -173,12 +188,22 @@ describe('InternAgent', () => {
 
       it('should include recent messages as context', async () => {
         mockEventRepo.findRecent.mockResolvedValue([
-          { id: 'event-122', contentOriginal: 'Previous message', actorDisplayName: 'Alice' },
-          { id: 'event-123', contentOriginal: 'Current message', actorDisplayName: 'Bob' },
+          {
+            id: 'event-122',
+            contentOriginal: 'Previous message',
+            actorDisplayName: 'Alice',
+          },
+          {
+            id: 'event-123',
+            contentOriginal: 'Current message',
+            actorDisplayName: 'Bob',
+          },
         ]);
 
         mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: '{"relevant": true, "reason": "test"}' }],
+          content: [
+            { type: 'text', text: '{"relevant": true, "reason": "test"}' },
+          ],
           usage: { input_tokens: 100, output_tokens: 20 },
         });
 
@@ -221,7 +246,12 @@ describe('InternAgent', () => {
 
       it('should handle JSON with extra text', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: 'Here is my analysis: {"relevant": false, "reason": "Not relevant"}' }],
+          content: [
+            {
+              type: 'text',
+              text: 'Here is my analysis: {"relevant": false, "reason": "Not relevant"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 20 },
         });
 
@@ -257,7 +287,12 @@ describe('InternAgent', () => {
 
       it('should default to relevant=true if relevant field is not boolean', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: '{"relevant": "yes", "reason": "Some reason"}' }],
+          content: [
+            {
+              type: 'text',
+              text: '{"relevant": "yes", "reason": "Some reason"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 20 },
         });
 
@@ -291,7 +326,9 @@ describe('InternAgent', () => {
       });
 
       it('should return relevant=true on API error', async () => {
-        mockAnthropicCreate.mockRejectedValue(new Error('API rate limit exceeded'));
+        mockAnthropicCreate.mockRejectedValue(
+          new Error('API rate limit exceeded')
+        );
 
         const result = await intern.filter('event-123', 'family-abc');
 
@@ -302,7 +339,9 @@ describe('InternAgent', () => {
       });
 
       it('should return relevant=true on repository error', async () => {
-        mockEventRepo.findRecent.mockRejectedValue(new Error('Database connection failed'));
+        mockEventRepo.findRecent.mockRejectedValue(
+          new Error('Database connection failed')
+        );
 
         const result = await intern.filter('event-123', 'family-abc');
 
@@ -391,10 +430,12 @@ describe('InternAgent', () => {
 
       it('should call Anthropic for image linking', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{
-            type: 'text',
-            text: '{"linked": true, "image_id": "img-123", "reference_type": "identifies_people", "reason": "Identifies grandma"}',
-          }],
+          content: [
+            {
+              type: 'text',
+              text: '{"linked": true, "image_id": "img-123", "reference_type": "identifies_people", "reason": "Identifies grandma"}',
+            },
+          ],
           usage: { input_tokens: 150, output_tokens: 30 },
         });
 
@@ -409,7 +450,12 @@ describe('InternAgent', () => {
 
       it('should include image context in prompt', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: '{"linked": false, "reason": "No reference"}' }],
+          content: [
+            {
+              type: 'text',
+              text: '{"linked": false, "reason": "No reference"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 20 },
         });
 
@@ -428,7 +474,9 @@ describe('InternAgent', () => {
 
       it('should format image with all available metadata', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: '{"linked": false, "reason": "test"}' }],
+          content: [
+            { type: 'text', text: '{"linked": false, "reason": "test"}' },
+          ],
           usage: { input_tokens: 100, output_tokens: 20 },
         });
 
@@ -461,10 +509,12 @@ describe('InternAgent', () => {
 
       it('should detect describes reference type', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{
-            type: 'text',
-            text: '{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "Describes the scene"}',
-          }],
+          content: [
+            {
+              type: 'text',
+              text: '{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "Describes the scene"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 30 },
         });
 
@@ -475,10 +525,12 @@ describe('InternAgent', () => {
 
       it('should detect identifies_people reference type', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{
-            type: 'text',
-            text: '{"linked": true, "image_id": "img-123", "reference_type": "identifies_people", "reason": "Names people"}',
-          }],
+          content: [
+            {
+              type: 'text',
+              text: '{"linked": true, "image_id": "img-123", "reference_type": "identifies_people", "reason": "Names people"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 30 },
         });
 
@@ -489,10 +541,12 @@ describe('InternAgent', () => {
 
       it('should detect provides_context reference type', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{
-            type: 'text',
-            text: '{"linked": true, "image_id": "img-123", "reference_type": "provides_context", "reason": "Provides date info"}',
-          }],
+          content: [
+            {
+              type: 'text',
+              text: '{"linked": true, "image_id": "img-123", "reference_type": "provides_context", "reason": "Provides date info"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 30 },
         });
 
@@ -503,10 +557,12 @@ describe('InternAgent', () => {
 
       it('should detect asks_about reference type', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{
-            type: 'text',
-            text: '{"linked": true, "image_id": "img-123", "reference_type": "asks_about", "reason": "Asks a question"}',
-          }],
+          content: [
+            {
+              type: 'text',
+              text: '{"linked": true, "image_id": "img-123", "reference_type": "asks_about", "reason": "Asks a question"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 30 },
         });
 
@@ -517,10 +573,12 @@ describe('InternAgent', () => {
 
       it('should default to describes for invalid reference type', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{
-            type: 'text',
-            text: '{"linked": true, "image_id": "img-123", "reference_type": "invalid_type", "reason": "test"}',
-          }],
+          content: [
+            {
+              type: 'text',
+              text: '{"linked": true, "image_id": "img-123", "reference_type": "invalid_type", "reason": "test"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 30 },
         });
 
@@ -545,10 +603,12 @@ describe('InternAgent', () => {
 
       it('should return linked=false when Haiku says not linked', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{
-            type: 'text',
-            text: '{"linked": false, "image_id": null, "reference_type": null, "reason": "No image reference"}',
-          }],
+          content: [
+            {
+              type: 'text',
+              text: '{"linked": false, "image_id": null, "reference_type": null, "reason": "No image reference"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 20 },
         });
 
@@ -597,10 +657,12 @@ describe('InternAgent', () => {
 
       it('should return linked=false if image_id is missing when linked is true', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{
-            type: 'text',
-            text: '{"linked": true, "reference_type": "describes", "reason": "test"}',
-          }],
+          content: [
+            {
+              type: 'text',
+              text: '{"linked": true, "reference_type": "describes", "reason": "test"}',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 20 },
         });
 
@@ -612,10 +674,12 @@ describe('InternAgent', () => {
 
       it('should handle JSON with extra text around it', async () => {
         mockAnthropicCreate.mockResolvedValue({
-          content: [{
-            type: 'text',
-            text: 'Here is my analysis:\n{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "test"}\nThank you!',
-          }],
+          content: [
+            {
+              type: 'text',
+              text: 'Here is my analysis:\n{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "test"}\nThank you!',
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 30 },
         });
 
@@ -651,7 +715,9 @@ describe('InternAgent', () => {
       });
 
       it('should return linked=false on repository error', async () => {
-        mockImageRepo.findRecentInConversation.mockRejectedValue(new Error('DB error'));
+        mockImageRepo.findRecentInConversation.mockRejectedValue(
+          new Error('DB error')
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -689,7 +755,9 @@ describe('InternAgent', () => {
       });
       mockEventRepo.findRecent.mockResolvedValue([]);
       mockAnthropicCreate.mockResolvedValue({
-        content: [{ type: 'text', text: '{"relevant": true, "reason": "test"}' }],
+        content: [
+          { type: 'text', text: '{"relevant": true, "reason": "test"}' },
+        ],
         usage: { input_tokens: 100, output_tokens: 20 },
       });
 
@@ -717,7 +785,12 @@ describe('InternAgent', () => {
 
     it('should log debug info for filter results', async () => {
       mockAnthropicCreate.mockResolvedValue({
-        content: [{ type: 'text', text: '{"relevant": true, "reason": "Family story"}' }],
+        content: [
+          {
+            type: 'text',
+            text: '{"relevant": true, "reason": "Family story"}',
+          },
+        ],
         usage: { input_tokens: 100, output_tokens: 20 },
       });
 
@@ -738,10 +811,12 @@ describe('InternAgent', () => {
         { id: 'img-123', familyId: 'family-abc', createdAt: new Date() },
       ]);
       mockAnthropicCreate.mockResolvedValue({
-        content: [{
-          type: 'text',
-          text: '{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "test"}',
-        }],
+        content: [
+          {
+            type: 'text',
+            text: '{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "test"}',
+          },
+        ],
         usage: { input_tokens: 100, output_tokens: 30 },
       });
 

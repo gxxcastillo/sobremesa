@@ -1,52 +1,6 @@
 {
   "extends": "./tsconfig.base.json",
   "compileOnSave": false,
-  "files": [],
-  "references": [
-    {
-      "path": "./libs/shared/types"
-    },
-    {
-      "path": "./libs/shared/utils"
-    },
-    {
-      "path": "./libs/database"
-    },
-    {
-      "path": "./libs/queue"
-    },
-    {
-      "path": "./libs/telegram"
-    },
-    {
-      "path": "./libs/agents/scribe"
-    },
-    {
-      "path": "./libs/agents/registrar"
-    },
-    {
-      "path": "./libs/agents/facilitator"
-    },
-    {
-      "path": "./libs/ingester"
-    },
-    {
-      "path": "./libs/agents/curator"
-    },
-    {
-      "path": "./libs/api-client"
-    },
-    {
-      "path": "./apps/publisher"
-    },
-    {
-      "path": "./apps/api"
-    },
-    {
-      "path": "./libs/agents/intern"
-    },
-    {
-      "path": "./apps/chatbots"
-    }
-  ]
+  "include": [],
+  "exclude": ["node_modules", "dist"]
 }

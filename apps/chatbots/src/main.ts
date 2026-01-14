@@ -24,7 +24,9 @@ async function main() {
 
   const anthropicApiKey = process.env['ANTHROPIC_API_KEY'];
   if (!anthropicApiKey) {
-    logger.warn('ANTHROPIC_API_KEY not set - Scribe agent will not process messages');
+    logger.warn(
+      'ANTHROPIC_API_KEY not set - Scribe agent will not process messages'
+    );
   }
 
   try {
@@ -67,9 +69,15 @@ async function main() {
       const scribe = new ScribeAgent({ anthropic });
       const registrar = new RegistrarAgent();
 
-      processor.setFilter((eventId, familyId) => intern.filter(eventId, familyId));
-      processor.setImageLinker((eventId, familyId) => intern.linkToImage(eventId, familyId));
-      processor.setScribe((eventId, familyId) => scribe.process(eventId, familyId));
+      processor.setFilter((eventId, familyId) =>
+        intern.filter(eventId, familyId)
+      );
+      processor.setImageLinker((eventId, familyId) =>
+        intern.linkToImage(eventId, familyId)
+      );
+      processor.setScribe((eventId, familyId) =>
+        scribe.process(eventId, familyId)
+      );
       processor.setRegistrar(async (model, familyId) => {
         await registrar.persist(model, familyId);
 
@@ -92,7 +100,10 @@ async function main() {
                 );
               }
             } catch (err) {
-              logger.error({ familyId, err }, 'Facilitator failed to ask question');
+              logger.error(
+                { familyId, err },
+                'Facilitator failed to ask question'
+              );
             }
           }, 3000); // Wait 3 seconds before asking
         }

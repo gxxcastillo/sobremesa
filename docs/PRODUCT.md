@@ -20,9 +20,10 @@ Families already tell their stories — casually, emotionally, and imperfectly �
 in chat threads that are ephemeral and unstructured.
 
 Sobremesa exists to:
+
 - Surface meaningful stories at the right time
 - Encourage deeper recollection without interrogation
-- Preserve what was said *as it was said*
+- Preserve what was said _as it was said_
 - Organize memories **without disrupting conversation**
 
 The primary goal is **long-term preservation with warmth**, not efficiency,
@@ -33,6 +34,7 @@ accuracy, or completeness.
 ## What the Product Does
 
 Sobremesa:
+
 - Participates in group chats as a respectful presence
 - Asks thoughtful follow-up questions when appropriate
 - Recognizes stories, people, places, and events in conversation
@@ -44,6 +46,7 @@ Sobremesa:
 ## What the Product Is NOT
 
 Sobremesa is not:
+
 - A genealogy tool that enforces a single “correct” history
 - A chat bot that dominates or steers conversations
 - A transcription or surveillance system

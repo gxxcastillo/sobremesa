@@ -1,7 +1,7 @@
 import type { Telegraf } from 'telegraf';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
-import type { BotHandler, BotRole } from './types.js';
+import type { BotHandler, BotRole } from './types';
 
 /**
  * Facilitator bot handler.
@@ -24,8 +24,8 @@ export class FacilitatorBotHandler implements BotHandler {
     bot.command('start', async (ctx) => {
       if (ctx.chat.type === 'private') {
         await ctx.reply(
-          'Hi! I\'m the Sobremesa Facilitator. I help gather more details about family stories.\n\n' +
-          'If you have a private story to share, feel free to message me here and I\'ll make sure it gets added to your family archive.'
+          "Hi! I'm the Sobremesa Facilitator. I help gather more details about family stories.\n\n" +
+            "If you have a private story to share, feel free to message me here and I'll make sure it gets added to your family archive."
         );
       }
     });

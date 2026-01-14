@@ -1,4 +1,4 @@
-import { getServiceClient } from './client.js';
+import { getServiceClient } from './client';
 
 /**
  * Check database status and report missing tables.
@@ -30,13 +30,20 @@ async function checkDb(): Promise<void> {
     'integrity_checkpoints',
   ];
 
-  const results: { table: string; status: 'ok' | 'missing' | 'error'; error?: string }[] = [];
+  const results: {
+    table: string;
+    status: 'ok' | 'missing' | 'error';
+    error?: string;
+  }[] = [];
 
   for (const table of requiredTables) {
     try {
       const { error } = await client.from(table).select('*').limit(0);
       if (error) {
-        if (error.message.includes('does not exist') || error.code === '42P01') {
+        if (
+          error.message.includes('does not exist') ||
+          error.code === '42P01'
+        ) {
           results.push({ table, status: 'missing' });
         } else {
           results.push({ table, status: 'error', error: error.message });
@@ -48,7 +55,7 @@ async function checkDb(): Promise<void> {
       results.push({
         table,
         status: 'error',
-        error: err instanceof Error ? err.message : String(err)
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }

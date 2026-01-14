@@ -4,7 +4,7 @@ import type { Message, Update, User } from 'telegraf/types';
 import { createLogger } from '@sobremesa/shared-utils';
 import { FamilyRepository } from '@sobremesa/database';
 import type pino from 'pino';
-import type { BotHandler, BotRole } from './types.js';
+import type { BotHandler, BotRole } from './types';
 import {
   MessageIngester,
   type TextMessageInput,
@@ -14,12 +14,17 @@ import {
 
 type TextMessageContext = Context<Update.MessageUpdate<Message.TextMessage>>;
 type PhotoMessageContext = Context<Update.MessageUpdate<Message.PhotoMessage>>;
-type DocumentMessageContext = Context<Update.MessageUpdate<Message.DocumentMessage>>;
+type DocumentMessageContext = Context<
+  Update.MessageUpdate<Message.DocumentMessage>
+>;
 
 /**
  * Get display name from Telegram user.
  */
-function getDisplayName(user: { first_name: string; last_name?: string }): string {
+function getDisplayName(user: {
+  first_name: string;
+  last_name?: string;
+}): string {
   if (user.last_name) {
     return `${user.first_name} ${user.last_name}`;
   }
@@ -29,7 +34,9 @@ function getDisplayName(user: { first_name: string; last_name?: string }): strin
 /**
  * Transform a Telegram text message to generic input.
  */
-function transformTextMessage(msg: Message.TextMessage & { from: User }): TextMessageInput {
+function transformTextMessage(
+  msg: Message.TextMessage & { from: User }
+): TextMessageInput {
   return {
     type: 'text',
     source: 'telegram',
@@ -57,7 +64,9 @@ function transformTextMessage(msg: Message.TextMessage & { from: User }): TextMe
 /**
  * Transform a Telegram photo message to generic input.
  */
-function transformPhotoMessage(msg: Message.PhotoMessage & { from: User }): PhotoMessageInput {
+function transformPhotoMessage(
+  msg: Message.PhotoMessage & { from: User }
+): PhotoMessageInput {
   const photo = msg.photo[msg.photo.length - 1]; // Get largest photo
   return {
     type: 'photo',
@@ -89,7 +98,9 @@ function transformPhotoMessage(msg: Message.PhotoMessage & { from: User }): Phot
 /**
  * Transform a Telegram document message to generic input.
  */
-function transformDocumentMessage(msg: Message.DocumentMessage & { from: User }): DocumentMessageInput {
+function transformDocumentMessage(
+  msg: Message.DocumentMessage & { from: User }
+): DocumentMessageInput {
   const doc = msg.document;
   return {
     type: 'document',
@@ -152,7 +163,10 @@ export class ScribeBotHandler implements BotHandler {
       try {
         await this.handleTextMessage(ctx);
       } catch (error) {
-        this.logger.error({ error, messageId: ctx.message.message_id }, 'Failed to ingest text message');
+        this.logger.error(
+          { error, messageId: ctx.message.message_id },
+          'Failed to ingest text message'
+        );
       }
     });
 
@@ -161,7 +175,10 @@ export class ScribeBotHandler implements BotHandler {
       try {
         await this.handlePhotoMessage(ctx);
       } catch (error) {
-        this.logger.error({ error, messageId: ctx.message.message_id }, 'Failed to ingest photo message');
+        this.logger.error(
+          { error, messageId: ctx.message.message_id },
+          'Failed to ingest photo message'
+        );
       }
     });
 
@@ -170,7 +187,10 @@ export class ScribeBotHandler implements BotHandler {
       try {
         await this.handleDocumentMessage(ctx);
       } catch (error) {
-        this.logger.error({ error, messageId: ctx.message.message_id }, 'Failed to ingest document message');
+        this.logger.error(
+          { error, messageId: ctx.message.message_id },
+          'Failed to ingest document message'
+        );
       }
     });
 
@@ -236,7 +256,9 @@ export class ScribeBotHandler implements BotHandler {
   /**
    * Handle a document message from Telegram.
    */
-  private async handleDocumentMessage(ctx: DocumentMessageContext): Promise<void> {
+  private async handleDocumentMessage(
+    ctx: DocumentMessageContext
+  ): Promise<void> {
     const msg = ctx.message;
     const chatId = String(msg.chat.id);
 

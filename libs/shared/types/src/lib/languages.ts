@@ -47,7 +47,9 @@ export function detectLanguage(text: string): LanguageCode {
   const englishScore = englishWordCount * 2;
 
   if (spanishScore > 0 && englishScore > 0) {
-    const ratio = Math.min(spanishScore, englishScore) / Math.max(spanishScore, englishScore);
+    const ratio =
+      Math.min(spanishScore, englishScore) /
+      Math.max(spanishScore, englishScore);
     if (ratio > 0.3) {
       return 'mixed';
     }

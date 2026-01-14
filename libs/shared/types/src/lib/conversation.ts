@@ -1,4 +1,4 @@
-import { LanguageCode } from './languages.js';
+import { LanguageCode } from './languages';
 
 /**
  * Supported chat providers.

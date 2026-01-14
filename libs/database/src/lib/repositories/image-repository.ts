@@ -1,6 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { Image } from '@sobremesa/shared-types';
-import { BaseRepository, mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
+import {
+  BaseRepository,
+  mapRowToCamelCase,
+  mapRecordToSnakeCase,
+} from '../base-repository.js';
 
 /**
  * Repository for images and documents.
@@ -30,7 +34,9 @@ export class ImageRepository extends BaseRepository<Image> {
       if (error.code === 'PGRST116') {
         return null;
       }
-      throw new Error(`Failed to find image by external file ID: ${error.message}`);
+      throw new Error(
+        `Failed to find image by external file ID: ${error.message}`
+      );
     }
 
     return this.mapFromDb(data);
@@ -39,7 +45,10 @@ export class ImageRepository extends BaseRepository<Image> {
   /**
    * Find images by source event ID.
    */
-  async findBySourceEventId(familyId: string, sourceEventId: string): Promise<Image[]> {
+  async findBySourceEventId(
+    familyId: string,
+    sourceEventId: string
+  ): Promise<Image[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
@@ -48,7 +57,9 @@ export class ImageRepository extends BaseRepository<Image> {
       .eq('redacted', false);
 
     if (error) {
-      throw new Error(`Failed to find images by source event: ${error.message}`);
+      throw new Error(
+        `Failed to find images by source event: ${error.message}`
+      );
     }
 
     return (data || []).map((row) => this.mapFromDb(row));
@@ -124,12 +135,14 @@ export class ImageRepository extends BaseRepository<Image> {
     // Query images joined with their source events to filter by conversation
     const { data, error } = await this.client
       .from(this.tableName)
-      .select(`
+      .select(
+        `
         *,
         conversation_events!source_event_id (
           conversation_id
         )
-      `)
+      `
+      )
       .eq('family_id', familyId)
       .eq('redacted', false)
       .eq('conversation_events.conversation_id', conversationId)
@@ -137,7 +150,9 @@ export class ImageRepository extends BaseRepository<Image> {
       .limit(limit);
 
     if (error) {
-      throw new Error(`Failed to find recent images in conversation: ${error.message}`);
+      throw new Error(
+        `Failed to find recent images in conversation: ${error.message}`
+      );
     }
 
     // Map and filter out any that didn't match the join
@@ -236,7 +251,9 @@ export class ImageRepository extends BaseRepository<Image> {
       .single();
 
     if (error) {
-      throw new Error(`Failed to add connected people to image: ${error.message}`);
+      throw new Error(
+        `Failed to add connected people to image: ${error.message}`
+      );
     }
 
     return this.mapFromDb(data);

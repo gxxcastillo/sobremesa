@@ -8,10 +8,10 @@ import {
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
-import { buildSystemPrompt, buildUserMessage } from './prompt-builder.js';
-import { parseScribeResponse } from './response-parser.js';
-import { buildScribeContext } from './context-builder.js';
-import { DEFAULT_SCRIBE_CONFIG, type ScribeConfig } from './types.js';
+import { buildSystemPrompt, buildUserMessage } from './prompt-builder';
+import { parseScribeResponse } from './response-parser';
+import { buildScribeContext } from './context-builder';
+import { DEFAULT_SCRIBE_CONFIG, type ScribeConfig } from './types';
 
 /**
  * Anthropic client interface.
@@ -83,7 +83,10 @@ export class ScribeAgent {
     }
 
     if (!event.contentOriginal) {
-      this.logger.debug({ eventId }, 'Event has no content, returning empty model');
+      this.logger.debug(
+        { eventId },
+        'Event has no content, returning empty model'
+      );
       return this.createEmptyModel(eventId, familyId);
     }
 
@@ -99,16 +102,12 @@ export class ScribeAgent {
 
     // Build context from database
     // Note: People/places removed - Registrar handles entity matching
-    const context = await buildScribeContext(
-      familyId,
-      event.conversationId,
-      {
-        eventRepo: this.eventRepo,
-        claimRepo: this.claimRepo,
-        questionRepo: this.questionRepo,
-        imageRepo: this.imageRepo,
-      }
-    );
+    const context = await buildScribeContext(familyId, event.conversationId, {
+      eventRepo: this.eventRepo,
+      claimRepo: this.claimRepo,
+      questionRepo: this.questionRepo,
+      imageRepo: this.imageRepo,
+    });
 
     // Build prompts
     const systemPrompt = buildSystemPrompt(config);
