@@ -61,7 +61,7 @@
       "executor": "@nx/js:prune-lockfile",
       "outputs": [
         "{workspaceRoot}/apps/chatbots/dist/package.json",
-        "{workspaceRoot}/apps/chatbots/dist/pnpm-lock.yaml"
+        "{workspaceRoot}/apps/chatbots/dist/bun.lock"
       ],
       "options": {
         "buildTarget": "build"
@@ -89,22 +89,9 @@
     },
     "serve": {
       "continuous": true,
-      "executor": "@nx/js:node",
-      "defaultConfiguration": "development",
-      "dependsOn": [
-        "build"
-      ],
+      "executor": "nx:run-commands",
       "options": {
-        "buildTarget": "chatbots:build",
-        "runBuildTargetDependencies": false
-      },
-      "configurations": {
-        "development": {
-          "buildTarget": "chatbots:build:development"
-        },
-        "production": {
-          "buildTarget": "chatbots:build:production"
-        }
+        "command": "bun run apps/chatbots/src/main.ts"
       }
     }
   }

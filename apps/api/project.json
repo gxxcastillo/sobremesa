@@ -6,23 +6,24 @@
   "tags": ["scope:async"],
   "targets": {
     "dev": {
+      "continuous": true,
       "executor": "nx:run-commands",
       "options": {
-        "command": "source .env && export TLS_CERT=certs/sobremesa.x-cert.pem TLS_KEY=certs/sobremesa.x-key.pem PORT=3001 && ~/.bun/bin/bun run apps/api/src/main.ts",
+        "command": "source .env && export TLS_CERT=certs/sobremesa.x-cert.pem TLS_KEY=certs/sobremesa.x-key.pem PORT=3001 && bun run apps/api/src/main.ts",
         "cwd": "{workspaceRoot}"
       }
     },
     "serve": {
+      "continuous": true,
       "executor": "nx:run-commands",
       "options": {
-        "command": "~/.bun/bin/bun run src/main.ts",
-        "cwd": "apps/api"
+        "command": "bun run apps/api/src/main.ts"
       }
     },
     "build": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "~/.bun/bin/bun build src/main.ts --outdir dist",
+        "command": "bun build src/main.ts --outdir dist",
         "cwd": "apps/api"
       }
     }

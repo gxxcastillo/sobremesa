@@ -1,6 +1,6 @@
 import type { Telegraf, Context } from 'telegraf';
 import { createLogger } from '@sobremesa/shared-utils';
-import { FamilyRepository } from '@sobremesa/database';
+import { FamilyRepository, AllowedChatRepository } from '@sobremesa/database';
 import type pino from 'pino';
 import type { BotHandler, BotRole } from './types.js';
 
@@ -19,10 +19,12 @@ export class AdminBotHandler implements BotHandler {
 
   private logger: pino.Logger;
   private familyRepo: FamilyRepository;
+  private allowedChatRepo: AllowedChatRepository;
 
   constructor(logger?: pino.Logger) {
     this.logger = logger || createLogger({ name: 'admin-bot' });
     this.familyRepo = new FamilyRepository();
+    this.allowedChatRepo = new AllowedChatRepository();
   }
 
   configure(bot: Telegraf): void {
@@ -127,6 +129,17 @@ export class AdminBotHandler implements BotHandler {
     // Only allow in groups
     if (chatType !== 'group' && chatType !== 'supergroup') {
       await ctx.reply('Please use /sobremesa in a group chat, not in a private message.');
+      return;
+    }
+
+    // Check if chat is whitelisted
+    const isAllowed = await this.allowedChatRepo.isAllowed(chatId);
+    if (!isAllowed) {
+      this.logger.warn({ chatId }, 'Registration attempted from non-whitelisted chat');
+      await ctx.reply(
+        'This chat is not authorized to use Sobremesa. ' +
+        'Please contact the administrator to whitelist this chat.'
+      );
       return;
     }
 

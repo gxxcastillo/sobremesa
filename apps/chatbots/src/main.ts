@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { createLogger } from '@sobremesa/shared-utils';
 import { MessageQueue, MessageProcessor } from '@sobremesa/queue';

@@ -4,7 +4,6 @@
   "private": true,
   "dependencies": {
     "telegraf": "^4.16.3",
-    "dotenv": "^17.2.3",
     "@anthropic-ai/sdk": "^0.71.2",
     "@sobremesa/shared-types": "workspace:*",
     "@sobremesa/shared-utils": "workspace:*",

@@ -2,14 +2,7 @@
   "name": "@sobremesa/root",
   "version": "0.0.0",
   "license": "MIT",
-  "scripts": {
-    "db:start": "supabase start --workdir apps/db",
-    "db:stop": "supabase stop --workdir apps/db",
-    "db:reset": "supabase db reset --workdir apps/db",
-    "db:link": "supabase link --workdir apps/db",
-    "db:migrate": "supabase db push --workdir apps/db",
-    "db:status": "supabase db status --workdir apps/db"
-  },
+  "scripts": {},
   "private": true,
   "devDependencies": {
     "@eslint/js": "^9.8.0",
@@ -53,5 +46,10 @@
     "telegraf": "^4.16.3",
     "zod": "^4.3.5"
   },
-  "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
+  "workspaces": [
+    "apps/*",
+    "libs/*",
+    "libs/shared/*",
+    "libs/agents/*"
+  ]
 }

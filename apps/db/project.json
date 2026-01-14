@@ -1,3 +1,59 @@
 {
-  "name": "db"
+  "name": "db",
+  "targets": {
+    "start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "supabase start"
+      }
+    },
+    "stop": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "supabase stop"
+      }
+    },
+    "status": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "supabase status"
+      }
+    },
+    "reset": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "supabase db reset"
+      }
+    },
+    "push": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "supabase db push"
+      }
+    },
+    "pull": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "supabase db pull"
+      }
+    },
+    "diff": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "supabase db diff"
+      }
+    },
+    "migration-new": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "supabase migration new"
+      }
+    },
+    "migration-list": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "supabase migration list"
+      }
+    }
+  }
 }

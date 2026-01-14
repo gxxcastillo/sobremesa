@@ -1,0 +1,17 @@
+app = 'sobremesa-chatbots'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  NODE_ENV = 'production'
+
+# Long-running process (Telegram bot), not an HTTP service
+[processes]
+  app = 'bun run main.js'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

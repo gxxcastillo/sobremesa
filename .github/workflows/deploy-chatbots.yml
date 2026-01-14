@@ -1,0 +1,27 @@
+name: Deploy Chatbots
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/chatbots/**'
+      - 'libs/database/**'
+      - 'libs/shared/**'
+      - 'libs/queue/**'
+      - 'libs/telegram/**'
+      - 'libs/agents/**'
+      - 'libs/ingester/**'
+      - '.github/workflows/deploy-chatbots.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        run: flyctl deploy --config apps/chatbots/fly.toml --dockerfile apps/chatbots/Dockerfile --remote-only

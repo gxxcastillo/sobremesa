@@ -1,8 +1,0 @@
-packages:
-  - 'libs/*'
-  - 'libs/shared/*'
-  - 'libs/agents/*'
-  - 'apps/*'
-  - 'apps'
-onlyBuiltDependencies:
-  - 'supabase'
