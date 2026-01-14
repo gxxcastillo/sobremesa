@@ -6,13 +6,13 @@ on:
       run_ci:
         description: 'Run CI checks'
         type: boolean
-        default: true
+        default: false
   workflow_dispatch:
     inputs:
       run_ci:
         description: 'Run CI checks'
         type: boolean
-        default: false
+        default: true
 
 env:
   SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -21,7 +21,7 @@ env:
 
 jobs:
   ci:
-    if: ${{ !inputs.run_ci }}
+    if: ${{ inputs.run_ci }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
