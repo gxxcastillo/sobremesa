@@ -1,4 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from 'vitest';
 import { InternAgent, DEFAULT_INTERN_CONFIG } from './intern';
 import type { Image } from '@sobremesa/shared-types';
 
@@ -410,12 +418,20 @@ describe('InternAgent', () => {
         id: 'img-123',
         familyId: 'family-abc',
         createdAt: new Date(),
+        updatedAt: new Date(),
         fileType: 'photo',
         sharedBy: 'Grandma',
-        status: 'analyzed',
         analysis: { description: 'A family gathering' },
         peopleCount: 5,
         estimatedEra: '1960s',
+        source: '',
+        externalFileId: '',
+        visibleText: [],
+        connectedStories: [],
+        connectedPeople: [],
+        sourceEventId: '',
+        analyzed: false,
+        redacted: false,
       };
 
       beforeEach(() => {
@@ -728,6 +744,27 @@ describe('InternAgent', () => {
   });
 
   describe('configuration', () => {
+    const previousEnv = {
+      SUPABASE_URL: process.env['SUPABASE_URL'],
+      SUPABASE_ANON_KEY: process.env['SUPABASE_ANON_KEY'],
+      SUPABASE_SERVICE_ROLE_KEY: process.env['SUPABASE_SERVICE_ROLE_KEY'],
+    };
+
+    beforeAll(() =>
+      Object.assign(process.env, {
+        SUPABASE_URL: process.env['SUPABASE_URL'] || 'http://localhost:54321',
+        SUPABASE_ANON_KEY:
+          process.env['SUPABASE_ANON_KEY'] || 'test-anon-key-placeholder',
+      })
+    );
+
+    afterAll(() => {
+      process.env['SUPABASE_URL'] = previousEnv.SUPABASE_URL;
+      process.env['SUPABASE_ANON_KEY'] = previousEnv.SUPABASE_ANON_KEY;
+      process.env['SUPABASE_SERVICE_ROLE_KEY'] =
+        previousEnv.SUPABASE_SERVICE_ROLE_KEY;
+    });
+
     it('should use default configuration', () => {
       const agent = new InternAgent({
         anthropic: mockAnthropic,
