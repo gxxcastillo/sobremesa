@@ -1,18 +1,42 @@
 name: Deploy API
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'apps/api/**'
-      - 'libs/database/**'
-      - 'libs/shared/**'
-      - '.github/workflows/deploy-api.yml'
+  workflow_call:
+    inputs:
+      run_ci:
+        description: 'Run CI checks'
+        type: boolean
+        default: true
   workflow_dispatch:
+    inputs:
+      run_ci:
+        description: 'Run CI checks'
+        type: boolean
+        default: false
 
 jobs:
+  ci:
+    if: ${{ !inputs.run_ci }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - uses: nrwl/nx-set-shas@v4
+
+      - name: Run CI for API
+        run: npx nx affected -t lint test build types --projects=api
+
   deploy:
+    needs: [ci]
+    if: always() && (needs.ci.result == 'success' || needs.ci.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

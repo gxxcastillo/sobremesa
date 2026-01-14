@@ -1,0 +1,84 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check-affected:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.affected.outputs.api }}
+      chatbots: ${{ steps.affected.outputs.chatbots }}
+      db: ${{ steps.affected.outputs.db }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - uses: nrwl/nx-set-shas@v4
+
+      - name: Determine affected projects
+        id: affected
+        run: |
+          AFFECTED=$(npx nx show projects --affected --json | jq -r '.[]' 2>/dev/null || echo "")
+
+          if echo "$AFFECTED" | grep -q "^api$"; then
+            echo "api=true" >> $GITHUB_OUTPUT
+          else
+            echo "api=false" >> $GITHUB_OUTPUT
+          fi
+
+          if echo "$AFFECTED" | grep -q "^chatbots$"; then
+            echo "chatbots=true" >> $GITHUB_OUTPUT
+          else
+            echo "chatbots=false" >> $GITHUB_OUTPUT
+          fi
+
+          if echo "$AFFECTED" | grep -q "^db$"; then
+            echo "db=true" >> $GITHUB_OUTPUT
+          else
+            echo "db=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo "Affected projects:"
+          echo "  api: $(echo "$AFFECTED" | grep -q "^api$" && echo "yes" || echo "no")"
+          echo "  chatbots: $(echo "$AFFECTED" | grep -q "^chatbots$" && echo "yes" || echo "no")"
+          echo "  db: $(echo "$AFFECTED" | grep -q "^db$" && echo "yes" || echo "no")"
+
+  deploy-api:
+    needs: check-affected
+    if: needs.check-affected.outputs.api == 'true'
+    uses: ./.github/workflows/deploy-api.yml
+    with:
+      run_ci: false
+    secrets: inherit
+
+  deploy-chatbots:
+    needs: check-affected
+    if: needs.check-affected.outputs.chatbots == 'true'
+    uses: ./.github/workflows/deploy-chatbots.yml
+    with:
+      run_ci: false
+    secrets: inherit
+
+  deploy-db:
+    needs: check-affected
+    if: needs.check-affected.outputs.db == 'true'
+    uses: ./.github/workflows/deploy-supabase.yml
+    with:
+      run_ci: false
+    secrets: inherit
