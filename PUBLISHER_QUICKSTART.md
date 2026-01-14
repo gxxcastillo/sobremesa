@@ -85,14 +85,12 @@ curl http://localhost:3000/api/family/summary
 ```
 sobremesa/
 ├── apps/
-│   ├── api/                    # Bun.js Express API
-│   │   └── src/main.ts         # API endpoints
-│   ├── publisher/              # Solid.js Frontend
-│   │   └── src/app/App.tsx     # Main component
-│   └── conversation-gateway/   # Telegram bot (existing)
+│   ├── api/                    # Bun.js API for the publishing app
+│   ├── chatbots/               # Chat bot service
+│   ├── db/                     # Supabase database
+│   └── publisher/              # Solid.js frontend for publishing content
 ├── libs/
 │   ├── api-client/             # API client library
-│   │   └── src/lib/api-client.ts
 │   ├── database/               # Database layer (existing)
 │   ├── agents/                 # AI agents (existing)
 │   └── ...

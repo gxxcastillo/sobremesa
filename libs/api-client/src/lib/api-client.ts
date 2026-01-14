@@ -107,7 +107,7 @@ export class PublisherApiClient {
    * @param audience Target audience (e.g., 'child', 'graduate', 'researcher')
    * @returns Promise<string> The generated narrative
    */
-  async generateNarrative(familyId: string, audience: string = 'general'): Promise<string> {
+  async generateNarrative(familyId: string, audience = 'general'): Promise<string> {
     const response = await this.request<{ narrative: string }>('/narrative/generate', {
       method: 'POST',
       body: JSON.stringify({ familyId, audience }),
@@ -121,7 +121,7 @@ export class PublisherApiClient {
    * @param audience Target audience
    * @returns Promise<Blob> The generated book (PDF or similar)
    */
-  async generateBook(familyId: string, audience: string = 'general'): Promise<Blob> {
+  async generateBook(familyId: string, audience = 'general'): Promise<Blob> {
     const response = await fetch(`${this.baseUrl}/api/book/generate`, {
       method: 'POST',
       headers: {

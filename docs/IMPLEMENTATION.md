@@ -49,7 +49,7 @@ Progress tracker for Sobremesa development.
 
 **Verification:**
 ```bash
-nx serve conversation-gateway
+nx serve chatbots
 # Send message in Telegram group
 # Check: conversation_events table has new row
 # Check: processing_queue has item
@@ -224,7 +224,7 @@ npx tsx scripts/test-answer-detection.ts
 
 ```
 apps/
-  conversation-gateway/     # Main application
+  chatbots/     # Main application
 
 libs/
   agents/
@@ -266,7 +266,7 @@ TELEGRAM_BOT_TOKEN_ADMIN=123456:GHI...  # Optional
 
 ```bash
 # Start the conversation gateway
-nx serve conversation-gateway
+nx serve chatbots
 
 # In another terminal, monitor logs
 tail -f .nx/workspace-data/*.log

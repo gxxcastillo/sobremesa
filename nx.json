@@ -77,7 +77,6 @@
       }
     }
   },
-  "nxCloudId": "6961ac7de391467e39b9a1d6",
   "generators": {
     "@nx/web:application": {
       "style": "css",
@@ -85,5 +84,9 @@
       "unitTestRunner": "vitest",
       "e2eTestRunner": "none"
     }
-  }
+  },
+  "tui": {
+    "autoExit": 1
+  },
+  "nxCloudId": "6961ac7de391467e39b9a1d6"
 }

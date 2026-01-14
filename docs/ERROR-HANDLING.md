@@ -536,7 +536,7 @@ async function logError(
 ### Health Checks
 
 ```typescript
-// apps/conversation-gateway/src/health.ts
+// apps/chatbots/src/health.ts
 export async function healthCheck(): Promise<HealthStatus> {
   const checks = await Promise.allSettled([
     checkDatabase(),
@@ -675,7 +675,7 @@ async function callClaudeWithCircuitBreaker(prompt: string) {
 **Clean shutdown on SIGTERM:**
 
 ```typescript
-// apps/conversation-gateway/src/main.ts
+// apps/chatbots/src/main.ts
 let isShuttingDown = false;
 
 process.on('SIGTERM', async () => {

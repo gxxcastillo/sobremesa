@@ -1,17 +1,17 @@
 {
-  "name": "conversation-gateway",
-  "tags": ["scope:async"],
+  "name": "chatbots",
+  "tags": ["scope:app"],
   "targets": {
     "types": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsc --noEmit -p apps/conversation-gateway/tsconfig.app.json"
+        "command": "tsc --noEmit -p apps/chatbots/tsconfig.app.json"
       }
     },
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "eslint apps/conversation-gateway"
+        "command": "eslint apps/chatbots"
       }
     },
     "build": {
@@ -22,15 +22,15 @@
       "defaultConfiguration": "production",
       "options": {
         "platform": "node",
-        "outputPath": "apps/conversation-gateway/dist",
+        "outputPath": "apps/chatbots/dist",
         "format": [
           "cjs"
         ],
         "bundle": false,
-        "main": "apps/conversation-gateway/src/main.ts",
-        "tsConfig": "apps/conversation-gateway/tsconfig.app.json",
+        "main": "apps/chatbots/src/main.ts",
+        "tsConfig": "apps/chatbots/tsconfig.app.json",
         "assets": [
-          "apps/conversation-gateway/src/assets"
+          "apps/chatbots/src/assets"
         ],
         "esbuildOptions": {
           "sourcemap": true,
@@ -60,8 +60,8 @@
       "cache": true,
       "executor": "@nx/js:prune-lockfile",
       "outputs": [
-        "{workspaceRoot}/apps/conversation-gateway/dist/package.json",
-        "{workspaceRoot}/apps/conversation-gateway/dist/pnpm-lock.yaml"
+        "{workspaceRoot}/apps/chatbots/dist/package.json",
+        "{workspaceRoot}/apps/chatbots/dist/pnpm-lock.yaml"
       ],
       "options": {
         "buildTarget": "build"
@@ -73,7 +73,7 @@
       ],
       "cache": true,
       "outputs": [
-        "{workspaceRoot}/apps/conversation-gateway/dist/workspace_modules"
+        "{workspaceRoot}/apps/chatbots/dist/workspace_modules"
       ],
       "executor": "@nx/js:copy-workspace-modules",
       "options": {
@@ -95,15 +95,15 @@
         "build"
       ],
       "options": {
-        "buildTarget": "conversation-gateway:build",
+        "buildTarget": "chatbots:build",
         "runBuildTargetDependencies": false
       },
       "configurations": {
         "development": {
-          "buildTarget": "conversation-gateway:build:development"
+          "buildTarget": "chatbots:build:development"
         },
         "production": {
-          "buildTarget": "conversation-gateway:build:production"
+          "buildTarget": "chatbots:build:production"
         }
       }
     }

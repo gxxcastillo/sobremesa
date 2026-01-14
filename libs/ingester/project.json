@@ -1,6 +1,6 @@
 {
   "name": "ingester",
-  "tags": ["scope:shared"],
+  "tags": ["scope:service"],
   "targets": {
     "types": {
       "executor": "nx:run-commands",

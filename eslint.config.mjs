@@ -38,12 +38,13 @@ export default [
               ],
             },
             {
-              sourceTag: 'scope:colors',
-              onlyDependOnLibsWithTags: ['scope:shared', 'scope:colors'],
-            },
+              sourceTag: 'scope:app',
+            },               
             {
-              sourceTag: 'scope:strings',
-              onlyDependOnLibsWithTags: ['scope:shared', 'scope:strings'],
+              sourceTag: 'scope:provider',
+            },            
+            {
+              sourceTag: 'scope:service',
             },
           ],
         },

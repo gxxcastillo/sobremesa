@@ -1,6 +1,6 @@
 {
   "name": "telegram",
-  "tags": ["scope:infra"],
+  "tags": ["scope:provider"],
   "targets": {
     "types": {
       "executor": "nx:run-commands",

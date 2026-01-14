@@ -8,7 +8,7 @@ import { ScribeAgent } from '@sobremesa/agents-scribe';
 import { RegistrarAgent } from '@sobremesa/agents-registrar';
 import { FacilitatorAgent } from '@sobremesa/agents-facilitator';
 
-const logger = createLogger({ name: 'conversation-gateway' });
+const logger = createLogger({ name: 'chatbots' });
 
 async function main() {
   logger.info('Starting Sobremesa conversation gateway...');

@@ -25,7 +25,7 @@ sobremesa-workspace/
 │   └── curator.md
 │
 ├── apps/                             ← Nx applications
-│   ├── conversation-gateway/         ← Telegram ingestion/orchestration app
+│   ├── chatbots/         ← Telegram ingestion/orchestration app
 │   │   ├── src/
 │   │   │   ├── main.ts              ← Entry point
 │   │   │   ├── app/
@@ -237,7 +237,7 @@ sobremesa-workspace/
 Visual dependency graph:
 
 ```
-apps/conversation-gateway
+apps/chatbots
     ↓
     ├─→ libs/agents/facilitator
     ├─→ libs/agents/admin

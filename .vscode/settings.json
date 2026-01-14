@@ -1,6 +1,8 @@
 {
   "cSpell.words": [
+    "chatbots",
     "sobremesa",
     "supabase"
-  ]
+  ],
+  "typescript.tsdk": "node_modules/typescript/lib"
 }

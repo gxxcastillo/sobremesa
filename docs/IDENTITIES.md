@@ -396,7 +396,7 @@ Messages still processed, but not attributed to a family member
 - **Schema**: [20260112074715_init_schema.sql](../apps/db/supabase/migrations/20260112074715_init_schema.sql)
 - **Repository**: [identity-repository.ts](../libs/database/src/lib/repositories/identity-repository.ts)
 - **Types**: [conversation.ts](../libs/shared/types/src/lib/conversation.ts)
-- **Message Ingestion**: [ingester.ts](../apps/conversation-gateway/src/bot/ingester.ts)
+- **Message Ingestion**: [ingester.ts](../apps/chatbots/src/bot/ingester.ts)
 - **Relationships**: [RELATIONSHIPS.md](./RELATIONSHIPS.md)
 - **Persons**: [PERSONS.md](./PERSONS.md)
 

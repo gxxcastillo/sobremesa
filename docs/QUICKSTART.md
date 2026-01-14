@@ -124,7 +124,7 @@ TELEGRAM_BOT_TOKEN_ADMIN=123456789:CCH...
 
 1. Start the gateway:
    ```bash
-   nx serve conversation-gateway
+   nx serve chatbots
    ```
 
 2. In the Telegram group, send:
@@ -173,10 +173,10 @@ This shows everything captured so far.
 
 ```bash
 # Start the gateway
-nx serve conversation-gateway
+nx serve chatbots
 
 # Build everything
-nx build conversation-gateway
+nx build chatbots
 
 # Run summary
 npx tsx scripts/summary.ts
@@ -203,7 +203,7 @@ npx tsx scripts/debug-facilitator.ts
 1. Check bot is added to group
 2. Check bot has message permission (BotFather settings)
 3. Verify token in `.env`
-4. Check logs: `nx serve conversation-gateway`
+4. Check logs: `nx serve chatbots`
 
 ### Database connection failed
 
@@ -236,7 +236,7 @@ npx tsx scripts/debug-facilitator.ts
 
 ```
 apps/
-  conversation-gateway/     # Main application entry point
+  chatbots/     # Main application entry point
 
 libs/
   agents/
@@ -275,7 +275,7 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for full feature roadmap.
 
 ## Getting Help
 
-1. Check logs: `nx serve conversation-gateway`
+1. Check logs: `nx serve chatbots`
 2. Check event_log table in Supabase
 3. Run debug scripts in `scripts/`
 4. Review [ARCHITECTURE.md](ARCHITECTURE.md) for system design

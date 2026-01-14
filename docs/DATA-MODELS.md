@@ -368,7 +368,7 @@ INSERT INTO event_log (
 | RelationshipRepository | ✅ | [relationship-repository.ts](../libs/database/src/lib/repositories/relationship-repository.ts) |
 | Identities table | ✅ | [init_schema.sql](../apps/db/supabase/migrations/20260112074715_init_schema.sql) |
 | IdentityRepository | ✅ | [identity-repository.ts](../libs/database/src/lib/repositories/identity-repository.ts) |
-| Auto-create identities on ingestion | ✅ | [ingester.ts](../apps/conversation-gateway/src/bot/ingester.ts) |
+| Auto-create identities on ingestion | ✅ | [ingester.ts](../apps/chatbots/src/bot/ingester.ts) |
 | Placeholder persons | ✅ | [person-repository.ts](../libs/database/src/lib/repositories/person-repository.ts) |
 | Placeholder merging | ✅ | [person-repository.ts](../libs/database/src/lib/repositories/person-repository.ts) |
 | Fuzzy matching | ✅ | [person-repository.ts](../libs/database/src/lib/repositories/person-repository.ts) |

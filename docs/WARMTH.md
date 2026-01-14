@@ -395,7 +395,7 @@ This is not about being nice for its own sake. This is about:
 
 Every piece of warmth serves the mission: preserving family history.
 
-Without warmth, you have a failed chatbot.
+Without warmth, you have a soulless chat.
 With warmth, you have a family treasure.
 
 ---
