@@ -35,10 +35,9 @@ async function main() {
 
   const context: ScribeContext = {
     recentMessages: [],
-    existingPeople: [],
-    existingPlaces: [],
     pendingQuestions: [],
     recentClaims: [],
+    recentImages: [],
   };
 
   const systemPrompt = buildSystemPrompt(config);
@@ -68,8 +67,7 @@ async function main() {
   const domainModel = parseScribeResponse(
     textContent.text,
     'test-event-id',
-    'test-family-id',
-    TEST_SENDER
+    'test-family-id'
   );
 
   console.log('=== Parsed Domain Model ===\n');

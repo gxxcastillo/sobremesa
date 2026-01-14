@@ -73,6 +73,7 @@
         "@anthropic-ai/sdk": "^0.71.2",
         "@sobremesa/agents-admin": "workspace:*",
         "@sobremesa/agents-facilitator": "workspace:*",
+        "@sobremesa/agents-historian": "workspace:*",
         "@sobremesa/agents-intern": "workspace:*",
         "@sobremesa/agents-registrar": "workspace:*",
         "@sobremesa/agents-scribe": "workspace:*",
@@ -87,8 +88,8 @@
     "apps/db": {
       "name": "@sobremesa/db",
     },
-    "apps/publisher": {
-      "name": "@sobremesa/publisher",
+    "apps/studio": {
+      "name": "@sobremesa/studio",
       "version": "0.0.1",
       "dependencies": {
         "@sobremesa/api-client": "workspace:*",
@@ -121,6 +122,16 @@
     },
     "libs/agents/facilitator": {
       "name": "@sobremesa/agents-facilitator",
+      "version": "0.0.1",
+      "dependencies": {
+        "@sobremesa/database": "workspace:*",
+        "@sobremesa/shared-types": "workspace:*",
+        "@sobremesa/shared-utils": "workspace:*",
+        "tslib": "^2.3.0",
+      },
+    },
+    "libs/agents/historian": {
+      "name": "@sobremesa/agents-historian",
       "version": "0.0.1",
       "dependencies": {
         "@sobremesa/database": "workspace:*",
@@ -744,6 +755,8 @@
 
     "@sobremesa/agents-facilitator": ["@sobremesa/agents-facilitator@workspace:libs/agents/facilitator"],
 
+    "@sobremesa/agents-historian": ["@sobremesa/agents-historian@workspace:libs/agents/historian"],
+
     "@sobremesa/agents-intern": ["@sobremesa/agents-intern@workspace:libs/agents/intern"],
 
     "@sobremesa/agents-registrar": ["@sobremesa/agents-registrar@workspace:libs/agents/registrar"],
@@ -762,13 +775,13 @@
 
     "@sobremesa/ingester": ["@sobremesa/ingester@workspace:libs/ingester"],
 
-    "@sobremesa/publisher": ["@sobremesa/publisher@workspace:apps/publisher"],
-
     "@sobremesa/queue": ["@sobremesa/queue@workspace:libs/queue"],
 
     "@sobremesa/shared-types": ["@sobremesa/shared-types@workspace:libs/shared/types"],
 
     "@sobremesa/shared-utils": ["@sobremesa/shared-utils@workspace:libs/shared/utils"],
+
+    "@sobremesa/studio": ["@sobremesa/studio@workspace:apps/studio"],
 
     "@sobremesa/telegram": ["@sobremesa/telegram@workspace:libs/telegram"],
 

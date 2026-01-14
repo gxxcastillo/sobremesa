@@ -19,7 +19,7 @@ export interface CuratorConfig {
 }
 
 export const DEFAULT_CURATOR_CONFIG: CuratorConfig = {
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-3-5-haiku-20241022',
   maxTokens: 1024,
 };
 

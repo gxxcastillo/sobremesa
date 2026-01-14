@@ -11,6 +11,7 @@
     "@sobremesa/queue": "workspace:*",
     "@sobremesa/telegram": "workspace:*",
     "@sobremesa/agents-admin": "workspace:*",
+    "@sobremesa/agents-historian": "workspace:*",
     "@sobremesa/agents-intern": "workspace:*",
     "@sobremesa/agents-scribe": "workspace:*",
     "@sobremesa/agents-registrar": "workspace:*",

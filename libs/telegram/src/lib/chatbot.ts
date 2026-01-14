@@ -4,7 +4,7 @@ import type { Message, Update, User } from 'telegraf/types';
 import { createLogger } from '@sobremesa/shared-utils';
 import { FamilyRepository, AllowedChatRepository } from '@sobremesa/database';
 import type pino from 'pino';
-import type { BotHandler } from './types';
+import { BotRole, type BotHandler } from './types';
 import {
   MessageIngester,
   type TextMessageInput,
@@ -139,7 +139,7 @@ function transformDocumentMessage(
  * No business logic except family registration bootstrap.
  */
 export class ChatbotHandler implements BotHandler {
-  readonly role = 'chatbot' as const;
+  readonly role = BotRole.CHATBOT;
 
   private familyRepo: FamilyRepository;
   private allowedChatRepo: AllowedChatRepository;

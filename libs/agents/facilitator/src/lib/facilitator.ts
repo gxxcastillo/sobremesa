@@ -5,22 +5,14 @@ import {
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
-import type { Question, Family } from '@sobremesa/shared-types';
+import {
+  BotRole,
+  type Question,
+  type Family,
+  type MessageSender,
+} from '@sobremesa/shared-types';
 
-/**
- * Message sender interface - allows BotManager to be injected.
- * Returns the Telegram message_id of the sent message.
- */
-export interface MessageSender {
-  sendMessage(
-    role: 'facilitator',
-    message: {
-      chatId: string | number;
-      text: string;
-      parseMode?: 'Markdown' | 'HTML';
-    }
-  ): Promise<number>;
-}
+export type { MessageSender };
 
 /**
  * Options for FacilitatorAgent.
@@ -168,7 +160,7 @@ export class FacilitatorAgent {
     // The question should already be warm from Scribe, but we can add context
     const message = question.contentOriginal;
 
-    return await this.messageSender.sendMessage('facilitator', {
+    return await this.messageSender.sendMessage(BotRole.FACILITATOR, {
       chatId: family.chatId!,
       text: message,
     });

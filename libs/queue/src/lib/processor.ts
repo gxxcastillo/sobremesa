@@ -94,12 +94,17 @@ export type ImageLinkerProcessor = (
 /**
  * Routing actions that the router can return.
  */
-export type RoutingAction = 'ignore' | 'admin' | 'scribe';
+export type RoutingAction = 'ignore' | 'admin' | 'scribe' | 'historian';
 
 /**
  * Admin action subtypes for routing.
  */
-export type AdminSubtype = 'command' | 'status' | 'dm' | 'member_event';
+export type AdminSubtype =
+  | 'command'
+  | 'status'
+  | 'dm'
+  | 'member_event'
+  | 'mention';
 
 /**
  * Routing result returned by the router processor.
@@ -135,6 +140,15 @@ export type AdminProcessor = (
 ) => Promise<{ success: boolean; error?: string }>;
 
 /**
+ * Historian processor function type.
+ * Implementations should answer questions using family data.
+ */
+export type HistorianProcessor = (
+  eventId: string,
+  familyId: string
+) => Promise<{ success: boolean; error?: string }>;
+
+/**
  * Callback for when a new image is ready for async analysis.
  * The Curator should be called with this image ID to analyze it.
  */
@@ -155,6 +169,7 @@ export class MessageProcessor {
   private imageRepo: ImageRepository;
   private router?: RouterProcessor;
   private adminProcessor?: AdminProcessor;
+  private historianProcessor?: HistorianProcessor;
   private filter?: FilterProcessor;
   private imageLinker?: ImageLinkerProcessor;
   private scribe?: ScribeProcessor;
@@ -189,6 +204,14 @@ export class MessageProcessor {
    */
   setAdminProcessor(adminProcessor: AdminProcessor): void {
     this.adminProcessor = adminProcessor;
+  }
+
+  /**
+   * Set the Historian processor.
+   * The historian processor answers questions about family history.
+   */
+  setHistorianProcessor(historianProcessor: HistorianProcessor): void {
+    this.historianProcessor = historianProcessor;
   }
 
   /**
@@ -368,6 +391,30 @@ export class MessageProcessor {
           );
         }
         // Mark as processed after admin handling
+        await this.eventRepo.markProcessed(familyId, eventId);
+        return {
+          success: true,
+          duration: Date.now() - startTime,
+        };
+      }
+
+      if (routingAction === 'historian') {
+        // Route to historian processor for question answering
+        if (this.historianProcessor) {
+          const result = await this.historianProcessor(eventId, familyId);
+          if (!result.success) {
+            this.logger.warn(
+              { eventId, error: result.error },
+              'Historian processor failed'
+            );
+          }
+        } else {
+          this.logger.warn(
+            { eventId },
+            'Historian action routed but no historian processor configured'
+          );
+        }
+        // Mark as processed after historian handling
         await this.eventRepo.markProcessed(familyId, eventId);
         return {
           success: true,

@@ -17,7 +17,8 @@
       "continuous": true,
       "executor": "nx:run-commands",
       "options": {
-        "command": "bun run apps/api/src/main.ts"
+        "command": "source .env && bun run apps/api/src/main.ts",
+        "cwd": "{workspaceRoot}"
       }
     },
     "build": {

@@ -5,23 +5,13 @@ import {
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
-import type { Family } from '@sobremesa/shared-types';
+import {
+  BotRole,
+  type Family,
+  type MessageSender,
+} from '@sobremesa/shared-types';
 
-/**
- * Message sender interface - allows BotManager to be injected.
- * Returns the Telegram message_id of the sent message.
- */
-export interface MessageSender {
-  sendMessage(
-    role: 'admin',
-    message: {
-      chatId: string | number;
-      text: string;
-      parseMode?: 'Markdown' | 'HTML';
-      replyToMessageId?: number;
-    }
-  ): Promise<number>;
-}
+export type { MessageSender };
 
 /**
  * Options for AdminAgent.
@@ -42,7 +32,12 @@ export interface AdminAgentOptions {
 /**
  * Admin action types that can be handled.
  */
-export type AdminActionType = 'command' | 'status' | 'dm' | 'member_event';
+export type AdminActionType =
+  | 'command'
+  | 'status'
+  | 'dm'
+  | 'member_event'
+  | 'mention';
 
 /**
  * Result of handling an admin action.
@@ -100,6 +95,8 @@ export class AdminAgent {
           return await this.handleDirectMessage(eventId, familyId);
         case 'member_event':
           return await this.handleMemberEvent(eventId, familyId);
+        case 'mention':
+          return await this.handleMention(eventId, familyId);
         default:
           this.logger.warn({ subtype }, 'Unknown admin subtype');
           return { success: false, action: subtype, error: 'Unknown subtype' };
@@ -146,7 +143,7 @@ export class AdminAgent {
       : undefined;
 
     // Send reply
-    await this.messageSender.sendMessage('admin', {
+    await this.messageSender.sendMessage(BotRole.ADMIN, {
       chatId: event.conversationId,
       text: statusMessage,
       replyToMessageId:
@@ -188,7 +185,7 @@ export class AdminAgent {
       '• /status - Show family archive status\n\n' +
       "Just chat naturally in your family group - I'll listen and preserve the important stories!";
 
-    await this.messageSender.sendMessage('admin', {
+    await this.messageSender.sendMessage(BotRole.ADMIN, {
       chatId: event.conversationId,
       text: helpMessage,
     });
@@ -233,6 +230,62 @@ export class AdminAgent {
     });
 
     return { success: true, action: 'member_event', messageSent: false };
+  }
+
+  /**
+   * Handle @ mentions - respond to direct questions/engagement.
+   */
+  private async handleMention(
+    eventId: string,
+    familyId: string
+  ): Promise<AdminHandleResult> {
+    const event = await this.eventRepo.findById(familyId, eventId);
+    if (!event) {
+      return { success: false, action: 'mention', error: 'Event not found' };
+    }
+
+    // Load family info for context
+    const family = await this.familyRepo.findById(familyId);
+    const familyName = family?.name || 'your family';
+
+    // For now, provide a helpful response
+    // TODO: Expand with more conversational capabilities
+    const response =
+      `Hi! I'm here to help preserve ${familyName}'s stories.\n\n` +
+      'You can:\n' +
+      '• Share family memories and stories in this chat\n' +
+      "• Share old photos and I'll help identify people\n" +
+      "• Use /status to see what we've collected\n\n" +
+      "Just chat naturally - I'm listening!";
+
+    // Get external message ID to reply to
+    const externalMessageId = event.externalEventId
+      ? parseInt(event.externalEventId, 10)
+      : undefined;
+
+    await this.messageSender.sendMessage(BotRole.ADMIN, {
+      chatId: event.conversationId,
+      text: response,
+      replyToMessageId:
+        externalMessageId && !isNaN(externalMessageId)
+          ? externalMessageId
+          : undefined,
+    });
+
+    await this.eventLog.log({
+      familyId,
+      eventType: 'event_processed',
+      eventCategory: 'bot_action',
+      actor: 'admin',
+      actorType: 'system',
+      eventData: {
+        eventId,
+        action: 'mention_responded',
+        messageContent: event.contentOriginal?.slice(0, 100),
+      },
+    });
+
+    return { success: true, action: 'mention', messageSent: true };
   }
 
   /**

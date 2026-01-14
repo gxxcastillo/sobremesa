@@ -7,7 +7,10 @@ export enum BotRole {
   ADMIN = 'admin',
   SCRIBE = 'scribe',
   CURATOR = 'curator',
+  HISTORIAN = 'historian',
   REGISTRAR = 'registrar',
+  /** Handler role for unified chatbot ingestion */
+  CHATBOT = 'chatbot',
 }
 
 /**
@@ -37,3 +40,21 @@ export const AI_ROLES = [
 export type VisibleRole = (typeof VISIBLE_ROLES)[number];
 export type HiddenRole = (typeof HIDDEN_ROLES)[number];
 export type AIRole = (typeof AI_ROLES)[number];
+
+/**
+ * Outgoing message structure for bot messaging.
+ */
+export interface OutgoingMessage {
+  chatId: string | number;
+  text: string;
+  parseMode?: 'Markdown' | 'MarkdownV2' | 'HTML';
+  replyToMessageId?: number;
+}
+
+/**
+ * Interface for sending messages via a bot.
+ * Agents should use this interface to send messages.
+ */
+export interface MessageSender {
+  sendMessage(role: BotRole, message: OutgoingMessage): Promise<number>;
+}

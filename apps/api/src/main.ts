@@ -1,9 +1,13 @@
 import { Elysia, t } from 'elysia';
 import { swagger } from '@elysiajs/swagger';
 import { cors } from '@elysiajs/cors';
-import { FamilyRepository, getServiceClient } from '@sobremesa/database';
+import {
+  FamilyRepository,
+  AllowedChatRepository,
+  getServiceClient,
+} from '@sobremesa/database';
 
-const port = parseInt(process.env.PORT || '3000', 10);
+const port = parseInt(process.env.PORT || '3001', 10);
 const hostname = process.env.HOST || '0.0.0.0';
 const tlsCertPath = process.env.TLS_CERT;
 const tlsKeyPath = process.env.TLS_KEY;
@@ -291,13 +295,76 @@ const app = new Elysia()
       },
     }
   )
+  /**
+   * GET /api/admin/chats
+   * List all allowed chats
+   */
+  .get(
+    '/api/admin/chats',
+    async () => {
+      const allowedChatRepo = new AllowedChatRepository();
+      return allowedChatRepo.list();
+    },
+    {
+      detail: {
+        tags: ['Admin'],
+        description: 'List all allowed chat IDs',
+      },
+    }
+  )
+  /**
+   * POST /api/admin/chats
+   * Authorize a chat ID
+   */
+  .post(
+    '/api/admin/chats',
+    async ({ body }) => {
+      const { chatId, note } = body;
+      const allowedChatRepo = new AllowedChatRepository();
+      await allowedChatRepo.add(chatId, note);
+      return { success: true };
+    },
+    {
+      body: t.Object({
+        chatId: t.String(),
+        note: t.Optional(t.String()),
+      }),
+      detail: {
+        tags: ['Admin'],
+        description: 'Authorize a chat ID',
+      },
+    }
+  )
+  /**
+   * DELETE /api/admin/chats/:chatId
+   * Remove a chat ID from the whitelist
+   */
+  .delete(
+    '/api/admin/chats/:chatId',
+    async ({ params: { chatId } }) => {
+      const allowedChatRepo = new AllowedChatRepository();
+      await allowedChatRepo.remove(chatId);
+      return { success: true };
+    },
+    {
+      params: t.Object({ chatId: t.String() }),
+      detail: {
+        tags: ['Admin'],
+        description: 'Remove a chat ID from the whitelist',
+      },
+    }
+  )
   // Error handling
-  .onError(({ code, error }) => {
+  .onError(({ code, error, set }) => {
+    // Let Elysia handle expected errors (404, validation, etc.)
+    if (code === 'NOT_FOUND' || code === 'VALIDATION' || code === 'PARSE') {
+      return;
+    }
+
+    // Log unexpected errors
     console.error('Unhandled error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    set.status = 500;
+    return { error: 'Internal server error' };
   });
 
 // Start server
@@ -305,7 +372,7 @@ app.listen({ port, hostname, tls: tlsConfig }, () => {
   const protocol = tlsConfig ? 'https' : 'http';
   const hostLabel = hostname === '0.0.0.0' ? 'localhost' : hostname;
   console.log(
-    `📚 Publisher API server running on ${protocol}://${hostLabel}:${port}`
+    `📚 Studio API server running on ${protocol}://${hostLabel}:${port}`
   );
   console.log(`   Health check: ${protocol}://${hostLabel}:${port}/health`);
   console.log(`   Swagger docs: ${protocol}://${hostLabel}:${port}/swagger`);

@@ -76,7 +76,7 @@ export default defineConfig(() => ({
     },
   },
   test: {
-    name: 'publisher',
+    name: 'studio',
     watch: false,
     globals: true,
     environment: 'jsdom',

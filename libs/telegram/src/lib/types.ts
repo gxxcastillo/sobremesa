@@ -1,10 +1,9 @@
 import type { Telegraf } from 'telegraf';
 import type pino from 'pino';
+import { BotRole, type OutgoingMessage } from '@sobremesa/shared-types';
 
-/**
- * Bot role identifier.
- */
-export type BotRole = 'scribe' | 'admin' | 'facilitator' | 'chatbot';
+// Re-export from shared-types for consumers
+export { BotRole, type OutgoingMessage };
 
 /**
  * Configuration for a single bot.
@@ -36,18 +35,4 @@ export interface BotHandler {
   configure(bot: Telegraf): void;
   /** Get the bot role */
   readonly role: BotRole;
-}
-
-/**
- * Message to send via a bot.
- */
-export interface OutgoingMessage {
-  /** Chat ID to send to */
-  chatId: string | number;
-  /** Message text */
-  text: string;
-  /** Parse mode (optional) */
-  parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2';
-  /** Reply to message ID (optional) */
-  replyToMessageId?: number;
 }

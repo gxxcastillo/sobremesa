@@ -3,34 +3,28 @@ FROM oven/bun:1.3.6 AS builder
 
 WORKDIR /app
 
-# Copy the chatbots app and its workspace dependencies
-COPY apps/chatbots ./apps/chatbots
-COPY libs/database ./libs/database
-COPY libs/shared/types ./libs/shared/types
-COPY libs/shared/utils ./libs/shared/utils
-COPY libs/queue ./libs/queue
-COPY libs/telegram ./libs/telegram
-COPY libs/agents ./libs/agents
-COPY libs/ingester ./libs/ingester
+# Copy workspace config
+COPY package.json bun.lock nx.json tsconfig.base.json ./
 
-# Copy workspace configuration
-COPY package.json bun.lock ./
-COPY nx.json tsconfig.base.json ./
+# Copy source
+COPY apps/chatbots ./apps/chatbots
+COPY libs ./libs
 
 # Install dependencies
 RUN bun install
 
-# Build the chatbots app
+# Build with sourcemaps
 WORKDIR /app/apps/chatbots
-RUN bun build src/main.ts --outdir dist --target bun --minify
+RUN bun build src/main.ts --outdir dist --target bun --sourcemap
 
 # Production stage
 FROM oven/bun:1.3.6-slim AS production
 
 WORKDIR /app
 
-# Copy built output
+# Copy built output and sourcemap
 COPY --from=builder /app/apps/chatbots/dist/main.js ./main.js
+COPY --from=builder /app/apps/chatbots/dist/main.js.map ./main.js.map
 
 # Set environment
 ENV NODE_ENV=production

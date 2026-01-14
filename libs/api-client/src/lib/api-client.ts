@@ -52,11 +52,17 @@ export interface QuestionStats {
   answered: number;
 }
 
+export interface AllowedChat {
+  chatId: string;
+  source: string;
+  note: string | null;
+}
+
 /**
- * API Client for Publisher app
- * Communicates with the backend API to fetch family summaries
+ * API Client for Studio app
+ * Communicates with the backend API to fetch family summaries and manage admin actions
  */
-export class PublisherApiClient {
+export class StudioApiClient {
   private baseUrl: string;
 
   constructor(baseUrl = '') {
@@ -152,6 +158,41 @@ export class PublisherApiClient {
 
     return response.blob();
   }
+
+  // Admin methods
+
+  /**
+   * Get list of allowed chats
+   * @returns Promise<AllowedChat[]>
+   */
+  async getAllowedChats(): Promise<AllowedChat[]> {
+    return this.request<AllowedChat[]>('/admin/chats');
+  }
+
+  /**
+   * Authorize a chat ID
+   * @param chatId The chat ID to authorize
+   * @param note Optional note about the authorization
+   */
+  async authorizeChat(chatId: string, note?: string): Promise<void> {
+    await this.request<void>('/admin/chats', {
+      method: 'POST',
+      body: JSON.stringify({ chatId, note }),
+    });
+  }
+
+  /**
+   * Remove a chat ID from the whitelist
+   * @param chatId The chat ID to remove
+   */
+  async removeChat(chatId: string): Promise<void> {
+    await this.request<void>(`/admin/chats/${encodeURIComponent(chatId)}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
-export default PublisherApiClient;
+/** @deprecated Use StudioApiClient instead */
+export const PublisherApiClient = StudioApiClient;
+
+export default StudioApiClient;

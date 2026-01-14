@@ -19,6 +19,7 @@ const mockSender = {
     console.log('Chat ID:', message.chatId);
     console.log('Text:', message.text);
     console.log('========================\n');
+    return 1;
   },
 };
 

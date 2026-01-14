@@ -27,7 +27,7 @@ export interface FilterResult {
 /**
  * Routing action for a message.
  */
-export type RoutingAction = 'ignore' | 'admin' | 'scribe';
+export type RoutingAction = 'ignore' | 'admin' | 'scribe' | 'historian';
 
 /**
  * Result of message routing.
@@ -36,7 +36,7 @@ export interface RoutingResult {
   /** Where to route the message */
   action: RoutingAction;
   /** Subtype for admin actions */
-  adminSubtype?: 'command' | 'status' | 'dm' | 'member_event';
+  adminSubtype?: 'command' | 'status' | 'dm' | 'member_event' | 'mention';
   /** Reason for the routing decision */
   reason: string;
   /** Tokens used (if AI was called) */
@@ -78,6 +78,8 @@ export interface InternConfig {
   maxTokens: number;
   /** Number of recent messages for context */
   recentMessageCount: number;
+  /** Bot username for mention detection (without @) */
+  botUsername?: string;
 }
 
 export const DEFAULT_INTERN_CONFIG: InternConfig = {
@@ -433,6 +435,52 @@ export class InternAgent {
   }
 
   /**
+   * Check if the bot is mentioned in the message text.
+   * Handles @username mentions (case-insensitive).
+   * Uses negative lookbehind to avoid matching email-like patterns.
+   */
+  private isBotMentioned(messageText: string): boolean {
+    if (!this.config.botUsername) {
+      return false;
+    }
+    // Negative lookbehind (?<![a-zA-Z0-9]) ensures @ isn't preceded by alphanumeric
+    // This prevents matching email-like patterns (email@bot.com)
+    const mentionPattern = new RegExp(
+      `(?<![a-zA-Z0-9])@${this.config.botUsername}\\b`,
+      'i'
+    );
+    return mentionPattern.test(messageText);
+  }
+
+  /**
+   * Check if a message contains a question.
+   * Uses heuristics to detect question patterns.
+   */
+  private isQuestion(text: string): boolean {
+    const trimmed = text.trim();
+
+    // Ends with question mark
+    if (trimmed.endsWith('?')) {
+      return true;
+    }
+
+    // Starts with question words
+    const questionStarters =
+      /^(who|what|when|where|why|how|is|are|was|were|did|do|does|can|could|would|will|tell me|do you know|does anyone)/i;
+    if (questionStarters.test(trimmed)) {
+      return true;
+    }
+
+    // Contains question-like phrases
+    const questionPhrases = /\b(know about|remember|recall|tell me about)\b/i;
+    if (questionPhrases.test(trimmed)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Parse the JSON response from the image link prompt.
    */
   private parseImageLinkResponse(text: string): ImageLinkResult {
@@ -538,6 +586,28 @@ export class InternAgent {
         return {
           action: 'ignore',
           reason: `Unknown command: ${command}`,
+        };
+      }
+
+      // Check for @ mentions of the bot (deterministic routing)
+      if (this.config.botUsername && this.isBotMentioned(messageText)) {
+        // If it's a question, route to historian for answering
+        if (this.isQuestion(messageText)) {
+          this.logger.debug(
+            { eventId },
+            'Routing to historian: question to bot'
+          );
+          return {
+            action: 'historian',
+            reason: 'Question directed at bot',
+          };
+        }
+        // Non-question mentions go to admin
+        this.logger.debug({ eventId }, 'Routing to admin: bot mentioned');
+        return {
+          action: 'admin',
+          adminSubtype: 'mention',
+          reason: 'Bot mentioned directly',
         };
       }
 

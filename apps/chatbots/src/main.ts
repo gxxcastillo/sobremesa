@@ -3,6 +3,7 @@ import { createLogger } from '@sobremesa/shared-utils';
 import { MessageQueue, MessageProcessor } from '@sobremesa/queue';
 import { BotManager } from '@sobremesa/telegram';
 import { AdminAgent } from '@sobremesa/agents-admin';
+import { HistorianAgent } from '@sobremesa/agents-historian';
 import { InternAgent } from '@sobremesa/agents-intern';
 import { ScribeAgent } from '@sobremesa/agents-scribe';
 import { RegistrarAgent } from '@sobremesa/agents-registrar';
@@ -10,16 +11,21 @@ import { FacilitatorAgent } from '@sobremesa/agents-facilitator';
 
 const logger = createLogger({ name: 'chatbots' });
 
-async function main() {
-  logger.info('Starting Sobremesa conversation gateway...');
+function validateEnv(): { token: string; anthropicApiKey?: string } {
+  const missing: string[] = [];
 
-  // Get bot token from environment
   const token =
     process.env['TELEGRAM_BOT_TOKEN'] ||
-    process.env['TELEGRAM_BOT_TOKEN_SCRIBE']; // Fallback for migration
+    process.env['TELEGRAM_BOT_TOKEN_SCRIBE'];
+  if (!token) missing.push('TELEGRAM_BOT_TOKEN');
 
-  if (!token) {
-    logger.error('TELEGRAM_BOT_TOKEN is required');
+  if (!process.env['SUPABASE_URL']) missing.push('SUPABASE_URL');
+  if (!process.env['SUPABASE_ANON_KEY']) missing.push('SUPABASE_ANON_KEY');
+  if (!process.env['SUPABASE_SERVICE_ROLE_KEY'])
+    missing.push('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (missing.length > 0) {
+    logger.error({ missing }, 'Missing required environment variables');
     process.exit(1);
   }
 
@@ -28,9 +34,22 @@ async function main() {
     logger.warn('ANTHROPIC_API_KEY not set - agents will not process messages');
   }
 
+  return { token: token!, anthropicApiKey };
+}
+
+async function main() {
+  logger.info('Starting Sobremesa conversation gateway...');
+
+  const { token, anthropicApiKey } = validateEnv();
+
   try {
     logger.debug('Creating BotManager...');
     const botManager = new BotManager({ token, logger });
+
+    // Get bot info for mention detection
+    logger.debug('Fetching bot info...');
+    const botInfo = await botManager.getBot().telegram.getMe();
+    logger.info({ username: botInfo.username }, 'Bot info retrieved');
 
     logger.debug('Creating MessageProcessor...');
     const processor = new MessageProcessor();
@@ -55,12 +74,21 @@ async function main() {
 
     // Configure AI agents if API key is available
     if (anthropicApiKey) {
-      logger.debug('Configuring Intern, Scribe and Registrar agents...');
+      logger.debug(
+        'Configuring Intern, Scribe, Registrar and Historian agents...'
+      );
       const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
-      const intern = new InternAgent({ anthropic });
+      const intern = new InternAgent({
+        anthropic,
+        config: { botUsername: botInfo.username },
+      });
       const scribe = new ScribeAgent({ anthropic });
       const registrar = new RegistrarAgent();
+      const historian = new HistorianAgent({
+        anthropic,
+        messageSender: botManager,
+      });
 
       // Set router (Intern routes to admin/scribe/ignore)
       processor.setRouter((eventId, familyId) =>
@@ -72,6 +100,10 @@ async function main() {
       processor.setScribe((eventId, familyId) =>
         scribe.process(eventId, familyId)
       );
+      processor.setHistorianProcessor(async (eventId, familyId) => {
+        const result = await historian.answer(eventId, familyId);
+        return { success: result.success, error: result.error };
+      });
       processor.setRegistrar(async (model, familyId) => {
         await registrar.persist(model, familyId);
 
@@ -100,7 +132,7 @@ async function main() {
         );
       });
 
-      logger.info('Intern, Scribe and Registrar agents configured');
+      logger.info('Intern, Scribe, Registrar and Historian agents configured');
     }
 
     logger.debug('Starting MessageQueue...');
