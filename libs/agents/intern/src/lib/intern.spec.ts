@@ -752,17 +752,14 @@ describe('InternAgent', () => {
 
     beforeAll(() =>
       Object.assign(process.env, {
-        SUPABASE_URL: process.env['SUPABASE_URL'] || 'http://localhost:54321',
-        SUPABASE_ANON_KEY:
-          process.env['SUPABASE_ANON_KEY'] || 'test-anon-key-placeholder',
+        SUPABASE_URL: 'http://localhost:54321',
+        SUPABASE_ANON_KEY: 'test-anon-key-placeholder',
+        SUPABASE_SERVICE_ROLE_KEY: 'test-secret-key-placeholder',
       })
     );
 
     afterAll(() => {
-      process.env['SUPABASE_URL'] = previousEnv.SUPABASE_URL;
-      process.env['SUPABASE_ANON_KEY'] = previousEnv.SUPABASE_ANON_KEY;
-      process.env['SUPABASE_SERVICE_ROLE_KEY'] =
-        previousEnv.SUPABASE_SERVICE_ROLE_KEY;
+      Object.assign(process.env, previousEnv);
     });
 
     it('should use default configuration', () => {
