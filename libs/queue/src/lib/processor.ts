@@ -92,6 +92,49 @@ export type ImageLinkerProcessor = (
 ) => Promise<ImageLinkProcessorResult>;
 
 /**
+ * Routing actions that the router can return.
+ */
+export type RoutingAction = 'ignore' | 'admin' | 'scribe';
+
+/**
+ * Admin action subtypes for routing.
+ */
+export type AdminSubtype = 'command' | 'status' | 'dm' | 'member_event';
+
+/**
+ * Routing result returned by the router processor.
+ */
+export interface RoutingProcessorResult {
+  /** Where to route the message */
+  action: RoutingAction;
+  /** Subtype for admin actions */
+  adminSubtype?: AdminSubtype;
+  /** Reason for the routing decision */
+  reason: string;
+  /** Tokens used (if AI was called) */
+  tokensUsed?: number;
+}
+
+/**
+ * Router processor function type.
+ * Implementations should determine where to route a message.
+ */
+export type RouterProcessor = (
+  eventId: string,
+  familyId: string
+) => Promise<RoutingProcessorResult>;
+
+/**
+ * Admin processor function type.
+ * Implementations should handle admin-routed messages.
+ */
+export type AdminProcessor = (
+  eventId: string,
+  familyId: string,
+  subtype: AdminSubtype
+) => Promise<{ success: boolean; error?: string }>;
+
+/**
  * Callback for when a new image is ready for async analysis.
  * The Curator should be called with this image ID to analyze it.
  */
@@ -102,7 +145,7 @@ export type OnImageCreatedCallback = (
 ) => void;
 
 /**
- * Message processor that orchestrates Filter, Scribe, and Registrar.
+ * Message processor that orchestrates Router, Filter, Scribe, Registrar, and Admin.
  * Media events create Image records and notify via callback for async Curator analysis.
  */
 export class MessageProcessor {
@@ -110,6 +153,8 @@ export class MessageProcessor {
   private eventLog: EventLogRepository;
   private questionRepo: QuestionRepository;
   private imageRepo: ImageRepository;
+  private router?: RouterProcessor;
+  private adminProcessor?: AdminProcessor;
   private filter?: FilterProcessor;
   private imageLinker?: ImageLinkerProcessor;
   private scribe?: ScribeProcessor;
@@ -131,8 +176,25 @@ export class MessageProcessor {
   }
 
   /**
+   * Set the Router processor.
+   * The router determines where to send messages: admin, scribe, or ignore.
+   */
+  setRouter(router: RouterProcessor): void {
+    this.router = router;
+  }
+
+  /**
+   * Set the Admin processor.
+   * The admin processor handles admin-routed messages (commands, DMs, member events).
+   */
+  setAdminProcessor(adminProcessor: AdminProcessor): void {
+    this.adminProcessor = adminProcessor;
+  }
+
+  /**
    * Set the Filter processor.
    * The filter runs before Scribe to determine if a message is relevant.
+   * Note: When router is set, filter is bypassed (router handles filtering).
    */
   setFilter(filter: FilterProcessor): void {
     this.filter = filter;
@@ -236,6 +298,84 @@ export class MessageProcessor {
         imageId = await this.createImageRecord(eventId, familyId, event);
       }
 
+      // Route the message if router is configured
+      let routingAction: RoutingAction = 'scribe'; // Default to scribe pipeline
+      let adminSubtype: AdminSubtype | undefined;
+
+      if (this.router) {
+        const routing = await this.router(eventId, familyId);
+        routingAction = routing.action;
+        adminSubtype = routing.adminSubtype;
+
+        this.logger.debug(
+          {
+            eventId,
+            action: routing.action,
+            adminSubtype: routing.adminSubtype,
+            reason: routing.reason,
+            tokensUsed: routing.tokensUsed,
+          },
+          'Message routed'
+        );
+
+        // Log routing decision
+        await this.eventLog.log({
+          familyId,
+          eventType: 'event_processed',
+          eventCategory: 'system_event',
+          actor: 'router',
+          actorType: 'system',
+          sourceEventId: eventId,
+          eventData: {
+            stage: 'routed',
+            action: routing.action,
+            adminSubtype: routing.adminSubtype,
+            reason: routing.reason,
+            tokensUsed: routing.tokensUsed,
+          },
+        });
+      }
+
+      // Handle based on routing action
+      if (routingAction === 'ignore') {
+        // Message should be ignored - mark as processed and return
+        this.logger.info({ eventId }, 'Message ignored by router');
+        await this.eventRepo.markProcessed(familyId, eventId);
+        return {
+          success: true,
+          duration: Date.now() - startTime,
+        };
+      }
+
+      if (routingAction === 'admin') {
+        // Route to admin processor
+        if (this.adminProcessor && adminSubtype) {
+          const result = await this.adminProcessor(
+            eventId,
+            familyId,
+            adminSubtype
+          );
+          if (!result.success) {
+            this.logger.warn(
+              { eventId, error: result.error },
+              'Admin processor failed'
+            );
+          }
+        } else {
+          this.logger.warn(
+            { eventId, adminSubtype },
+            'Admin action routed but no admin processor configured'
+          );
+        }
+        // Mark as processed after admin handling
+        await this.eventRepo.markProcessed(familyId, eventId);
+        return {
+          success: true,
+          duration: Date.now() - startTime,
+        };
+      }
+
+      // Route to scribe pipeline (default)
       // Process text content through Filter/Scribe (including media captions)
       if (event.contentOriginal || event.eventType === 'message') {
         await this.processTextContent(eventId, familyId);

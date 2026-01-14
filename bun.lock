@@ -71,6 +71,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.71.2",
+        "@sobremesa/agents-admin": "workspace:*",
         "@sobremesa/agents-facilitator": "workspace:*",
         "@sobremesa/agents-intern": "workspace:*",
         "@sobremesa/agents-registrar": "workspace:*",
@@ -96,6 +97,16 @@
       "devDependencies": {
         "selfsigned": "^2.4.1",
         "vite-plugin-solid": "^2.7.0",
+      },
+    },
+    "libs/agents/admin": {
+      "name": "@sobremesa/agents-admin",
+      "version": "0.0.1",
+      "dependencies": {
+        "@sobremesa/database": "workspace:*",
+        "@sobremesa/shared-types": "workspace:*",
+        "@sobremesa/shared-utils": "workspace:*",
+        "tslib": "^2.3.0",
       },
     },
     "libs/agents/curator": {
@@ -726,6 +737,8 @@
     "@sinonjs/commons": ["@sinonjs/commons@3.0.1", "", { "dependencies": { "type-detect": "4.0.8" } }, "sha512-K3mCHKQ9sVh8o1C9cxkwxaOmXoAMlDxC1mYyHrjqOWEcBjYr76t96zL2zlj5dUGZ3HSw240X1qgH3Mjf1yJWpQ=="],
 
     "@sinonjs/fake-timers": ["@sinonjs/fake-timers@13.0.5", "", { "dependencies": { "@sinonjs/commons": "^3.0.1" } }, "sha512-36/hTbH2uaWuGVERyC6da9YwGWnzUZXuPro/F2LfsdOsLnCojz/iSH8MxUt/FD2S5XBSVPhmArFUXcpCQ2Hkiw=="],
+
+    "@sobremesa/agents-admin": ["@sobremesa/agents-admin@workspace:libs/agents/admin"],
 
     "@sobremesa/agents-curator": ["@sobremesa/agents-curator@workspace:libs/agents/curator"],
 

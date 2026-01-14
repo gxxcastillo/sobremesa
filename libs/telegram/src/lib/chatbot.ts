@@ -2,9 +2,9 @@ import type { Telegraf, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import type { Message, Update, User } from 'telegraf/types';
 import { createLogger } from '@sobremesa/shared-utils';
-import { FamilyRepository } from '@sobremesa/database';
+import { FamilyRepository, AllowedChatRepository } from '@sobremesa/database';
 import type pino from 'pino';
-import type { BotHandler, BotRole } from './types';
+import type { BotHandler } from './types';
 import {
   MessageIngester,
   type TextMessageInput,
@@ -130,22 +130,26 @@ function transformDocumentMessage(
 }
 
 /**
- * Scribe bot handler.
+ * Unified chatbot handler.
  *
- * Listens to all messages and ingests them for processing.
- * Looks up family by Telegram chat ID dynamically.
- * Occasionally posts acknowledgments or clarification questions.
+ * Thin ingestion layer that:
+ * - Handles /sobremesa command directly (creates families - can't queue without familyId)
+ * - Enqueues all other messages for processing by Intern → Admin/Scribe pipeline
+ *
+ * No business logic except family registration bootstrap.
  */
-export class ScribeBotHandler implements BotHandler {
-  readonly role: BotRole = 'scribe';
+export class ChatbotHandler implements BotHandler {
+  readonly role = 'chatbot' as const;
 
   private familyRepo: FamilyRepository;
+  private allowedChatRepo: AllowedChatRepository;
   private ingester: MessageIngester;
   private logger: pino.Logger;
 
   constructor(logger?: pino.Logger) {
     this.familyRepo = new FamilyRepository();
-    this.logger = logger || createLogger({ name: 'scribe-bot' });
+    this.allowedChatRepo = new AllowedChatRepository();
+    this.logger = logger || createLogger({ name: 'chatbot' });
     this.ingester = new MessageIngester(this.logger);
   }
 
@@ -158,7 +162,16 @@ export class ScribeBotHandler implements BotHandler {
   }
 
   configure(bot: Telegraf): void {
-    // Handle text messages
+    // Handle /sobremesa command - bootstrap registration (can't queue without familyId)
+    bot.command('sobremesa', async (ctx) => {
+      try {
+        await this.handleSobremesaCommand(ctx);
+      } catch (error) {
+        this.logger.error({ error }, 'Failed to handle /sobremesa command');
+      }
+    });
+
+    // Handle text messages - enqueue for processing
     bot.on(message('text'), async (ctx) => {
       try {
         await this.handleTextMessage(ctx);
@@ -170,7 +183,7 @@ export class ScribeBotHandler implements BotHandler {
       }
     });
 
-    // Handle photos
+    // Handle photos - enqueue for processing
     bot.on(message('photo'), async (ctx) => {
       try {
         await this.handlePhotoMessage(ctx);
@@ -182,7 +195,7 @@ export class ScribeBotHandler implements BotHandler {
       }
     });
 
-    // Handle documents
+    // Handle documents - enqueue for processing
     bot.on(message('document'), async (ctx) => {
       try {
         await this.handleDocumentMessage(ctx);
@@ -194,15 +207,119 @@ export class ScribeBotHandler implements BotHandler {
       }
     });
 
-    this.logger.info('Scribe bot handlers configured');
+    // Handle new chat members - enqueue for processing
+    bot.on('chat_member', async (ctx) => {
+      try {
+        await this.handleChatMemberEvent(ctx);
+      } catch (error) {
+        this.logger.error({ error }, 'Failed to handle chat_member event');
+      }
+    });
+
+    this.logger.info('Chatbot handlers configured');
   }
 
   /**
-   * Handle a text message from Telegram.
+   * Handle /sobremesa command - family registration bootstrap.
+   * This is handled directly because we need to create the family before we can queue.
+   */
+  private async handleSobremesaCommand(ctx: Context): Promise<void> {
+    const chatId = String(ctx.chat?.id);
+    const chatType = ctx.chat?.type;
+
+    // Private chat - show help
+    if (chatType === 'private') {
+      await ctx.reply(
+        'Welcome to Sobremesa! Add me to your family group chat and use /sobremesa to set up your family archive.'
+      );
+      return;
+    }
+
+    // Only allow in groups
+    if (chatType !== 'group' && chatType !== 'supergroup') {
+      return;
+    }
+
+    // Check if already registered
+    const existingFamily = await this.familyRepo.findByChatId(chatId);
+    if (existingFamily) {
+      // Already registered - enqueue as text message so Intern can route to Admin for status
+      // The message will be processed and Admin will show status
+      const msg = ctx.message as Message.TextMessage & { from: User };
+      if (msg.from) {
+        const input = transformTextMessage(msg);
+        await this.ingester.ingestTextMessage(existingFamily.id, input);
+        this.logger.info(
+          { chatId, familyId: existingFamily.id },
+          '/sobremesa in registered chat - enqueued for processing'
+        );
+      }
+      return;
+    }
+
+    // Not registered - check whitelist and create family
+    const isAllowed = await this.allowedChatRepo.isAllowed(chatId);
+    if (!isAllowed) {
+      this.logger.warn(
+        { chatId },
+        'Registration attempted from non-whitelisted chat'
+      );
+      await ctx.reply(
+        'This chat is not authorized to use Sobremesa. ' +
+          'Please contact the administrator to whitelist this chat.'
+      );
+      return;
+    }
+
+    // Extract family name from command arguments or chat title
+    const messageText =
+      'text' in (ctx.message || {})
+        ? (ctx.message as { text: string }).text
+        : '';
+    const args = messageText.replace(/^\/sobremesa(@\w+)?\s*/, '').trim();
+    const chatTitle =
+      'title' in (ctx.chat || {})
+        ? (ctx.chat as { title: string }).title
+        : undefined;
+    const familyName = args || chatTitle || 'My Family';
+
+    try {
+      // Create the family
+      const family = await this.familyRepo.createWithChat(familyName, chatId);
+
+      this.logger.info(
+        { familyId: family.id, familyName: family.name, chatId },
+        'Family registered'
+      );
+
+      await ctx.reply(
+        `Welcome to Sobremesa! I've set up "${family.name}" as your family archive.\n\n` +
+          `Just start chatting - I'll preserve your family stories!\n\n` +
+          `Important: Make sure Privacy Mode is disabled for this bot:\n` +
+          `• Message @BotFather\n` +
+          `• Send /mybots\n` +
+          `• Select this bot\n` +
+          `• Bot Settings → Group Privacy → Turn off`
+      );
+    } catch (error) {
+      this.logger.error({ error, chatId }, 'Failed to register family');
+      await ctx.reply(
+        'Sorry, something went wrong while setting up your family archive. Please try again.'
+      );
+    }
+  }
+
+  /**
+   * Handle a text message - enqueue for processing.
    */
   private async handleTextMessage(ctx: TextMessageContext): Promise<void> {
     const msg = ctx.message;
     const chatId = String(msg.chat.id);
+
+    // Skip if this is a command (handled separately)
+    if (msg.text.startsWith('/')) {
+      return;
+    }
 
     // Look up family for this chat
     const familyId = await this.getFamilyIdForChat(chatId);
@@ -226,7 +343,7 @@ export class ScribeBotHandler implements BotHandler {
   }
 
   /**
-   * Handle a photo message from Telegram.
+   * Handle a photo message - enqueue for processing.
    */
   private async handlePhotoMessage(ctx: PhotoMessageContext): Promise<void> {
     const msg = ctx.message;
@@ -254,7 +371,7 @@ export class ScribeBotHandler implements BotHandler {
   }
 
   /**
-   * Handle a document message from Telegram.
+   * Handle a document message - enqueue for processing.
    */
   private async handleDocumentMessage(
     ctx: DocumentMessageContext
@@ -281,5 +398,38 @@ export class ScribeBotHandler implements BotHandler {
         'Document message ingested and queued'
       );
     }
+  }
+
+  /**
+   * Handle chat member events - enqueue for processing.
+   */
+  private async handleChatMemberEvent(
+    ctx: Context<Update.ChatMemberUpdate>
+  ): Promise<void> {
+    const chatId = String(ctx.chat?.id);
+
+    // Look up family for this chat
+    const familyId = await this.getFamilyIdForChat(chatId);
+    if (!familyId) {
+      this.logger.debug(
+        { chatId },
+        'Chat not registered, ignoring chat_member event'
+      );
+      return;
+    }
+
+    // For now, just log the event
+    // TODO: Create a conversation event for member changes so Intern can route to Admin
+    const newMember = ctx.chatMember.new_chat_member;
+    this.logger.info(
+      {
+        familyId,
+        chatId,
+        userId: newMember.user.id,
+        username: newMember.user.username,
+        status: newMember.status,
+      },
+      'Chat member event received'
+    );
   }
 }

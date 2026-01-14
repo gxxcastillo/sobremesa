@@ -4,7 +4,7 @@ import type pino from 'pino';
 /**
  * Bot role identifier.
  */
-export type BotRole = 'scribe' | 'admin' | 'facilitator';
+export type BotRole = 'scribe' | 'admin' | 'facilitator' | 'chatbot';
 
 /**
  * Configuration for a single bot.
@@ -19,16 +19,11 @@ export interface BotConfig {
 }
 
 /**
- * Configuration for the BotManager.
- * Note: Family ID is looked up dynamically by chat ID, not configured here.
+ * Configuration for the BotManager (single bot mode).
  */
 export interface BotManagerConfig {
-  /** Scribe bot token */
-  scribeToken?: string;
-  /** Admin bot token */
-  adminToken?: string;
-  /** Facilitator bot token */
-  facilitatorToken?: string;
+  /** Bot token */
+  token: string;
   /** Logger instance */
   logger?: pino.Logger;
 }

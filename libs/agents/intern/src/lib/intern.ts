@@ -25,6 +25,25 @@ export interface FilterResult {
 }
 
 /**
+ * Routing action for a message.
+ */
+export type RoutingAction = 'ignore' | 'admin' | 'scribe';
+
+/**
+ * Result of message routing.
+ */
+export interface RoutingResult {
+  /** Where to route the message */
+  action: RoutingAction;
+  /** Subtype for admin actions */
+  adminSubtype?: 'command' | 'status' | 'dm' | 'member_event';
+  /** Reason for the routing decision */
+  reason: string;
+  /** Tokens used (if AI was called) */
+  tokensUsed?: number;
+}
+
+/**
  * How a message references an image.
  */
 export type ImageReferenceType =
@@ -456,6 +475,131 @@ export class InternAgent {
       return { linked: true, imageId, referenceType, reason };
     } catch {
       return { linked: false, reason: 'JSON parse error' };
+    }
+  }
+
+  /**
+   * Route a message to the appropriate handler.
+   *
+   * Routing logic:
+   * 1. Commands (/sobremesa, /status) → admin
+   * 2. Private messages (DMs) → admin
+   * 3. Member events → admin
+   * 4. Spam/noise (via filter) → ignore
+   * 5. Everything else → scribe
+   */
+  async route(eventId: string, familyId: string): Promise<RoutingResult> {
+    try {
+      // Load the event
+      const event = await this.eventRepo.findById(familyId, eventId);
+      if (!event) {
+        this.logger.warn({ eventId }, 'Event not found for routing');
+        return {
+          action: 'scribe',
+          reason: 'Event not found, defaulting to scribe',
+        };
+      }
+
+      const messageText = event.contentOriginal?.trim() || '';
+      const chatType = (event.metadata as Record<string, unknown>)?.chatType as
+        | string
+        | undefined;
+
+      // Check for commands (deterministic routing)
+      if (messageText.startsWith('/')) {
+        const command = messageText.split(/\s+/)[0].toLowerCase();
+
+        if (command === '/sobremesa' || command.startsWith('/sobremesa@')) {
+          this.logger.debug(
+            { eventId, command },
+            'Routing to admin: sobremesa command'
+          );
+          return {
+            action: 'admin',
+            adminSubtype: 'status', // In registered chat, /sobremesa shows status
+            reason: `Command: ${command}`,
+          };
+        }
+
+        if (command === '/status' || command.startsWith('/status@')) {
+          this.logger.debug(
+            { eventId, command },
+            'Routing to admin: status command'
+          );
+          return {
+            action: 'admin',
+            adminSubtype: 'status',
+            reason: `Command: ${command}`,
+          };
+        }
+
+        // Unknown command - ignore (or could route to admin)
+        this.logger.debug({ eventId, command }, 'Ignoring unknown command');
+        return {
+          action: 'ignore',
+          reason: `Unknown command: ${command}`,
+        };
+      }
+
+      // Check for private messages (DMs)
+      if (chatType === 'private') {
+        this.logger.debug({ eventId }, 'Routing to admin: private message');
+        return {
+          action: 'admin',
+          adminSubtype: 'dm',
+          reason: 'Private message (DM)',
+        };
+      }
+
+      // Check for member events
+      if (event.eventType === 'join' || event.eventType === 'leave') {
+        this.logger.debug(
+          { eventId, eventType: event.eventType },
+          'Routing to admin: member event'
+        );
+        return {
+          action: 'admin',
+          adminSubtype: 'member_event',
+          reason: `Member event: ${event.eventType}`,
+        };
+      }
+
+      // For non-text events (photos, documents), route to scribe
+      if (event.eventType !== 'message') {
+        return {
+          action: 'scribe',
+          reason: `Non-text event type: ${event.eventType}`,
+        };
+      }
+
+      // Use filter to determine if message is relevant
+      const filterResult = await this.filter(eventId, familyId);
+
+      if (!filterResult.relevant) {
+        return {
+          action: 'ignore',
+          reason: filterResult.reason,
+          tokensUsed: filterResult.tokensUsed,
+        };
+      }
+
+      // Route to scribe for processing
+      return {
+        action: 'scribe',
+        reason: filterResult.reason,
+        tokensUsed: filterResult.tokensUsed,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        { eventId, error: errorMessage },
+        'Routing error, defaulting to scribe'
+      );
+      return {
+        action: 'scribe',
+        reason: `Routing error: ${errorMessage}`,
+      };
     }
   }
 }

@@ -1,0 +1,294 @@
+import {
+  ConversationEventRepository,
+  FamilyRepository,
+  EventLogRepository,
+} from '@sobremesa/database';
+import { createLogger } from '@sobremesa/shared-utils';
+import type pino from 'pino';
+import type { Family } from '@sobremesa/shared-types';
+
+/**
+ * Message sender interface - allows BotManager to be injected.
+ * Returns the Telegram message_id of the sent message.
+ */
+export interface MessageSender {
+  sendMessage(
+    role: 'admin',
+    message: {
+      chatId: string | number;
+      text: string;
+      parseMode?: 'Markdown' | 'HTML';
+      replyToMessageId?: number;
+    }
+  ): Promise<number>;
+}
+
+/**
+ * Options for AdminAgent.
+ */
+export interface AdminAgentOptions {
+  /** Message sender (typically BotManager) */
+  messageSender: MessageSender;
+  /** Conversation event repository */
+  eventRepo?: ConversationEventRepository;
+  /** Family repository */
+  familyRepo?: FamilyRepository;
+  /** Event log repository */
+  eventLog?: EventLogRepository;
+  /** Logger instance */
+  logger?: pino.Logger;
+}
+
+/**
+ * Admin action types that can be handled.
+ */
+export type AdminActionType = 'command' | 'status' | 'dm' | 'member_event';
+
+/**
+ * Result of handling an admin action.
+ */
+export interface AdminHandleResult {
+  success: boolean;
+  action: AdminActionType;
+  messageSent?: boolean;
+  error?: string;
+}
+
+/**
+ * The Admin agent handles administrative messages:
+ * - Status commands (/sobremesa, /status in registered chats)
+ * - Direct messages (DMs) with help info
+ * - Member events (welcomes, etc.)
+ *
+ * Stateless agent that processes events and sends replies.
+ */
+export class AdminAgent {
+  private messageSender: MessageSender;
+  private eventRepo: ConversationEventRepository;
+  private familyRepo: FamilyRepository;
+  private eventLog: EventLogRepository;
+  private logger: pino.Logger;
+
+  constructor(options: AdminAgentOptions) {
+    this.messageSender = options.messageSender;
+    this.eventRepo = options.eventRepo || new ConversationEventRepository();
+    this.familyRepo = options.familyRepo || new FamilyRepository();
+    this.eventLog = options.eventLog || new EventLogRepository();
+    this.logger = options.logger || createLogger({ name: 'admin' });
+  }
+
+  /**
+   * Handle an admin-routed event.
+   *
+   * @param eventId - The conversation event ID
+   * @param familyId - The family ID
+   * @param subtype - The admin action subtype from Intern routing
+   */
+  async handle(
+    eventId: string,
+    familyId: string,
+    subtype: AdminActionType
+  ): Promise<AdminHandleResult> {
+    this.logger.info({ eventId, familyId, subtype }, 'Handling admin action');
+
+    try {
+      switch (subtype) {
+        case 'status':
+        case 'command':
+          return await this.handleStatusCommand(eventId, familyId);
+        case 'dm':
+          return await this.handleDirectMessage(eventId, familyId);
+        case 'member_event':
+          return await this.handleMemberEvent(eventId, familyId);
+        default:
+          this.logger.warn({ subtype }, 'Unknown admin subtype');
+          return { success: false, action: subtype, error: 'Unknown subtype' };
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        { eventId, familyId, subtype, error: errorMessage },
+        'Admin action failed'
+      );
+      return { success: false, action: subtype, error: errorMessage };
+    }
+  }
+
+  /**
+   * Handle /sobremesa or /status commands - show family status.
+   */
+  private async handleStatusCommand(
+    eventId: string,
+    familyId: string
+  ): Promise<AdminHandleResult> {
+    // Load the event to get chat info for reply
+    const event = await this.eventRepo.findById(familyId, eventId);
+    if (!event) {
+      return { success: false, action: 'status', error: 'Event not found' };
+    }
+
+    // Load family info
+    const family = await this.familyRepo.findById(familyId);
+    if (!family) {
+      return { success: false, action: 'status', error: 'Family not found' };
+    }
+
+    // Get stats for the family
+    const stats = await this.getFamilyStats(familyId);
+
+    // Build status message
+    const statusMessage = this.formatStatusMessage(family, stats);
+
+    // Get external message ID to reply to
+    const externalMessageId = event.externalEventId
+      ? parseInt(event.externalEventId, 10)
+      : undefined;
+
+    // Send reply
+    await this.messageSender.sendMessage('admin', {
+      chatId: event.conversationId,
+      text: statusMessage,
+      replyToMessageId:
+        externalMessageId && !isNaN(externalMessageId)
+          ? externalMessageId
+          : undefined,
+    });
+
+    // Log the action
+    await this.eventLog.log({
+      familyId,
+      eventType: 'event_processed',
+      eventCategory: 'bot_action',
+      actor: 'admin',
+      actorType: 'system',
+      eventData: { eventId, stats, action: 'status_shown' },
+    });
+
+    return { success: true, action: 'status', messageSent: true };
+  }
+
+  /**
+   * Handle direct messages - show help info.
+   */
+  private async handleDirectMessage(
+    eventId: string,
+    familyId: string
+  ): Promise<AdminHandleResult> {
+    const event = await this.eventRepo.findById(familyId, eventId);
+    if (!event) {
+      return { success: false, action: 'dm', error: 'Event not found' };
+    }
+
+    const helpMessage =
+      "Hi! I'm the Sobremesa family history bot.\n\n" +
+      'Add me to your family group chat and use /sobremesa to start preserving your family stories.\n\n' +
+      'Commands:\n' +
+      '• /sobremesa - Set up family archive (in new group) or show status (in registered group)\n' +
+      '• /status - Show family archive status\n\n' +
+      "Just chat naturally in your family group - I'll listen and preserve the important stories!";
+
+    await this.messageSender.sendMessage('admin', {
+      chatId: event.conversationId,
+      text: helpMessage,
+    });
+
+    return { success: true, action: 'dm', messageSent: true };
+  }
+
+  /**
+   * Handle member events - welcome new members, etc.
+   */
+  private async handleMemberEvent(
+    eventId: string,
+    familyId: string
+  ): Promise<AdminHandleResult> {
+    const event = await this.eventRepo.findById(familyId, eventId);
+    if (!event) {
+      return {
+        success: false,
+        action: 'member_event',
+        error: 'Event not found',
+      };
+    }
+
+    // For now, just log member events without sending a message
+    // We could add welcome messages for new members in the future
+    this.logger.info(
+      { eventId, familyId, eventType: event.eventType },
+      'Member event processed (no action taken)'
+    );
+
+    await this.eventLog.log({
+      familyId,
+      eventType: 'event_processed',
+      eventCategory: 'bot_action',
+      actor: 'admin',
+      actorType: 'system',
+      eventData: {
+        eventId,
+        originalEventType: event.eventType,
+        action: 'member_event_processed',
+      },
+    });
+
+    return { success: true, action: 'member_event', messageSent: false };
+  }
+
+  /**
+   * Get stats for a family.
+   */
+  private async getFamilyStats(
+    familyId: string
+  ): Promise<{ eventCount: number; memberCount: number }> {
+    try {
+      // Get family to find conversation ID
+      const family = await this.familyRepo.findById(familyId);
+      if (!family?.chatId) {
+        return { eventCount: 0, memberCount: 0 };
+      }
+
+      // Get event count (use chatId as conversationId)
+      const events = await this.eventRepo.findRecent(
+        familyId,
+        family.chatId,
+        1000
+      );
+      const eventCount = events.length;
+
+      // Get unique members
+      const members = new Set(
+        events.map((e) => e.actorExternalId).filter(Boolean)
+      );
+      const memberCount = members.size;
+
+      return { eventCount, memberCount };
+    } catch {
+      return { eventCount: 0, memberCount: 0 };
+    }
+  }
+
+  /**
+   * Format the status message.
+   */
+  private formatStatusMessage(
+    family: Family,
+    stats: { eventCount: number; memberCount: number }
+  ): string {
+    const lines: string[] = [
+      `Family Archive: ${family.name}`,
+      '',
+      `Messages archived: ${stats.eventCount}`,
+      `Family members seen: ${stats.memberCount}`,
+    ];
+
+    if (family.createdAt) {
+      const createdDate = new Date(family.createdAt).toLocaleDateString();
+      lines.push(`Active since: ${createdDate}`);
+    }
+
+    lines.push('', 'Keep sharing your family stories!');
+
+    return lines.join('\n');
+  }
+}

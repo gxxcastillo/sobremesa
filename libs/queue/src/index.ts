@@ -9,4 +9,9 @@ export {
   type ScribeProcessor,
   type RegistrarProcessor,
   type OnImageCreatedCallback,
+  type RouterProcessor,
+  type RoutingProcessorResult,
+  type RoutingAction,
+  type AdminProcessor,
+  type AdminSubtype,
 } from './lib/processor';

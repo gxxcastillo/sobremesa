@@ -1,7 +1,5 @@
 export { BotManager } from './lib/bot-manager';
-export { ScribeBotHandler } from './lib/scribe-bot';
-export { AdminBotHandler } from './lib/admin-bot';
-export { FacilitatorBotHandler } from './lib/facilitator-bot';
+export { ChatbotHandler } from './lib/chatbot';
 export type {
   BotRole,
   BotConfig,

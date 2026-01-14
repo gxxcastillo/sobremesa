@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createLogger } from '@sobremesa/shared-utils';
 import { MessageQueue, MessageProcessor } from '@sobremesa/queue';
 import { BotManager } from '@sobremesa/telegram';
+import { AdminAgent } from '@sobremesa/agents-admin';
 import { InternAgent } from '@sobremesa/agents-intern';
 import { ScribeAgent } from '@sobremesa/agents-scribe';
 import { RegistrarAgent } from '@sobremesa/agents-registrar';
@@ -12,65 +13,58 @@ const logger = createLogger({ name: 'chatbots' });
 async function main() {
   logger.info('Starting Sobremesa conversation gateway...');
 
-  // Get bot tokens from environment
-  const scribeToken = process.env['TELEGRAM_BOT_TOKEN_SCRIBE'];
-  const adminToken = process.env['TELEGRAM_BOT_TOKEN_ADMIN'];
-  const facilitatorToken = process.env['TELEGRAM_BOT_TOKEN_FACILITATOR'];
+  // Get bot token from environment
+  const token =
+    process.env['TELEGRAM_BOT_TOKEN'] ||
+    process.env['TELEGRAM_BOT_TOKEN_SCRIBE']; // Fallback for migration
 
-  if (!scribeToken) {
-    logger.error('At least TELEGRAM_BOT_TOKEN_SCRIBE is required');
+  if (!token) {
+    logger.error('TELEGRAM_BOT_TOKEN is required');
     process.exit(1);
   }
 
   const anthropicApiKey = process.env['ANTHROPIC_API_KEY'];
   if (!anthropicApiKey) {
-    logger.warn(
-      'ANTHROPIC_API_KEY not set - Scribe agent will not process messages'
-    );
+    logger.warn('ANTHROPIC_API_KEY not set - agents will not process messages');
   }
 
   try {
     logger.debug('Creating BotManager...');
-    // Create bot manager with available tokens
-    // Note: Family ID is looked up dynamically by chat ID via /register command
-    const botManager = new BotManager({
-      scribeToken,
-      adminToken,
-      facilitatorToken,
-      logger,
-    });
-
-    // Log which bots are configured
-    const roles = botManager.getConfiguredRoles();
-    logger.info({ roles }, 'Bots configured');
+    const botManager = new BotManager({ token, logger });
 
     logger.debug('Creating MessageProcessor...');
-    // Set up message processing pipeline
     const processor = new MessageProcessor();
 
-    // Configure Facilitator agent if bot is available
-    let facilitator: FacilitatorAgent | undefined;
-    if (botManager.hasBot('facilitator')) {
-      logger.debug('Configuring Facilitator agent...');
-      facilitator = new FacilitatorAgent({
-        messageSender: botManager,
-        minMinutesBetweenQuestions: 5, // Ask at most once every 5 minutes per family
-      });
-      logger.info('Facilitator agent configured');
-    }
+    // Configure Admin agent (doesn't require Anthropic API)
+    logger.debug('Configuring Admin agent...');
+    const admin = new AdminAgent({
+      messageSender: botManager,
+    });
+    processor.setAdminProcessor((eventId, familyId, subtype) =>
+      admin.handle(eventId, familyId, subtype)
+    );
+    logger.info('Admin agent configured');
 
-    // Configure agents if API key is available
+    // Configure Facilitator agent
+    logger.debug('Configuring Facilitator agent...');
+    const facilitator = new FacilitatorAgent({
+      messageSender: botManager,
+      minMinutesBetweenQuestions: 5,
+    });
+    logger.info('Facilitator agent configured');
+
+    // Configure AI agents if API key is available
     if (anthropicApiKey) {
       logger.debug('Configuring Intern, Scribe and Registrar agents...');
       const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
-      // Intern uses Haiku for quick preprocessing tasks
       const intern = new InternAgent({ anthropic });
       const scribe = new ScribeAgent({ anthropic });
       const registrar = new RegistrarAgent();
 
-      processor.setFilter((eventId, familyId) =>
-        intern.filter(eventId, familyId)
+      // Set router (Intern routes to admin/scribe/ignore)
+      processor.setRouter((eventId, familyId) =>
+        intern.route(eventId, familyId)
       );
       processor.setImageLinker((eventId, familyId) =>
         intern.linkToImage(eventId, familyId)
@@ -81,39 +75,35 @@ async function main() {
       processor.setRegistrar(async (model, familyId) => {
         await registrar.persist(model, familyId);
 
-        // After persisting, try to ask a follow-up question
-        // Rate limiting in FacilitatorAgent prevents spam
-        if (facilitator) {
-          // Small delay to let the conversation settle
-          setTimeout(async () => {
-            try {
-              const result = await facilitator!.askNextQuestion(familyId);
-              if (result.questionContent) {
-                logger.info(
-                  { familyId, questionId: result.questionId },
-                  'Facilitator asked question'
-                );
-              } else if (result.skippedReason) {
-                logger.debug(
-                  { familyId, reason: result.skippedReason },
-                  'Facilitator skipped asking'
-                );
-              }
-            } catch (err) {
-              logger.error(
-                { familyId, err },
-                'Facilitator failed to ask question'
+        // Fire-and-forget: trigger Facilitator after persist
+        // Log errors but don't block or retry
+        facilitator.askNextQuestion(familyId).then(
+          (result) => {
+            if (result.questionContent) {
+              logger.info(
+                { familyId, questionId: result.questionId },
+                'Facilitator asked question'
+              );
+            } else if (result.skippedReason) {
+              logger.debug(
+                { familyId, reason: result.skippedReason },
+                'Facilitator skipped asking'
               );
             }
-          }, 3000); // Wait 3 seconds before asking
-        }
+          },
+          (err) => {
+            logger.error(
+              { familyId, err },
+              'Facilitator failed to ask question'
+            );
+          }
+        );
       });
 
       logger.info('Intern, Scribe and Registrar agents configured');
     }
 
     logger.debug('Starting MessageQueue...');
-    // Start the message queue (processes all registered families)
     const queue = new MessageQueue();
     queue.setHandler(processor.createHandler());
     await queue.start();
@@ -130,9 +120,9 @@ async function main() {
     process.once('SIGINT', () => shutdown('SIGINT'));
     process.once('SIGTERM', () => shutdown('SIGTERM'));
 
-    // Start all bots
+    // Start the bot
     await botManager.start();
-    logger.info('All bots are running. Press Ctrl+C to stop.');
+    logger.info('Bot is running. Press Ctrl+C to stop.');
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     logger.error({ err: err.message, stack: err.stack }, 'Failed to start');
