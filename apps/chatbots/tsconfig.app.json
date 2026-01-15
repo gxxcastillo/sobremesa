@@ -4,6 +4,6 @@
     "outDir": "dist",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "../../libs/shared/types/src/global/**/*.d.ts"],
+  "include": ["src/**/*.ts"],
   "exclude": []
 }

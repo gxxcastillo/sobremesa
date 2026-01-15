@@ -8,11 +8,7 @@
     "jsx": "preserve",
     "jsxImportSource": "solid-js"
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "../../libs/shared/types/src/global/**/*.d.ts"
-  ],
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": [
     "out-tsc",
     "dist",
