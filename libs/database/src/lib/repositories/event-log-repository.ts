@@ -69,7 +69,7 @@ export class EventLogRepository {
       limit?: number;
       eventType?: EventLogType;
       eventCategory?: EventCategory;
-    }
+    },
   ): Promise<EventLogEntry[]> {
     let query = this.client
       .from(this.tableName)
@@ -104,7 +104,7 @@ export class EventLogRepository {
   async findByActor(
     familyId: string,
     actor: string,
-    limit = 50
+    limit = 50,
   ): Promise<EventLogEntry[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -127,7 +127,7 @@ export class EventLogRepository {
   async countInWindow(
     familyId: string,
     eventType: EventLogType,
-    windowStartAt: Date
+    windowStartAt: Date,
   ): Promise<number> {
     const { count, error } = await this.client
       .from(this.tableName)

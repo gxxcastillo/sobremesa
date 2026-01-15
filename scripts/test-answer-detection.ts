@@ -31,7 +31,7 @@ async function main() {
   const { data: questionsWithExternalId } = await client
     .from('questions')
     .select(
-      'id, content_original, status, asked_external_message_id, asked_at, answered_at'
+      'id, content_original, status, asked_external_message_id, asked_at, answered_at',
     )
     .eq('family_id', family.id)
     .not('asked_external_message_id', 'is', null)
@@ -41,11 +41,11 @@ async function main() {
   if (!questionsWithExternalId?.length) {
     console.log('No questions with external message IDs yet.');
     console.log(
-      'Run test-send-question.ts or send a message to trigger the facilitator.'
+      'Run test-send-question.ts or send a message to trigger the facilitator.',
     );
   } else {
     console.log(
-      `Found ${questionsWithExternalId.length} questions with external IDs:\n`
+      `Found ${questionsWithExternalId.length} questions with external IDs:\n`,
     );
     for (const q of questionsWithExternalId) {
       console.log(`  [${q.status}] ${q.content_original.slice(0, 50)}...`);
@@ -73,10 +73,10 @@ async function main() {
     console.log('\nTo test:');
     console.log('1. The facilitator asks a question');
     console.log(
-      '2. Reply to that question in Telegram (use the reply feature)'
+      '2. Reply to that question in Telegram (use the reply feature)',
     );
     console.log(
-      '3. The system should detect the reply and mark the question as answered'
+      '3. The system should detect the reply and mark the question as answered',
     );
   } else {
     console.log(`Found ${answerEvents.length} answer detection events:\n`);
@@ -85,8 +85,8 @@ async function main() {
       console.log(
         `  Question: ${((data.questionContent as string) || '').slice(
           0,
-          50
-        )}...`
+          50,
+        )}...`,
       );
       console.log(`  Detected at: ${e.created_at}`);
       console.log('');

@@ -6,7 +6,7 @@ import { getServiceClient } from './client';
  * All repositories should extend this class.
  */
 export abstract class BaseRepository<
-  T extends { id: string; familyId: string }
+  T extends { id: string; familyId: string },
 > {
   protected client: SupabaseClient;
   protected tableName: string;
@@ -32,7 +32,7 @@ export abstract class BaseRepository<
         return null; // Not found
       }
       throw new Error(
-        `Failed to find ${this.tableName} by id: ${error.message}`
+        `Failed to find ${this.tableName} by id: ${error.message}`,
       );
     }
 
@@ -44,7 +44,7 @@ export abstract class BaseRepository<
    */
   async findAll(
     familyId: string,
-    options?: { limit?: number; offset?: number }
+    options?: { limit?: number; offset?: number },
   ): Promise<T[]> {
     let query = this.client
       .from(this.tableName)
@@ -59,7 +59,7 @@ export abstract class BaseRepository<
     if (options?.offset) {
       query = query.range(
         options.offset,
-        options.offset + (options.limit || 100) - 1
+        options.offset + (options.limit || 100) - 1,
       );
     }
 
@@ -119,7 +119,7 @@ export abstract class BaseRepository<
     familyId: string,
     id: string,
     redactedBy: string,
-    reason?: string
+    reason?: string,
   ): Promise<void> {
     const { error } = await this.client
       .from(this.tableName)
@@ -134,7 +134,7 @@ export abstract class BaseRepository<
 
     if (error) {
       throw new Error(
-        `Failed to soft delete ${this.tableName}: ${error.message}`
+        `Failed to soft delete ${this.tableName}: ${error.message}`,
       );
     }
   }
@@ -181,7 +181,7 @@ export function mapRowToCamelCase<T>(row: Record<string, unknown>): T {
  * Convert all keys in an object from camelCase to snake_case.
  */
 export function mapRecordToSnakeCase(
-  record: Record<string, unknown>
+  record: Record<string, unknown>,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {

@@ -99,11 +99,11 @@ export class RegistrarAgent {
    */
   async persist(
     domainModel: ScribeDomainModel,
-    familyId: string
+    familyId: string,
   ): Promise<void> {
     this.logger.info(
       { familyId, sourceEventId: domainModel.sourceEventId },
-      'Registrar persist started'
+      'Registrar persist started',
     );
 
     const result: PersistResult = {
@@ -125,7 +125,7 @@ export class RegistrarAgent {
     // Get the claimedBy from the source event
     const sourceEvent = await this.conversationEventRepo.findById(
       familyId,
-      sourceEventId
+      sourceEventId,
     );
     const claimedBy =
       sourceEvent?.actorDisplayName || sourceEvent?.actorUsername || 'Unknown';
@@ -140,7 +140,7 @@ export class RegistrarAgent {
         const matchResult = await this.personRepo.findBestMatch(
           familyId,
           person.name,
-          person.aliases
+          person.aliases,
         );
 
         if (matchResult) {
@@ -159,17 +159,17 @@ export class RegistrarAgent {
               confidence,
               matchReason,
             },
-            'Person matched to existing'
+            'Person matched to existing',
           );
 
           // Add the extracted name as an alias if it's not already there
           const existingAliases = new Set(
-            (existingPerson.aliases || []).map((a) => a.toLowerCase())
+            (existingPerson.aliases || []).map((a) => a.toLowerCase()),
           );
           const newAliases = [person.name, ...person.aliases].filter(
             (a) =>
               !existingAliases.has(a.toLowerCase()) &&
-              a.toLowerCase() !== existingPerson.name.toLowerCase()
+              a.toLowerCase() !== existingPerson.name.toLowerCase(),
           );
 
           if (newAliases.length > 0) {
@@ -181,7 +181,7 @@ export class RegistrarAgent {
 
             this.logger.debug(
               { familyId, personId: existingPerson.id, newAliases },
-              'Added aliases to existing person'
+              'Added aliases to existing person',
             );
           }
 
@@ -195,7 +195,7 @@ export class RegistrarAgent {
             familyId,
             person,
             sourceEventId,
-            claimedBy
+            claimedBy,
           );
 
           this.logger.debug(
@@ -204,7 +204,7 @@ export class RegistrarAgent {
               personName: person.name,
               personId: newPerson.id,
             },
-            'Created new person'
+            'Created new person',
           );
 
           personIdMap.set(person.name, newPerson.id);
@@ -220,7 +220,7 @@ export class RegistrarAgent {
         const dbPlace = await this.placeRepo.findOrCreate(
           familyId,
           place,
-          sourceEventId
+          sourceEventId,
         );
         placeIdMap.set(place.name, dbPlace.id);
         if (new Date(dbPlace.createdAt).getTime() > Date.now() - 1000) {
@@ -246,7 +246,7 @@ export class RegistrarAgent {
           peopleIds,
           placeId,
           sourceEventId,
-          claimedBy
+          claimedBy,
         );
         result.eventsCreated++;
       }
@@ -260,7 +260,7 @@ export class RegistrarAgent {
           const existing = await this.relationshipRepo.findBetween(
             familyId,
             personAId,
-            personBId
+            personBId,
           );
 
           if (!existing) {
@@ -273,7 +273,7 @@ export class RegistrarAgent {
                 sourceEventId,
                 claimedBy,
                 confidence: rel.confidence,
-              }
+              },
             );
             result.relationshipsCreated++;
           }
@@ -293,7 +293,7 @@ export class RegistrarAgent {
           [], // eventIds - would need to track created event IDs
           sourceEventId,
           domainModel.detectedLanguage,
-          claimedBy
+          claimedBy,
         );
         result.storiesCreated++;
       }
@@ -314,7 +314,7 @@ export class RegistrarAgent {
         // Check for conflicts with existing claims
         const existingClaims = await this.claimRepo.findActiveBySubject(
           familyId,
-          claim.subject
+          claim.subject,
         );
 
         // Determine who made this claim:
@@ -332,7 +332,7 @@ export class RegistrarAgent {
               reportedBy: claimedBy,
               sourceType: claim.claimedBySource,
             },
-            'Claim attributed to different person than sender'
+            'Claim attributed to different person than sender',
           );
         }
 
@@ -343,7 +343,7 @@ export class RegistrarAgent {
           sourceEventId,
           effectiveClaimedBy,
           entityId,
-          entityType
+          entityType,
         );
         result.claimsCreated++;
 
@@ -356,7 +356,7 @@ export class RegistrarAgent {
             await this.claimRepo.addConflict(
               familyId,
               newClaim.id,
-              existing.id
+              existing.id,
             );
             result.conflictsDetected++;
             this.logger.info(
@@ -366,7 +366,7 @@ export class RegistrarAgent {
                 newClaimId: newClaim.id,
                 existingClaimId: existing.id,
               },
-              'Conflict detected between claims'
+              'Conflict detected between claims',
             );
           }
         }
@@ -377,7 +377,7 @@ export class RegistrarAgent {
         await this.questionRepo.createFromGenerated(
           familyId,
           question,
-          sourceEventId
+          sourceEventId,
         );
         result.questionsCreated++;
       }
@@ -388,13 +388,13 @@ export class RegistrarAgent {
           await this.questionRepo.markAnswered(
             familyId,
             answer.questionId,
-            sourceEventId
+            sourceEventId,
           );
           result.answersProcessed++;
         } catch (error) {
           this.logger.warn(
             { questionId: answer.questionId, error },
-            'Failed to mark question as answered'
+            'Failed to mark question as answered',
           );
         }
       }
@@ -419,7 +419,7 @@ export class RegistrarAgent {
                 const matchResult = await this.personRepo.findBestMatch(
                   familyId,
                   personName,
-                  []
+                  [],
                 );
                 if (matchResult) {
                   personIds.push(matchResult.person.id);
@@ -432,7 +432,7 @@ export class RegistrarAgent {
               await this.imageRepo.addConnectedPeople(
                 familyId,
                 imageRef.imageId,
-                personIds
+                personIds,
               );
               this.logger.debug(
                 {
@@ -441,7 +441,7 @@ export class RegistrarAgent {
                   personIds,
                   peopleIdentified: imageRef.peopleIdentified,
                 },
-                'Added people to image'
+                'Added people to image',
               );
             }
           }
@@ -456,7 +456,7 @@ export class RegistrarAgent {
               familyId,
               imageRef.imageId,
               imageRef.contextProvided,
-              sourceEventId
+              sourceEventId,
             );
             this.logger.debug(
               {
@@ -464,7 +464,7 @@ export class RegistrarAgent {
                 imageId: imageRef.imageId,
                 context: imageRef.contextProvided.slice(0, 100),
               },
-              'Added context to image'
+              'Added context to image',
             );
           }
 
@@ -476,7 +476,7 @@ export class RegistrarAgent {
               referenceType: imageRef.referenceType,
               error,
             },
-            'Failed to process image reference'
+            'Failed to process image reference',
           );
         }
       }
@@ -494,12 +494,12 @@ export class RegistrarAgent {
 
       this.logger.info(
         { familyId, sourceEventId, ...result },
-        'Registrar persist complete'
+        'Registrar persist complete',
       );
     } catch (error) {
       this.logger.error(
         { familyId, sourceEventId, error },
-        'Registrar persist failed'
+        'Registrar persist failed',
       );
 
       // Log the error

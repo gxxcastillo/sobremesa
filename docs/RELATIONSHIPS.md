@@ -183,7 +183,7 @@ const rel = await relationshipRepo.findBetween(familyId, personAId, personBId);
 // Get relationships by category
 const biologicalRels = await relationshipRepo.findByCategory(
   familyId,
-  'biological'
+  'biological',
 );
 
 // Get structural relationships (for family tree)
@@ -205,7 +205,7 @@ const spouses = await relationshipRepo.findSpouses(familyId, personId);
 // Get relationships from a person's perspective
 const perspective = await relationshipRepo.findByPersonWithPerspective(
   familyId,
-  personId
+  personId,
 );
 
 // Returns: {
@@ -234,14 +234,14 @@ interface FamilyTreeService {
   findRelationshipPath(
     familyId: string,
     personAId: string,
-    personBId: string
+    personBId: string,
   ): Promise<RelationshipPath>;
 
   // Human-readable
   describeRelationship(
     familyId: string,
     personAId: string,
-    personBId: string
+    personBId: string,
   ): Promise<string>; // e.g., "first cousin twice removed"
 }
 ```
@@ -297,7 +297,7 @@ Normalization prevents duplicate/contradictory relationships:
   // With normalization, always stored as:
   personA,
   personB,
-  'parent'
+  'parent',
 ); // Only one canonical form
 ```
 
@@ -314,7 +314,7 @@ export function normalizeRelationship(
   personAId: string,
   personBId: string,
   relationshipType: string,
-  category?: RelationshipCategory
+  category?: RelationshipCategory,
 ): NormalizedRelationship;
 ```
 
@@ -334,7 +334,7 @@ export function getRelationshipPerspective(
   personAId: string,
   personBId: string,
   relationshipType: string,
-  fromPersonId: string
+  fromPersonId: string,
 ): { toPersonId: string; relationshipType: string };
 ```
 

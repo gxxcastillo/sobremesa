@@ -35,7 +35,7 @@ function getDisplayName(user: {
  * Transform a Telegram text message to generic input.
  */
 function transformTextMessage(
-  msg: Message.TextMessage & { from: User }
+  msg: Message.TextMessage & { from: User },
 ): TextMessageInput {
   return {
     type: 'text',
@@ -65,7 +65,7 @@ function transformTextMessage(
  * Transform a Telegram photo message to generic input.
  */
 function transformPhotoMessage(
-  msg: Message.PhotoMessage & { from: User }
+  msg: Message.PhotoMessage & { from: User },
 ): PhotoMessageInput {
   const photo = msg.photo[msg.photo.length - 1]; // Get largest photo
   return {
@@ -99,7 +99,7 @@ function transformPhotoMessage(
  * Transform a Telegram document message to generic input.
  */
 function transformDocumentMessage(
-  msg: Message.DocumentMessage & { from: User }
+  msg: Message.DocumentMessage & { from: User },
 ): DocumentMessageInput {
   const doc = msg.document;
   return {
@@ -178,7 +178,7 @@ export class ChatbotHandler implements BotHandler {
       } catch (error) {
         this.logger.error(
           { error, messageId: ctx.message.message_id },
-          'Failed to ingest text message'
+          'Failed to ingest text message',
         );
       }
     });
@@ -190,7 +190,7 @@ export class ChatbotHandler implements BotHandler {
       } catch (error) {
         this.logger.error(
           { error, messageId: ctx.message.message_id },
-          'Failed to ingest photo message'
+          'Failed to ingest photo message',
         );
       }
     });
@@ -202,7 +202,7 @@ export class ChatbotHandler implements BotHandler {
       } catch (error) {
         this.logger.error(
           { error, messageId: ctx.message.message_id },
-          'Failed to ingest document message'
+          'Failed to ingest document message',
         );
       }
     });
@@ -230,7 +230,7 @@ export class ChatbotHandler implements BotHandler {
     // Private chat - show help
     if (chatType === 'private') {
       await ctx.reply(
-        'Welcome to Sobremesa! Add me to your family group chat and use /sobremesa to set up your family archive.'
+        'Welcome to Sobremesa! Add me to your family group chat and use /sobremesa to set up your family archive.',
       );
       return;
     }
@@ -251,7 +251,7 @@ export class ChatbotHandler implements BotHandler {
         await this.ingester.ingestTextMessage(existingFamily.id, input);
         this.logger.info(
           { chatId, familyId: existingFamily.id },
-          '/sobremesa in registered chat - enqueued for processing'
+          '/sobremesa in registered chat - enqueued for processing',
         );
       }
       return;
@@ -262,11 +262,11 @@ export class ChatbotHandler implements BotHandler {
     if (!isAllowed) {
       this.logger.warn(
         { chatId },
-        'Registration attempted from non-whitelisted chat'
+        'Registration attempted from non-whitelisted chat',
       );
       await ctx.reply(
         'This chat is not authorized to use Sobremesa. ' +
-          'Please contact the administrator to whitelist this chat.'
+          'Please contact the administrator to whitelist this chat.',
       );
       return;
     }
@@ -289,7 +289,7 @@ export class ChatbotHandler implements BotHandler {
 
       this.logger.info(
         { familyId: family.id, familyName: family.name, chatId },
-        'Family registered'
+        'Family registered',
       );
 
       await ctx.reply(
@@ -299,12 +299,12 @@ export class ChatbotHandler implements BotHandler {
           `• Message @BotFather\n` +
           `• Send /mybots\n` +
           `• Select this bot\n` +
-          `• Bot Settings → Group Privacy → Turn off`
+          `• Bot Settings → Group Privacy → Turn off`,
       );
     } catch (error) {
       this.logger.error({ error, chatId }, 'Failed to register family');
       await ctx.reply(
-        'Sorry, something went wrong while setting up your family archive. Please try again.'
+        'Sorry, something went wrong while setting up your family archive. Please try again.',
       );
     }
   }
@@ -326,7 +326,7 @@ export class ChatbotHandler implements BotHandler {
     if (!familyId) {
       this.logger.debug(
         { chatId, messageId: msg.message_id },
-        'Chat not registered, ignoring message'
+        'Chat not registered, ignoring message',
       );
       return;
     }
@@ -337,7 +337,7 @@ export class ChatbotHandler implements BotHandler {
     if (eventId) {
       this.logger.info(
         { eventId, messageId: msg.message_id, familyId },
-        'Text message ingested and queued'
+        'Text message ingested and queued',
       );
     }
   }
@@ -354,7 +354,7 @@ export class ChatbotHandler implements BotHandler {
     if (!familyId) {
       this.logger.debug(
         { chatId, messageId: msg.message_id },
-        'Chat not registered, ignoring photo'
+        'Chat not registered, ignoring photo',
       );
       return;
     }
@@ -365,7 +365,7 @@ export class ChatbotHandler implements BotHandler {
     if (eventId) {
       this.logger.info(
         { eventId, messageId: msg.message_id, familyId },
-        'Photo message ingested and queued'
+        'Photo message ingested and queued',
       );
     }
   }
@@ -374,7 +374,7 @@ export class ChatbotHandler implements BotHandler {
    * Handle a document message - enqueue for processing.
    */
   private async handleDocumentMessage(
-    ctx: DocumentMessageContext
+    ctx: DocumentMessageContext,
   ): Promise<void> {
     const msg = ctx.message;
     const chatId = String(msg.chat.id);
@@ -384,7 +384,7 @@ export class ChatbotHandler implements BotHandler {
     if (!familyId) {
       this.logger.debug(
         { chatId, messageId: msg.message_id },
-        'Chat not registered, ignoring document'
+        'Chat not registered, ignoring document',
       );
       return;
     }
@@ -395,7 +395,7 @@ export class ChatbotHandler implements BotHandler {
     if (eventId) {
       this.logger.info(
         { eventId, messageId: msg.message_id, familyId },
-        'Document message ingested and queued'
+        'Document message ingested and queued',
       );
     }
   }
@@ -404,7 +404,7 @@ export class ChatbotHandler implements BotHandler {
    * Handle chat member events - enqueue for processing.
    */
   private async handleChatMemberEvent(
-    ctx: Context<Update.ChatMemberUpdate>
+    ctx: Context<Update.ChatMemberUpdate>,
   ): Promise<void> {
     const chatId = String(ctx.chat?.id);
 
@@ -413,7 +413,7 @@ export class ChatbotHandler implements BotHandler {
     if (!familyId) {
       this.logger.debug(
         { chatId },
-        'Chat not registered, ignoring chat_member event'
+        'Chat not registered, ignoring chat_member event',
       );
       return;
     }
@@ -429,7 +429,7 @@ export class ChatbotHandler implements BotHandler {
         username: newMember.user.username,
         status: newMember.status,
       },
-      'Chat member event received'
+      'Chat member event received',
     );
   }
 }

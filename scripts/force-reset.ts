@@ -25,7 +25,7 @@ async function main() {
 
   console.log('Force reset', data?.length || 0, 'items');
   data?.forEach((d) =>
-    console.log(`  - ${d.conversation_event_id.slice(0, 8)}... now queued`)
+    console.log(`  - ${d.conversation_event_id.slice(0, 8)}... now queued`),
   );
 }
 

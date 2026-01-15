@@ -62,7 +62,6 @@ To extend this system, you can:
 2. **Implement book generation**: Fill in the `generateBook` method to generate PDFs or other formats
 
 3. **Add more API endpoints**: Create routes for:
-
    - Filtering data by date ranges
    - Searching people/places
    - Custom narrative templates per audience

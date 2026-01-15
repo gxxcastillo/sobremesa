@@ -11,7 +11,7 @@ async function main() {
   console.log('=== Environment Check ===\n');
   console.log(
     'TELEGRAM_BOT_TOKEN_FACILITATOR:',
-    process.env['TELEGRAM_BOT_TOKEN_FACILITATOR'] ? 'SET' : 'NOT SET'
+    process.env['TELEGRAM_BOT_TOKEN_FACILITATOR'] ? 'SET' : 'NOT SET',
   );
   console.log('');
 
@@ -61,7 +61,7 @@ async function main() {
       console.log('Minutes ago:', minutesAgo.toFixed(1));
       console.log(
         'Rate limit (5 min) would block:',
-        minutesAgo < 5 ? 'YES' : 'NO'
+        minutesAgo < 5 ? 'YES' : 'NO',
       );
     }
   }

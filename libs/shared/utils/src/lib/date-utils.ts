@@ -15,7 +15,7 @@ export function now(): Date {
 export function isWithinWindow(
   date: Date,
   windowMs: number,
-  fromDate: Date = new Date()
+  fromDate: Date = new Date(),
 ): boolean {
   const diff = fromDate.getTime() - date.getTime();
   return diff >= 0 && diff <= windowMs;
@@ -62,7 +62,7 @@ export function diffInMinutes(date1: Date, date2: Date): number {
 export function hasElapsed(
   since: Date,
   durationMs: number,
-  fromDate: Date = new Date()
+  fromDate: Date = new Date(),
 ): boolean {
   return fromDate.getTime() - since.getTime() >= durationMs;
 }

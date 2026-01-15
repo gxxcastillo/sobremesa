@@ -19,7 +19,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
    */
   async findUnprocessed(
     familyId: string,
-    limit = 100
+    limit = 100,
   ): Promise<ConversationEvent[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -43,7 +43,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   async findRecent(
     familyId: string,
     conversationId: string,
-    limit = 20
+    limit = 20,
   ): Promise<ConversationEvent[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -67,7 +67,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   async markProcessed(
     familyId: string,
     id: string,
-    error?: string
+    error?: string,
   ): Promise<void> {
     const updates: Record<string, unknown> = {
       processed: true,
@@ -96,7 +96,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
     familyId: string,
     source: string,
     conversationId: string,
-    externalEventId: string
+    externalEventId: string,
   ): Promise<ConversationEvent | null> {
     const { data, error } = await this.client
       .from(this.tableName)

@@ -57,7 +57,7 @@ export const logger = createLogger({ name: 'sobremesa' });
  */
 export function childLogger(
   parent: pino.Logger,
-  context: Record<string, unknown>
+  context: Record<string, unknown>,
 ): pino.Logger {
   return parent.child(context);
 }

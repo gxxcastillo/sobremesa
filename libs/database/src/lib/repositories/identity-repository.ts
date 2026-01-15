@@ -20,7 +20,7 @@ export class IdentityRepository extends BaseRepository<Identity> {
   async findByProviderUserId(
     familyId: string,
     source: ChatProvider,
-    providerUserId: string
+    providerUserId: string,
   ): Promise<Identity | null> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -35,7 +35,7 @@ export class IdentityRepository extends BaseRepository<Identity> {
         return null;
       }
       throw new Error(
-        `Failed to find identity by provider user ID: ${error.message}`
+        `Failed to find identity by provider user ID: ${error.message}`,
       );
     }
 
@@ -50,13 +50,13 @@ export class IdentityRepository extends BaseRepository<Identity> {
     source: ChatProvider,
     providerUserId: string,
     displayName?: string,
-    username?: string
+    username?: string,
   ): Promise<Identity> {
     // Try to find existing identity
     const existing = await this.findByProviderUserId(
       familyId,
       source,
-      providerUserId
+      providerUserId,
     );
 
     if (existing) {
@@ -94,7 +94,7 @@ export class IdentityRepository extends BaseRepository<Identity> {
   async linkToPerson(
     familyId: string,
     identityId: string,
-    personId: string
+    personId: string,
   ): Promise<Identity> {
     return await this.update(familyId, identityId, {
       personId,
@@ -106,7 +106,7 @@ export class IdentityRepository extends BaseRepository<Identity> {
    */
   async unlinkFromPerson(
     familyId: string,
-    identityId: string
+    identityId: string,
   ): Promise<Identity> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -118,7 +118,7 @@ export class IdentityRepository extends BaseRepository<Identity> {
 
     if (error) {
       throw new Error(
-        `Failed to unlink identity from person: ${error.message}`
+        `Failed to unlink identity from person: ${error.message}`,
       );
     }
 
@@ -130,7 +130,7 @@ export class IdentityRepository extends BaseRepository<Identity> {
    */
   async findByPersonId(
     familyId: string,
-    personId: string
+    personId: string,
   ): Promise<Identity[]> {
     const { data, error } = await this.client
       .from(this.tableName)

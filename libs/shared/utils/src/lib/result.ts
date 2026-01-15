@@ -25,7 +25,7 @@ export function err<E>(error: E): Result<never, E> {
  * Check if a result is successful.
  */
 export function isOk<T, E>(
-  result: Result<T, E>
+  result: Result<T, E>,
 ): result is { ok: true; value: T } {
   return result.ok;
 }
@@ -34,7 +34,7 @@ export function isOk<T, E>(
  * Check if a result is an error.
  */
 export function isErr<T, E>(
-  result: Result<T, E>
+  result: Result<T, E>,
 ): result is { ok: false; error: E } {
   return !result.ok;
 }
@@ -61,7 +61,7 @@ export function unwrapOr<T, E>(result: Result<T, E>, defaultValue: T): T {
  */
 export function mapResult<T, U, E>(
   result: Result<T, E>,
-  fn: (value: T) => U
+  fn: (value: T) => U,
 ): Result<U, E> {
   if (result.ok) {
     return ok(fn(result.value));
@@ -84,7 +84,7 @@ export function tryCatch<T>(fn: () => T): Result<T, Error> {
  * Wrap an async function that might throw in a Result.
  */
 export async function tryCatchAsync<T>(
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
 ): Promise<Result<T, Error>> {
   try {
     return ok(await fn());

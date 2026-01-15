@@ -52,7 +52,7 @@ export class PersonRepository extends BaseRepository<Person> {
   async findByFuzzyMatch(
     familyId: string,
     name: string,
-    aliases: string[] = []
+    aliases: string[] = [],
   ): Promise<Person | null> {
     const result = await this.findBestMatch(familyId, name, aliases);
     return result?.person ?? null;
@@ -69,7 +69,7 @@ export class PersonRepository extends BaseRepository<Person> {
   async findBestMatch(
     familyId: string,
     name: string,
-    aliases: string[] = []
+    aliases: string[] = [],
   ): Promise<PersonMatchResult | null> {
     // Get all non-redacted, non-placeholder people for this family
     const { data, error } = await this.client
@@ -81,7 +81,7 @@ export class PersonRepository extends BaseRepository<Person> {
 
     if (error) {
       throw new Error(
-        `Failed to search people for fuzzy match: ${error.message}`
+        `Failed to search people for fuzzy match: ${error.message}`,
       );
     }
 
@@ -99,7 +99,7 @@ export class PersonRepository extends BaseRepository<Person> {
     for (const person of people) {
       const personNameLower = person.name.toLowerCase().trim();
       const personAliasesLower = (person.aliases || []).map((a) =>
-        a.toLowerCase().trim()
+        a.toLowerCase().trim(),
       );
       const allPersonTerms = [personNameLower, ...personAliasesLower];
 
@@ -152,7 +152,7 @@ export class PersonRepository extends BaseRepository<Person> {
     for (const person of people) {
       const personNameLower = person.name.toLowerCase().trim();
       const personAliasesLower = (person.aliases || []).map((a) =>
-        a.toLowerCase().trim()
+        a.toLowerCase().trim(),
       );
       const allPersonTerms = [personNameLower, ...personAliasesLower];
 
@@ -188,22 +188,22 @@ export class PersonRepository extends BaseRepository<Person> {
     familyId: string,
     extracted: ExtractedPerson,
     sourceEventId: string,
-    createdBy?: string
+    createdBy?: string,
   ): Promise<Person> {
     // Try to find existing person
     const existing = await this.findByFuzzyMatch(
       familyId,
       extracted.name,
-      extracted.aliases
+      extracted.aliases,
     );
 
     if (existing) {
       // Merge aliases
       const existingAliases = new Set(
-        (existing.aliases || []).map((a) => a.toLowerCase().trim())
+        (existing.aliases || []).map((a) => a.toLowerCase().trim()),
       );
       const newAliases = extracted.aliases.filter(
-        (a) => !existingAliases.has(a.toLowerCase().trim())
+        (a) => !existingAliases.has(a.toLowerCase().trim()),
       );
 
       if (newAliases.length > 0) {
@@ -239,7 +239,7 @@ export class PersonRepository extends BaseRepository<Person> {
   async updateAliases(
     familyId: string,
     id: string,
-    aliases: string[]
+    aliases: string[],
   ): Promise<Person> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -289,7 +289,7 @@ export class PersonRepository extends BaseRepository<Person> {
     description: string,
     relatedToPersonIds: string[],
     sourceEventId?: string,
-    createdBy?: string
+    createdBy?: string,
   ): Promise<Person> {
     const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,
@@ -313,7 +313,7 @@ export class PersonRepository extends BaseRepository<Person> {
    */
   async findPlaceholderByDescription(
     familyId: string,
-    description: string
+    description: string,
   ): Promise<Person | null> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -342,11 +342,11 @@ export class PersonRepository extends BaseRepository<Person> {
     description: string,
     relatedToPersonIds: string[],
     sourceEventId?: string,
-    createdBy?: string
+    createdBy?: string,
   ): Promise<Person> {
     const existing = await this.findPlaceholderByDescription(
       familyId,
-      description
+      description,
     );
 
     if (existing) {
@@ -358,7 +358,7 @@ export class PersonRepository extends BaseRepository<Person> {
       description,
       relatedToPersonIds,
       sourceEventId,
-      createdBy
+      createdBy,
     );
   }
 
@@ -369,7 +369,7 @@ export class PersonRepository extends BaseRepository<Person> {
   async mergePlaceholderIntoPerson(
     familyId: string,
     placeholderId: string,
-    realPersonId: string
+    realPersonId: string,
   ): Promise<void> {
     // This will be called by RelationshipRepository or a higher-level service
     // to update relationships when we discover who a placeholder actually is
@@ -416,7 +416,7 @@ export class PersonRepository extends BaseRepository<Person> {
           matrix[i][j] = Math.min(
             matrix[i - 1][j - 1] + 1, // substitution
             matrix[i][j - 1] + 1, // insertion
-            matrix[i - 1][j] + 1 // deletion
+            matrix[i - 1][j] + 1, // deletion
           );
         }
       }

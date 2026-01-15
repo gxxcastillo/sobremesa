@@ -178,7 +178,7 @@ const person = await personRepo.findOrCreate(
     confidence: Confidence.MEDIUM,
   },
   sourceEventId,
-  createdBy
+  createdBy,
 );
 ```
 
@@ -278,7 +278,7 @@ const placeholder = await personRepo.createPlaceholder(
   'parent of Maria', // description
   [mariaPersonId], // related people
   sourceEventId,
-  createdBy
+  createdBy,
 );
 
 // Returns Person with:
@@ -295,7 +295,7 @@ const placeholder = await personRepo.findOrCreatePlaceholder(
   familyId,
   'parent of Maria',
   [mariaPersonId],
-  sourceEventId
+  sourceEventId,
 );
 
 // Returns existing if found, creates if not
@@ -307,7 +307,7 @@ const placeholder = await personRepo.findOrCreatePlaceholder(
 // Check if we already have this placeholder
 const existing = await personRepo.findPlaceholderByDescription(
   familyId,
-  'parent of Maria'
+  'parent of Maria',
 );
 ```
 
@@ -330,7 +330,7 @@ const realPerson = await personRepo.insert({
 await personRepo.mergePlaceholderIntoPerson(
   familyId,
   placeholderId,
-  realPerson.id
+  realPerson.id,
 );
 
 // Result:

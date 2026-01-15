@@ -31,7 +31,7 @@ How Sobremesa handles failures gracefully.
 class ClaudeClient {
   async callClaude(
     prompt: string,
-    options: ClaudeOptions
+    options: ClaudeOptions,
   ): Promise<ClaudeResponse> {
     const maxRetries = 3;
     const baseDelay = 1000; // 1 second
@@ -59,7 +59,7 @@ class ClaudeClient {
 
           throw new ClaudeAPIError(
             `Claude API failed after ${attempt} attempts`,
-            error
+            error,
           );
         }
 
@@ -189,7 +189,7 @@ class Registrar {
 
           throw new DatabaseError(
             `Database write failed after ${attempt} attempts`,
-            error
+            error,
           );
         }
 
@@ -296,7 +296,7 @@ class MessageQueue {
   async processWithTimeout(
     message: Message,
     familyId: string,
-    timeout: number
+    timeout: number,
   ): Promise<void> {
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('Processing timeout')), timeout);
@@ -349,7 +349,7 @@ async function translateContent(
   content: string,
   from: string,
   to: string,
-  familyId: string
+  familyId: string,
 ): Promise<string | null> {
   try {
     const translated = await translationClient.translate(content, from, to);
@@ -408,7 +408,7 @@ async function saveMessage(message: Message, domainModel: DomainModel) {
 ```typescript
 async function facilitatorDecision(
   question: Question,
-  familyId: string
+  familyId: string,
 ): Promise<boolean> {
   try {
     // Load rules with fallbacks
@@ -438,7 +438,7 @@ async function facilitatorDecision(
 }
 
 async function loadRulesWithFallback(
-  familyId: string
+  familyId: string,
 ): Promise<FacilitatorRules> {
   try {
     const rules = await db
@@ -508,7 +508,7 @@ async function logError(
   familyId: string,
   severity: ErrorSeverity,
   error: Error,
-  context: Record<string, any>
+  context: Record<string, any>,
 ) {
   await db.from('event_log').insert({
     family_id: familyId,
@@ -620,7 +620,7 @@ class CircuitBreaker {
 
   constructor(
     private threshold: number = 5,
-    private timeout: number = 60000 // 1 minute
+    private timeout: number = 60000, // 1 minute
   ) {}
 
   async execute<T>(fn: () => Promise<T>): Promise<T> {
@@ -671,7 +671,7 @@ const claudeCircuitBreaker = new CircuitBreaker(5, 60000);
 
 async function callClaudeWithCircuitBreaker(prompt: string) {
   return claudeCircuitBreaker.execute(() =>
-    claudeClient.callClaude(prompt, options)
+    claudeClient.callClaude(prompt, options),
   );
 }
 ```

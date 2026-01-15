@@ -26,7 +26,7 @@ async function main() {
   const processor = new MessageProcessor();
   processor.setScribe((eventId, familyId) => scribe.process(eventId, familyId));
   processor.setRegistrar((model, familyId) =>
-    registrar.persist(model, familyId)
+    registrar.persist(model, familyId),
   );
 
   // Dequeue one item
@@ -50,7 +50,7 @@ async function main() {
   try {
     const result = await processor.process(
       item.conversationEventId,
-      item.familyId
+      item.familyId,
     );
     console.log('Result:', result);
 
@@ -62,7 +62,7 @@ async function main() {
         item.familyId,
         item.id,
         result.error || 'Unknown error',
-        3
+        3,
       );
       console.log('\nMessage processing failed:', result.error);
     }
@@ -89,7 +89,7 @@ async function main() {
     console.log(
       `  - [${q.priority}] "${q.content_original?.slice(0, 60)}..." (${
         q.status
-      })`
+      })`,
     );
   });
 }

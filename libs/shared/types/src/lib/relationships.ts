@@ -61,7 +61,7 @@ export function normalizeRelationship(
   personAId: string,
   personBId: string,
   relationshipType: string,
-  category?: RelationshipCategory
+  category?: RelationshipCategory,
 ): NormalizedRelationship {
   const type = relationshipType.toLowerCase();
   const resolvedCategory = category || DEFAULT_CATEGORIES[type] || 'biological';
@@ -154,7 +154,7 @@ export function getRelationshipPerspective(
   personAId: string,
   personBId: string,
   relationshipType: string,
-  fromPersonId: string
+  fromPersonId: string,
 ): { toPersonId: string; relationshipType: string } {
   if (fromPersonId === personAId) {
     return {

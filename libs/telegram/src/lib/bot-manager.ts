@@ -32,7 +32,7 @@ export class BotManager {
           duration,
           from: ctx.from?.username || ctx.from?.id,
         },
-        'Update processed'
+        'Update processed',
       );
     });
 
@@ -44,7 +44,7 @@ export class BotManager {
     this.bot.catch((err, ctx) => {
       this.logger.error(
         { error: err, updateType: ctx.updateType },
-        'Bot error'
+        'Bot error',
       );
     });
 
@@ -85,7 +85,7 @@ export class BotManager {
           reply_parameters: message.replyToMessageId
             ? { message_id: message.replyToMessageId }
             : undefined,
-        }
+        },
       );
 
       this.logger.info(
@@ -94,14 +94,14 @@ export class BotManager {
           textLength: message.text.length,
           messageId: result.message_id,
         },
-        'Message sent'
+        'Message sent',
       );
 
       return result.message_id;
     } catch (error) {
       this.logger.error(
         { chatId: message.chatId, error },
-        'Failed to send message'
+        'Failed to send message',
       );
       throw error;
     }

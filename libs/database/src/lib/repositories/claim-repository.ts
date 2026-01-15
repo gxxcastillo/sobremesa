@@ -38,7 +38,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
    */
   async findActiveBySubject(
     familyId: string,
-    subject: string
+    subject: string,
   ): Promise<Claim[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -51,7 +51,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
 
     if (error) {
       throw new Error(
-        `Failed to find active claims by subject: ${error.message}`
+        `Failed to find active claims by subject: ${error.message}`,
       );
     }
 
@@ -64,7 +64,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
   async findByEntity(
     familyId: string,
     entityType: string,
-    entityId: string
+    entityId: string,
   ): Promise<Claim[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -95,7 +95,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
 
     if (conflictError) {
       throw new Error(
-        `Failed to find claim conflicts: ${conflictError.message}`
+        `Failed to find claim conflicts: ${conflictError.message}`,
       );
     }
 
@@ -127,7 +127,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
     sourceEventId: string,
     claimedBy: string,
     entityId?: string,
-    entityType?: 'person' | 'place' | 'event' | 'story'
+    entityType?: 'person' | 'place' | 'event' | 'story',
   ): Promise<Claim> {
     const record: Omit<Claim, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,
@@ -156,7 +156,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
   async addConflict(
     familyId: string,
     claimId: string,
-    conflictsWithClaimId: string
+    conflictsWithClaimId: string,
   ): Promise<void> {
     // Insert both directions
     const { error } = await this.client.from('claim_conflicts').insert([
@@ -242,7 +242,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
    */
   detectConflict(
     existingValue: Record<string, unknown>,
-    newValue: Record<string, unknown>
+    newValue: Record<string, unknown>,
   ): boolean {
     // Compare key fields for contradiction
     for (const key of Object.keys(newValue)) {

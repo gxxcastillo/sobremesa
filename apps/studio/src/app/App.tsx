@@ -55,7 +55,7 @@ export default function App() {
     try {
       await client.authorizeChat(
         chatId().trim(),
-        chatNote().trim() || undefined
+        chatNote().trim() || undefined,
       );
       setAdminSuccess(`Chat ID "${chatId()}" authorized successfully`);
       setChatId('');
@@ -63,7 +63,7 @@ export default function App() {
       await loadAllowedChats();
     } catch (err) {
       setAdminError(
-        err instanceof Error ? err.message : 'Failed to authorize chat'
+        err instanceof Error ? err.message : 'Failed to authorize chat',
       );
       console.error(err);
     } finally {
@@ -77,7 +77,7 @@ export default function App() {
       await loadAllowedChats();
     } catch (err) {
       setAdminError(
-        err instanceof Error ? err.message : 'Failed to remove chat'
+        err instanceof Error ? err.message : 'Failed to remove chat',
       );
       console.error(err);
     }
@@ -287,8 +287,8 @@ export default function App() {
                           {s.completeness === 'complete'
                             ? '✓'
                             : s.completeness === 'partial'
-                            ? '◐'
-                            : '○'}
+                              ? '◐'
+                              : '○'}
                         </span>
                         <strong>{s.title || 'Untitled'}</strong>
                         {s.themes?.length && (

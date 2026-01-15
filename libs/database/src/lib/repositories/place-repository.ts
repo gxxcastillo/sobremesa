@@ -41,7 +41,7 @@ export class PlaceRepository extends BaseRepository<Place> {
    */
   async findByLocation(
     familyId: string,
-    location: { city?: string; region?: string; country?: string }
+    location: { city?: string; region?: string; country?: string },
   ): Promise<Place | null> {
     let query = this.client
       .from(this.tableName)
@@ -77,7 +77,7 @@ export class PlaceRepository extends BaseRepository<Place> {
   async findOrCreate(
     familyId: string,
     extracted: ExtractedPlace,
-    sourceEventId: string
+    sourceEventId: string,
   ): Promise<Place> {
     // Try to find by exact name first
     const existing = await this.findByName(familyId, extracted.name);

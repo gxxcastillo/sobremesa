@@ -79,7 +79,7 @@ export class StoryRepository extends BaseRepository<Story> {
    */
   async findBySourceEvent(
     familyId: string,
-    sourceEventId: string
+    sourceEventId: string,
   ): Promise<Story | null> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -115,7 +115,7 @@ export class StoryRepository extends BaseRepository<Story> {
     eventIds: string[],
     sourceEventId: string,
     language: LanguageCode,
-    sharedBy?: string
+    sharedBy?: string,
   ): Promise<Story> {
     const record: Omit<Story, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,
@@ -144,7 +144,7 @@ export class StoryRepository extends BaseRepository<Story> {
     familyId: string,
     storyId: string,
     additionalContent: string,
-    sourceEventId: string
+    sourceEventId: string,
   ): Promise<Story> {
     // First fetch the existing story
     const existing = await this.findById(familyId, storyId);

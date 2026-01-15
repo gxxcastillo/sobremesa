@@ -80,7 +80,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       async (_familyId, person) => ({
         id: `person-${person.name.toLowerCase().replace(/\s+/g, '-')}`,
         ...person,
-      })
+      }),
     );
 
     mockPlaceRepo.findOrCreate.mockImplementation(async (_familyId, place) => ({
@@ -94,7 +94,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       async (_familyId, claim) => ({
         id: `claim-${Date.now()}`,
         ...claim,
-      })
+      }),
     );
 
     mockEventLog.log.mockResolvedValue(undefined);
@@ -117,7 +117,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
   });
 
   const createBaseDomainModel = (
-    imageReferences: ImageReference[] = []
+    imageReferences: ImageReference[] = [],
   ): ScribeDomainModel => ({
     sourceEventId: 'event-123',
     familyId: 'family-abc',
@@ -156,7 +156,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       expect(mockImageRepo.addConnectedPeople).toHaveBeenCalledWith(
         'family-abc',
         'img-123',
-        expect.arrayContaining(['person-maria', 'person-roberto'])
+        expect.arrayContaining(['person-maria', 'person-roberto']),
       );
     });
 
@@ -181,12 +181,12 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       expect(mockPersonRepo.findBestMatch).toHaveBeenCalledWith(
         'family-abc',
         'Maria',
-        []
+        [],
       );
       expect(mockImageRepo.addConnectedPeople).toHaveBeenCalledWith(
         'family-abc',
         'img-123',
-        ['existing-maria-id']
+        ['existing-maria-id'],
       );
     });
 
@@ -255,7 +255,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         'family-abc',
         'img-456',
         'This was taken at the wedding in Buenos Aires, 1962',
-        'event-123'
+        'event-123',
       );
     });
 
@@ -307,7 +307,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         'family-abc',
         'img-789',
         'A family gathering with about 20 people at a long table',
-        'event-123'
+        'event-123',
       );
     });
   });
@@ -333,7 +333,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
   describe('error handling', () => {
     it('should continue processing other references if one fails', async () => {
       mockImageRepo.addConnectedPeople.mockRejectedValueOnce(
-        new Error('Image not found')
+        new Error('Image not found'),
       );
 
       // Mock for the second call to succeed
@@ -369,7 +369,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         'family-abc',
         'img-good',
         'Some context',
-        'event-123'
+        'event-123',
       );
       // Warning should be logged
       expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -377,7 +377,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           imageId: 'img-bad',
           referenceType: 'identifies_people',
         }),
-        'Failed to process image reference'
+        'Failed to process image reference',
       );
     });
   });
@@ -408,13 +408,13 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       expect(mockImageRepo.addConnectedPeople).toHaveBeenCalledWith(
         'family-abc',
         'img-123',
-        ['person-grandma-maria']
+        ['person-grandma-maria'],
       );
       expect(mockImageRepo.addContext).toHaveBeenCalledWith(
         'family-abc',
         'img-123',
         'Wedding photo from 1962',
-        'event-123'
+        'event-123',
       );
     });
 
@@ -472,7 +472,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           eventData: expect.objectContaining({
             imageReferencesProcessed: 3,
           }),
-        })
+        }),
       );
     });
   });

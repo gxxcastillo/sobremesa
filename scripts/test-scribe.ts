@@ -67,7 +67,7 @@ async function main() {
   const domainModel = parseScribeResponse(
     textContent.text,
     'test-event-id',
-    'test-family-id'
+    'test-family-id',
   );
 
   console.log('=== Parsed Domain Model ===\n');
@@ -85,13 +85,13 @@ async function main() {
       console.log(
         `  Priority: ${q.priority}, Target: ${
           q.targetPerson || q.targetEvent || q.targetPlace || 'none'
-        }`
+        }`,
       );
     }
   } else {
     console.log('*** NO QUESTIONS GENERATED ***');
     console.log(
-      'This might indicate Claude is not outputting questions in its response.'
+      'This might indicate Claude is not outputting questions in its response.',
     );
   }
 }

@@ -49,7 +49,7 @@ export class RelationshipRepository {
    */
   async findByPerson(
     familyId: string,
-    personId: string
+    personId: string,
   ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -60,7 +60,7 @@ export class RelationshipRepository {
 
     if (error) {
       throw new Error(
-        `Failed to find relationships by person: ${error.message}`
+        `Failed to find relationships by person: ${error.message}`,
       );
     }
 
@@ -73,14 +73,14 @@ export class RelationshipRepository {
   async findBetween(
     familyId: string,
     personAId: string,
-    personBId: string
+    personBId: string,
   ): Promise<Relationship | null> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
       .eq('family_id', familyId)
       .or(
-        `and(person_a_id.eq.${personAId},person_b_id.eq.${personBId}),and(person_a_id.eq.${personBId},person_b_id.eq.${personAId})`
+        `and(person_a_id.eq.${personAId},person_b_id.eq.${personBId}),and(person_a_id.eq.${personBId},person_b_id.eq.${personAId})`,
       )
       .single();
 
@@ -89,7 +89,7 @@ export class RelationshipRepository {
         return null;
       }
       throw new Error(
-        `Failed to find relationship between people: ${error.message}`
+        `Failed to find relationship between people: ${error.message}`,
       );
     }
 
@@ -112,21 +112,21 @@ export class RelationshipRepository {
       sourceEventId?: string;
       claimedBy?: string;
       confidence?: Confidence;
-    }
+    },
   ): Promise<Relationship> {
     // Normalize the relationship
     const normalized = normalizeRelationship(
       personAId,
       personBId,
       relationshipType,
-      options?.category
+      options?.category,
     );
 
     // Check if relationship already exists (using normalized IDs)
     const existing = await this.findBetween(
       familyId,
       normalized.personAId,
-      normalized.personBId
+      normalized.personBId,
     );
 
     if (existing) {
@@ -153,14 +153,14 @@ export class RelationshipRepository {
    * Automatically normalizes the relationship for consistent storage.
    */
   async insert(
-    record: Omit<Relationship, 'id' | 'createdAt'>
+    record: Omit<Relationship, 'id' | 'createdAt'>,
   ): Promise<Relationship> {
     // Normalize the relationship
     const normalized = normalizeRelationship(
       record.personAId,
       record.personBId,
       record.relationshipType,
-      record.category
+      record.category,
     );
 
     const dbRecord = this.mapToDb({
@@ -190,7 +190,7 @@ export class RelationshipRepository {
   async updateStatus(
     familyId: string,
     id: string,
-    status: RelationshipStatus
+    status: RelationshipStatus,
   ): Promise<Relationship> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -229,7 +229,7 @@ export class RelationshipRepository {
    */
   async findByType(
     familyId: string,
-    relationshipType: string
+    relationshipType: string,
   ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -250,7 +250,7 @@ export class RelationshipRepository {
    */
   async findByCategory(
     familyId: string,
-    category: RelationshipCategory
+    category: RelationshipCategory,
   ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -261,7 +261,7 @@ export class RelationshipRepository {
 
     if (error) {
       throw new Error(
-        `Failed to find relationships by category: ${error.message}`
+        `Failed to find relationships by category: ${error.message}`,
       );
     }
 
@@ -292,7 +292,7 @@ export class RelationshipRepository {
    */
   async findByPersonWithPerspective(
     familyId: string,
-    personId: string
+    personId: string,
   ): Promise<
     Array<{
       relationship: Relationship;
@@ -307,7 +307,7 @@ export class RelationshipRepository {
         rel.personAId,
         rel.personBId,
         rel.relationshipType,
-        personId
+        personId,
       );
 
       return {
@@ -323,7 +323,7 @@ export class RelationshipRepository {
    */
   async findParents(
     familyId: string,
-    personId: string
+    personId: string,
   ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -345,7 +345,7 @@ export class RelationshipRepository {
    */
   async findChildren(
     familyId: string,
-    personId: string
+    personId: string,
   ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -367,7 +367,7 @@ export class RelationshipRepository {
    */
   async findSpouses(
     familyId: string,
-    personId: string
+    personId: string,
   ): Promise<Relationship[]> {
     const { data, error } = await this.client
       .from(this.tableName)

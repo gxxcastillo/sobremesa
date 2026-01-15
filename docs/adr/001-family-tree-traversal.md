@@ -43,14 +43,14 @@ interface FamilyTreeService {
   findRelationshipPath(
     familyId: string,
     personAId: string,
-    personBId: string
+    personBId: string,
   ): Promise<RelationshipPath>;
 
   // Human-readable description
   describeRelationship(
     familyId: string,
     personAId: string,
-    personBId: string
+    personBId: string,
   ): Promise<string>;
 }
 ```

@@ -21,8 +21,8 @@ async function main() {
     console.log(
       `  ${item.id.slice(0, 8)}... event=${item.conversation_event_id.slice(
         0,
-        8
-      )} status=${item.status} attempts=${item.attempts}`
+        8,
+      )} status=${item.status} attempts=${item.attempts}`,
     );
     if (item.last_error) {
       console.log(`    last_error: ${item.last_error.slice(0, 60)}...`);

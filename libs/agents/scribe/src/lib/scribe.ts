@@ -85,7 +85,7 @@ export class ScribeAgent {
     if (!event.contentOriginal) {
       this.logger.debug(
         { eventId },
-        'Event has no content, returning empty model'
+        'Event has no content, returning empty model',
       );
       return this.createEmptyModel(eventId, familyId);
     }
@@ -114,7 +114,7 @@ export class ScribeAgent {
     const userMessage = buildUserMessage(
       event.contentOriginal,
       event.actorDisplayName || event.actorUsername || 'Unknown',
-      context
+      context,
     );
 
     // Call Claude API
@@ -134,7 +134,7 @@ export class ScribeAgent {
 
       // Extract text content from response
       const textContent = response.content.find(
-        (c: { type: string; text?: string }) => c.type === 'text'
+        (c: { type: string; text?: string }) => c.type === 'text',
       );
       if (!textContent || textContent.type !== 'text' || !textContent.text) {
         throw new Error('No text content in Claude response');
@@ -144,7 +144,7 @@ export class ScribeAgent {
       const domainModel = parseScribeResponse(
         textContent.text,
         eventId,
-        familyId
+        familyId,
       );
 
       this.logger.info(
@@ -156,7 +156,7 @@ export class ScribeAgent {
           claims: domainModel.claims.length,
           questions: domainModel.questions.length,
         },
-        'Scribe extraction complete'
+        'Scribe extraction complete',
       );
 
       return domainModel;
@@ -164,7 +164,7 @@ export class ScribeAgent {
       const duration = Date.now() - startTime;
       this.logger.error(
         { eventId, error, duration },
-        'Scribe processing failed'
+        'Scribe processing failed',
       );
       throw error;
     }
@@ -174,7 +174,7 @@ export class ScribeAgent {
    * Load family configuration for cultural terms and other settings.
    */
   private async loadFamilyConfig(
-    familyId: string
+    familyId: string,
   ): Promise<{ culturalTerms?: string[] } | null> {
     try {
       const family = await this.familyRepo.findById(familyId);
@@ -196,7 +196,7 @@ export class ScribeAgent {
    */
   private createEmptyModel(
     eventId: string,
-    familyId: string
+    familyId: string,
   ): ScribeDomainModel {
     return {
       sourceEventId: eventId,

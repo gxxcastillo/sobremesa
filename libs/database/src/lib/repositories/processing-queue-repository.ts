@@ -20,7 +20,7 @@ export class ProcessingQueueRepository {
    */
   async enqueue(
     familyId: string,
-    conversationEventId: string
+    conversationEventId: string,
   ): Promise<QueueItem> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -38,7 +38,7 @@ export class ProcessingQueueRepository {
       if (error.code === '23505') {
         const existing = await this.findByEventId(
           familyId,
-          conversationEventId
+          conversationEventId,
         );
         if (existing) return existing;
       }
@@ -53,7 +53,7 @@ export class ProcessingQueueRepository {
    */
   async findByEventId(
     familyId: string,
-    conversationEventId: string
+    conversationEventId: string,
   ): Promise<QueueItem | null> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -79,7 +79,7 @@ export class ProcessingQueueRepository {
   async dequeue(
     familyId: string,
     workerId: string,
-    lockTimeoutMs = 300000
+    lockTimeoutMs = 300000,
   ): Promise<QueueItem | null> {
     const lockExpiry = new Date(Date.now() - lockTimeoutMs).toISOString();
 
@@ -92,7 +92,7 @@ export class ProcessingQueueRepository {
         locked_by: workerId,
       })
       .or(
-        `status.eq.queued,and(status.eq.processing,locked_at.lt.${lockExpiry})`
+        `status.eq.queued,and(status.eq.processing,locked_at.lt.${lockExpiry})`,
       )
       .eq('family_id', familyId)
       .order('queued_at', { ascending: true })
@@ -116,7 +116,7 @@ export class ProcessingQueueRepository {
    */
   async dequeueAny(
     workerId: string,
-    lockTimeoutMs = 300000
+    lockTimeoutMs = 300000,
   ): Promise<QueueItem | null> {
     const lockExpiry = new Date(Date.now() - lockTimeoutMs).toISOString();
 
@@ -195,7 +195,7 @@ export class ProcessingQueueRepository {
     familyId: string,
     id: string,
     errorMessage: string,
-    maxRetries = 3
+    maxRetries = 3,
   ): Promise<void> {
     // First get current attempts
     const { data: current, error: fetchError } = await this.client
@@ -273,7 +273,7 @@ export class ProcessingQueueRepository {
    */
   async clearCompleted(familyId: string, olderThanDays = 7): Promise<number> {
     const threshold = new Date(
-      Date.now() - olderThanDays * 24 * 60 * 60 * 1000
+      Date.now() - olderThanDays * 24 * 60 * 60 * 1000,
     ).toISOString();
 
     const { data, error } = await this.client

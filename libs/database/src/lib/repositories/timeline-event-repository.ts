@@ -19,7 +19,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
    */
   async findByTitle(
     familyId: string,
-    title: string
+    title: string,
   ): Promise<TimelineEvent | null> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -45,7 +45,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
   async findByTimeRange(
     familyId: string,
     startYear: number,
-    endYear: number
+    endYear: number,
   ): Promise<TimelineEvent[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -68,7 +68,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
    */
   async findByPerson(
     familyId: string,
-    personId: string
+    personId: string,
   ): Promise<TimelineEvent[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -90,7 +90,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
    */
   async findByType(
     familyId: string,
-    eventType: string
+    eventType: string,
   ): Promise<TimelineEvent[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -116,7 +116,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
     peopleIds: string[],
     placeId: string | undefined,
     sourceEventId: string,
-    claimedBy?: string
+    claimedBy?: string,
   ): Promise<TimelineEvent> {
     const record: Omit<TimelineEvent, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,

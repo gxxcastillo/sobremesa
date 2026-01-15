@@ -92,7 +92,7 @@ await identityRepo.findOrCreate(
   'telegram',
   '123456789',
   'Gabriel Updated Name', // Changed
-  '@gabriel_new' // Changed
+  '@gabriel_new', // Changed
 );
 // → Updates existing identity with new names
 ```
@@ -127,7 +127,7 @@ const identity = await identityRepo.findOrCreate(
   'telegram',
   String(telegramUserId),
   firstNameAndLastName,
-  telegramUsername
+  telegramUsername,
 );
 
 // Returns existing identity if already created
@@ -164,7 +164,7 @@ async ingestTextMessage(ctx: TextMessageContext) {
 const identity = await identityRepo.findByProviderUserId(
   familyId,
   'telegram',
-  '123456789'
+  '123456789',
 );
 ```
 

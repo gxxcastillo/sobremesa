@@ -78,7 +78,7 @@ export class FamilyRepository {
    */
   async create(
     name: string,
-    config: Record<string, unknown> = {}
+    config: Record<string, unknown> = {},
   ): Promise<Family> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -98,7 +98,7 @@ export class FamilyRepository {
    */
   async updateConfig(
     id: string,
-    config: Record<string, unknown>
+    config: Record<string, unknown>,
   ): Promise<Family> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -158,7 +158,7 @@ export class FamilyRepository {
   async createWithChat(
     name: string,
     chatId: string,
-    config: Record<string, unknown> = {}
+    config: Record<string, unknown> = {},
   ): Promise<Family> {
     const { data, error } = await this.client
       .from(this.tableName)

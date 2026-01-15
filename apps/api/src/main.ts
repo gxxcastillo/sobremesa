@@ -30,7 +30,7 @@ const app = new Elysia()
         tags: ['Health'],
         description: 'Health check endpoint',
       },
-    }
+    },
   )
   /**
    * GET /api/family/summary
@@ -73,7 +73,7 @@ const app = new Elysia()
           relationship_type,
           person_a:person_a_id(name),
           person_b:person_b_id(name)
-        `
+        `,
           )
           .eq('family_id', family.id),
 
@@ -87,7 +87,7 @@ const app = new Elysia()
         client
           .from('events')
           .select(
-            'title, event_type, date_year, date_month, description_original'
+            'title, event_type, date_year, date_month, description_original',
           )
           .eq('family_id', family.id)
           .eq('redacted', false)
@@ -111,11 +111,11 @@ const app = new Elysia()
       const questionStats = questionsRes.data || [];
 
       const proposed = questionStats.filter(
-        (q) => q.status === 'proposed'
+        (q) => q.status === 'proposed',
       ).length;
       const asked = questionStats.filter((q) => q.status === 'asked').length;
       const answered = questionStats.filter(
-        (q) => q.status === 'answered'
+        (q) => q.status === 'answered',
       ).length;
 
       return {
@@ -134,7 +134,7 @@ const app = new Elysia()
         description:
           'Get the summary for the active family (first family with chatId)',
       },
-    }
+    },
   )
   /**
    * GET /api/family/:familyId/summary
@@ -169,7 +169,7 @@ const app = new Elysia()
           relationship_type,
           person_a:person_a_id(name),
           person_b:person_b_id(name)
-        `
+        `,
           )
           .eq('family_id', familyId),
 
@@ -183,7 +183,7 @@ const app = new Elysia()
         client
           .from('events')
           .select(
-            'title, event_type, date_year, date_month, description_original'
+            'title, event_type, date_year, date_month, description_original',
           )
           .eq('family_id', familyId)
           .eq('redacted', false)
@@ -213,11 +213,11 @@ const app = new Elysia()
       const questionStats = questionsRes.data || [];
 
       const proposed = questionStats.filter(
-        (q) => q.status === 'proposed'
+        (q) => q.status === 'proposed',
       ).length;
       const asked = questionStats.filter((q) => q.status === 'asked').length;
       const answered = questionStats.filter(
-        (q) => q.status === 'answered'
+        (q) => q.status === 'answered',
       ).length;
 
       return {
@@ -236,7 +236,7 @@ const app = new Elysia()
         tags: ['Family'],
         description: 'Get the summary for a specific family',
       },
-    }
+    },
   )
   /**
    * POST /api/narrative/generate
@@ -264,7 +264,7 @@ const app = new Elysia()
         tags: ['Narrative'],
         description: 'Generate a narrative for a family',
       },
-    }
+    },
   )
   /**
    * POST /api/book/generate
@@ -293,7 +293,7 @@ const app = new Elysia()
         tags: ['Book'],
         description: 'Generate a book for a family',
       },
-    }
+    },
   )
   /**
    * GET /api/admin/chats
@@ -310,7 +310,7 @@ const app = new Elysia()
         tags: ['Admin'],
         description: 'List all allowed chat IDs',
       },
-    }
+    },
   )
   /**
    * POST /api/admin/chats
@@ -333,7 +333,7 @@ const app = new Elysia()
         tags: ['Admin'],
         description: 'Authorize a chat ID',
       },
-    }
+    },
   )
   /**
    * DELETE /api/admin/chats/:chatId
@@ -352,7 +352,7 @@ const app = new Elysia()
         tags: ['Admin'],
         description: 'Remove a chat ID from the whitelist',
       },
-    }
+    },
   )
   // Error handling
   .onError(({ code, error, set }) => {
@@ -372,7 +372,7 @@ app.listen({ port, hostname, tls: tlsConfig }, () => {
   const protocol = tlsConfig ? 'https' : 'http';
   const hostLabel = hostname === '0.0.0.0' ? 'localhost' : hostname;
   console.log(
-    `📚 Studio API server running on ${protocol}://${hostLabel}:${port}`
+    `📚 Studio API server running on ${protocol}://${hostLabel}:${port}`,
   );
   console.log(`   Health check: ${protocol}://${hostLabel}:${port}/health`);
   console.log(`   Swagger docs: ${protocol}://${hostLabel}:${port}/swagger`);

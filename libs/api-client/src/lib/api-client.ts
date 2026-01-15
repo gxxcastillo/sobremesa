@@ -79,7 +79,7 @@ export class StudioApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
   ): Promise<T> {
     const url = `${this.baseUrl}/api${endpoint}`;
     const response = await fetch(url, {
@@ -125,14 +125,14 @@ export class StudioApiClient {
    */
   async generateNarrative(
     familyId: string,
-    audience = 'general'
+    audience = 'general',
   ): Promise<string> {
     const response = await this.request<{ narrative: string }>(
       '/narrative/generate',
       {
         method: 'POST',
         body: JSON.stringify({ familyId, audience }),
-      }
+      },
     );
     return response.narrative;
   }

@@ -12,7 +12,7 @@ import { QuestionRepository } from '../libs/database/src/lib/repositories/questi
 const mockSender = {
   async sendMessage(
     role: 'facilitator',
-    message: { chatId: string | number; text: string }
+    message: { chatId: string | number; text: string },
   ) {
     console.log('\n=== WOULD SEND MESSAGE ===');
     console.log('Role:', role);

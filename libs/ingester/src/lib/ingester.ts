@@ -116,7 +116,7 @@ export class MessageIngester {
    */
   async ingestTextMessage(
     familyId: string,
-    input: TextMessageInput
+    input: TextMessageInput,
   ): Promise<string | null> {
     this.logger.debug(
       {
@@ -124,7 +124,7 @@ export class MessageIngester {
         eventId: input.externalEventId,
         from: input.actor.username,
       },
-      'Ingesting text message'
+      'Ingesting text message',
     );
 
     // Check for duplicates
@@ -132,13 +132,13 @@ export class MessageIngester {
       familyId,
       input.source,
       input.conversationId,
-      input.externalEventId
+      input.externalEventId,
     );
 
     if (existing) {
       this.logger.debug(
         { eventId: input.externalEventId },
-        'Message already exists, skipping'
+        'Message already exists, skipping',
       );
       return null;
     }
@@ -184,7 +184,7 @@ export class MessageIngester {
 
     this.logger.info(
       { eventId: event.id, externalEventId: input.externalEventId },
-      'Text message ingested and queued'
+      'Text message ingested and queued',
     );
 
     return event.id;
@@ -196,11 +196,11 @@ export class MessageIngester {
    */
   async ingestPhotoMessage(
     familyId: string,
-    input: PhotoMessageInput
+    input: PhotoMessageInput,
   ): Promise<string | null> {
     this.logger.debug(
       { conversationId: input.conversationId, eventId: input.externalEventId },
-      'Ingesting photo message'
+      'Ingesting photo message',
     );
 
     // Check for duplicates
@@ -208,13 +208,13 @@ export class MessageIngester {
       familyId,
       input.source,
       input.conversationId,
-      input.externalEventId
+      input.externalEventId,
     );
 
     if (existing) {
       this.logger.debug(
         { eventId: input.externalEventId },
-        'Photo already exists, skipping'
+        'Photo already exists, skipping',
       );
       return null;
     }
@@ -272,7 +272,7 @@ export class MessageIngester {
 
     this.logger.info(
       { eventId: event.id, externalEventId: input.externalEventId },
-      'Photo message ingested and queued'
+      'Photo message ingested and queued',
     );
 
     return event.id;
@@ -284,11 +284,11 @@ export class MessageIngester {
    */
   async ingestDocumentMessage(
     familyId: string,
-    input: DocumentMessageInput
+    input: DocumentMessageInput,
   ): Promise<string | null> {
     this.logger.debug(
       { conversationId: input.conversationId, eventId: input.externalEventId },
-      'Ingesting document message'
+      'Ingesting document message',
     );
 
     // Check for duplicates
@@ -296,13 +296,13 @@ export class MessageIngester {
       familyId,
       input.source,
       input.conversationId,
-      input.externalEventId
+      input.externalEventId,
     );
 
     if (existing) {
       this.logger.debug(
         { eventId: input.externalEventId },
-        'Document already exists, skipping'
+        'Document already exists, skipping',
       );
       return null;
     }
@@ -361,7 +361,7 @@ export class MessageIngester {
 
     this.logger.info(
       { eventId: event.id, externalEventId: input.externalEventId },
-      'Document message ingested and queued'
+      'Document message ingested and queued',
     );
 
     return event.id;
@@ -373,11 +373,11 @@ export class MessageIngester {
    */
   async ingestVideoMessage(
     familyId: string,
-    input: VideoMessageInput
+    input: VideoMessageInput,
   ): Promise<string | null> {
     this.logger.debug(
       { conversationId: input.conversationId, eventId: input.externalEventId },
-      'Ingesting video message'
+      'Ingesting video message',
     );
 
     // Check for duplicates
@@ -385,13 +385,13 @@ export class MessageIngester {
       familyId,
       input.source,
       input.conversationId,
-      input.externalEventId
+      input.externalEventId,
     );
 
     if (existing) {
       this.logger.debug(
         { eventId: input.externalEventId },
-        'Video already exists, skipping'
+        'Video already exists, skipping',
       );
       return null;
     }
@@ -453,7 +453,7 @@ export class MessageIngester {
 
     this.logger.info(
       { eventId: event.id, externalEventId: input.externalEventId },
-      'Video message ingested and queued'
+      'Video message ingested and queued',
     );
 
     return event.id;

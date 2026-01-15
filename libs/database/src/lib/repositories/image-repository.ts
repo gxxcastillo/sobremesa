@@ -20,7 +20,7 @@ export class ImageRepository extends BaseRepository<Image> {
   async findByExternalFileId(
     familyId: string,
     source: string,
-    externalFileId: string
+    externalFileId: string,
   ): Promise<Image | null> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -35,7 +35,7 @@ export class ImageRepository extends BaseRepository<Image> {
         return null;
       }
       throw new Error(
-        `Failed to find image by external file ID: ${error.message}`
+        `Failed to find image by external file ID: ${error.message}`,
       );
     }
 
@@ -47,7 +47,7 @@ export class ImageRepository extends BaseRepository<Image> {
    */
   async findBySourceEventId(
     familyId: string,
-    sourceEventId: string
+    sourceEventId: string,
   ): Promise<Image[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -58,7 +58,7 @@ export class ImageRepository extends BaseRepository<Image> {
 
     if (error) {
       throw new Error(
-        `Failed to find images by source event: ${error.message}`
+        `Failed to find images by source event: ${error.message}`,
       );
     }
 
@@ -130,7 +130,7 @@ export class ImageRepository extends BaseRepository<Image> {
   async findRecentInConversation(
     familyId: string,
     conversationId: string,
-    limit = 5
+    limit = 5,
   ): Promise<Image[]> {
     // Query images joined with their source events to filter by conversation
     const { data, error } = await this.client
@@ -141,7 +141,7 @@ export class ImageRepository extends BaseRepository<Image> {
         conversation_events!source_event_id (
           conversation_id
         )
-      `
+      `,
       )
       .eq('family_id', familyId)
       .eq('redacted', false)
@@ -151,7 +151,7 @@ export class ImageRepository extends BaseRepository<Image> {
 
     if (error) {
       throw new Error(
-        `Failed to find recent images in conversation: ${error.message}`
+        `Failed to find recent images in conversation: ${error.message}`,
       );
     }
 
@@ -178,7 +178,7 @@ export class ImageRepository extends BaseRepository<Image> {
       visibleText?: string[];
       connectedPeople?: string[];
       connectedStories?: string[];
-    }
+    },
   ): Promise<Image> {
     const updates: Record<string, unknown> = {
       analyzed: true,
@@ -225,7 +225,7 @@ export class ImageRepository extends BaseRepository<Image> {
   async addConnectedPeople(
     familyId: string,
     imageId: string,
-    personIds: string[]
+    personIds: string[],
   ): Promise<Image> {
     // First get current connected people
     const image = await this.findById(familyId, imageId);
@@ -252,7 +252,7 @@ export class ImageRepository extends BaseRepository<Image> {
 
     if (error) {
       throw new Error(
-        `Failed to add connected people to image: ${error.message}`
+        `Failed to add connected people to image: ${error.message}`,
       );
     }
 
@@ -266,7 +266,7 @@ export class ImageRepository extends BaseRepository<Image> {
     familyId: string,
     imageId: string,
     context: string,
-    sourceEventId: string
+    sourceEventId: string,
   ): Promise<Image> {
     const image = await this.findById(familyId, imageId);
     if (!image) {
@@ -318,7 +318,7 @@ export class ImageRepository extends BaseRepository<Image> {
       languageOriginal?: string;
       sharedBy?: string;
       metadata?: Record<string, unknown>;
-    }
+    },
   ): Promise<Image> {
     const record: Omit<Image, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,

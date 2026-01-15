@@ -300,28 +300,23 @@ Scribe will:
 ## Questions to Ask When Adapting
 
 1. **How direct is this culture?**
-
    - Very direct → Lower formality
    - Indirect → Higher formality
 
 2. **How is emotion expressed?**
-
    - Openly → More emoji, effusive language
    - Reserved → Less emoji, measured language
 
 3. **What's the age range?**
-
    - Younger → More casual, more emoji
    - Older → More formal, less emoji
    - Mixed → Moderate approach
 
 4. **Urban or traditional?**
-
    - Urban/modern → Can be more casual
    - Traditional → Respect formality
 
 5. **What are key cultural foods/places/traditions?**
-
    - Add to `culturalTerms`
 
 6. **How is family hierarchy?**

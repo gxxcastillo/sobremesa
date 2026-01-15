@@ -55,7 +55,7 @@ export class DataRetriever {
   async retrieve(
     familyId: string,
     question: ParsedQuestion,
-    config: HistorianConfig
+    config: HistorianConfig,
   ): Promise<RetrievedContext> {
     const context: RetrievedContext = {
       people: [],
@@ -110,7 +110,7 @@ export class DataRetriever {
     familyId: string,
     question: ParsedQuestion,
     config: HistorianConfig,
-    context: RetrievedContext
+    context: RetrievedContext,
   ): Promise<void> {
     // Find people matching entity names
     for (const entity of question.entities) {
@@ -120,7 +120,7 @@ export class DataRetriever {
         const claims = await this.claimRepo.findByEntity(
           familyId,
           'person',
-          person.id
+          person.id,
         );
         context.people.push({
           person,
@@ -130,14 +130,14 @@ export class DataRetriever {
         // Get relationships
         const relationships = await this.relationshipRepo.findByPerson(
           familyId,
-          person.id
+          person.id,
         );
         context.relationships.push(...relationships);
 
         // Get events involving this person
         const events = await this.eventRepo.findByPerson(familyId, person.id);
         context.events.push(
-          ...events.slice(0, config.maxEvents).map(this.mapEvent)
+          ...events.slice(0, config.maxEvents).map(this.mapEvent),
         );
 
         // Get images with this person
@@ -153,13 +153,13 @@ export class DataRetriever {
         const nameMatch = question.keywords.some(
           (kw) =>
             person.name.toLowerCase().includes(kw) ||
-            person.aliases?.some((a: string) => a.toLowerCase().includes(kw))
+            person.aliases?.some((a: string) => a.toLowerCase().includes(kw)),
         );
         if (nameMatch) {
           const claims = await this.claimRepo.findByEntity(
             familyId,
             'person',
-            person.id
+            person.id,
           );
           context.people.push({
             person,
@@ -179,7 +179,7 @@ export class DataRetriever {
     familyId: string,
     question: ParsedQuestion,
     config: HistorianConfig,
-    context: RetrievedContext
+    context: RetrievedContext,
   ): Promise<void> {
     // Find the people mentioned
     const peopleFound: string[] = [];
@@ -196,7 +196,7 @@ export class DataRetriever {
       const relationship = await this.relationshipRepo.findBetween(
         familyId,
         peopleFound[0],
-        peopleFound[1]
+        peopleFound[1],
       );
       if (relationship) {
         context.relationships.push(relationship);
@@ -207,7 +207,7 @@ export class DataRetriever {
     for (const personId of peopleFound) {
       const relationships = await this.relationshipRepo.findByPerson(
         familyId,
-        personId
+        personId,
       );
       context.relationships.push(...relationships);
     }
@@ -228,7 +228,7 @@ export class DataRetriever {
     familyId: string,
     question: ParsedQuestion,
     config: HistorianConfig,
-    context: RetrievedContext
+    context: RetrievedContext,
   ): Promise<void> {
     // Get events matching time references
     if (question.timeReferences.length > 0) {
@@ -238,10 +238,10 @@ export class DataRetriever {
           const events = await this.eventRepo.findByTimeRange(
             familyId,
             year - 5,
-            year + 5
+            year + 5,
           );
           context.events.push(
-            ...events.slice(0, config.maxEvents).map(this.mapEvent)
+            ...events.slice(0, config.maxEvents).map(this.mapEvent),
           );
         }
       }
@@ -253,7 +253,7 @@ export class DataRetriever {
       if (person) {
         const events = await this.eventRepo.findByPerson(familyId, person.id);
         context.events.push(
-          ...events.slice(0, config.maxEvents).map(this.mapEvent)
+          ...events.slice(0, config.maxEvents).map(this.mapEvent),
         );
         context.people.push({ person, claims: [] });
       }
@@ -265,10 +265,10 @@ export class DataRetriever {
       (c: { claimType?: string | null; subject: string }) =>
         c.claimType === 'date' ||
         c.subject.toLowerCase().includes('year') ||
-        c.subject.toLowerCase().includes('when')
+        c.subject.toLowerCase().includes('when'),
     );
     context.claims.push(
-      ...dateClaims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim)
+      ...dateClaims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
     );
 
     // Deduplicate events
@@ -287,7 +287,7 @@ export class DataRetriever {
     familyId: string,
     question: ParsedQuestion,
     config: HistorianConfig,
-    context: RetrievedContext
+    context: RetrievedContext,
   ): Promise<void> {
     // Search for places by keyword
     const allPlaces = await this.placeRepo.findAllActive(familyId);
@@ -301,8 +301,8 @@ export class DataRetriever {
           (kw) =>
             place.name.toLowerCase().includes(kw) ||
             place.city?.toLowerCase().includes(kw) ||
-            place.country?.toLowerCase().includes(kw)
-        )
+            place.country?.toLowerCase().includes(kw),
+        ),
     );
 
     // Get claims about places
@@ -310,10 +310,10 @@ export class DataRetriever {
       const claims = await this.claimRepo.findByEntity(
         familyId,
         'place',
-        place.id
+        place.id,
       );
       context.claims.push(
-        ...claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim)
+        ...claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
       );
     }
 
@@ -324,7 +324,7 @@ export class DataRetriever {
         const claims = await this.claimRepo.findByEntity(
           familyId,
           'person',
-          person.id
+          person.id,
         );
         // Filter for location-related claims
         const locationClaims = claims.filter(
@@ -333,12 +333,12 @@ export class DataRetriever {
             c.subject.toLowerCase().includes('live') ||
             c.subject.toLowerCase().includes('from') ||
             c.subject.toLowerCase().includes('location') ||
-            c.subject.toLowerCase().includes('place')
+            c.subject.toLowerCase().includes('place'),
         );
         context.claims.push(
           ...locationClaims
             .slice(0, config.maxClaimsPerQuery)
-            .map(this.mapClaim)
+            .map(this.mapClaim),
         );
         context.people.push({ person, claims: [] });
       }
@@ -352,7 +352,7 @@ export class DataRetriever {
     familyId: string,
     question: ParsedQuestion,
     config: HistorianConfig,
-    context: RetrievedContext
+    context: RetrievedContext,
   ): Promise<void> {
     // Search events by keywords
     const allEvents = await this.eventRepo.findAllActive(familyId);
@@ -361,12 +361,12 @@ export class DataRetriever {
         question.keywords.some(
           (kw) =>
             event.title.toLowerCase().includes(kw) ||
-            event.eventType?.toLowerCase().includes(kw)
-        )
+            event.eventType?.toLowerCase().includes(kw),
+        ),
     );
 
     context.events.push(
-      ...matchingEvents.slice(0, config.maxEvents).map(this.mapEvent)
+      ...matchingEvents.slice(0, config.maxEvents).map(this.mapEvent),
     );
 
     // Get related stories
@@ -376,10 +376,10 @@ export class DataRetriever {
         (s) =>
           s.title &&
           (s.title.toLowerCase().includes(event.title.toLowerCase()) ||
-            event.title.toLowerCase().includes(s.title.toLowerCase()))
+            event.title.toLowerCase().includes(s.title.toLowerCase())),
       );
       context.stories.push(
-        ...relatedStories.slice(0, config.maxStories).map(this.mapStory)
+        ...relatedStories.slice(0, config.maxStories).map(this.mapStory),
       );
     }
 
@@ -399,7 +399,7 @@ export class DataRetriever {
     familyId: string,
     question: ParsedQuestion,
     config: HistorianConfig,
-    context: RetrievedContext
+    context: RetrievedContext,
   ): Promise<void> {
     // Search stories by keywords and themes
     const allStories = await this.storyRepo.findAllActive(familyId);
@@ -408,12 +408,12 @@ export class DataRetriever {
         (kw) =>
           story.title?.toLowerCase().includes(kw) ||
           story.contentOriginal?.toLowerCase().includes(kw) ||
-          story.themes?.some((t: string) => t.toLowerCase().includes(kw))
-      )
+          story.themes?.some((t: string) => t.toLowerCase().includes(kw)),
+      ),
     );
 
     context.stories.push(
-      ...matchingStories.slice(0, config.maxStories).map(this.mapStory)
+      ...matchingStories.slice(0, config.maxStories).map(this.mapStory),
     );
 
     // Get claims related to stories
@@ -421,10 +421,10 @@ export class DataRetriever {
       const claims = await this.claimRepo.findByEntity(
         familyId,
         'story',
-        story.id
+        story.id,
       );
       context.claims.push(
-        ...claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim)
+        ...claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
       );
     }
 
@@ -434,7 +434,7 @@ export class DataRetriever {
       if (person) {
         const stories = await this.storyRepo.findByPerson(familyId, person.id);
         context.stories.push(
-          ...stories.slice(0, config.maxStories).map(this.mapStory)
+          ...stories.slice(0, config.maxStories).map(this.mapStory),
         );
         context.people.push({ person, claims: [] });
       }
@@ -456,7 +456,7 @@ export class DataRetriever {
     familyId: string,
     question: ParsedQuestion,
     config: HistorianConfig,
-    context: RetrievedContext
+    context: RetrievedContext,
   ): Promise<void> {
     // Search all claims for matching keywords
     const allClaims = await this.claimRepo.findAllActive(familyId);
@@ -465,12 +465,12 @@ export class DataRetriever {
         question.keywords.some(
           (kw) =>
             claim.subject.toLowerCase().includes(kw) ||
-            JSON.stringify(claim.claimValue).toLowerCase().includes(kw)
-        )
+            JSON.stringify(claim.claimValue).toLowerCase().includes(kw),
+        ),
     );
 
     context.claims.push(
-      ...matchingClaims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim)
+      ...matchingClaims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
     );
 
     // Get people mentioned
@@ -480,10 +480,10 @@ export class DataRetriever {
         const claims = await this.claimRepo.findByEntity(
           familyId,
           'person',
-          person.id
+          person.id,
         );
         context.claims.push(
-          ...claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim)
+          ...claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
         );
         context.people.push({ person, claims: [] });
       }
@@ -497,7 +497,7 @@ export class DataRetriever {
     familyId: string,
     question: ParsedQuestion,
     config: HistorianConfig,
-    context: RetrievedContext
+    context: RetrievedContext,
   ): Promise<void> {
     // Get people by entity names
     for (const entity of question.entities) {
@@ -506,7 +506,7 @@ export class DataRetriever {
         const claims = await this.claimRepo.findByEntity(
           familyId,
           'person',
-          person.id
+          person.id,
         );
         context.people.push({
           person,
@@ -521,20 +521,20 @@ export class DataRetriever {
       question.keywords.some(
         (kw) =>
           story.title?.toLowerCase().includes(kw) ||
-          story.contentOriginal?.toLowerCase().includes(kw)
-      )
+          story.contentOriginal?.toLowerCase().includes(kw),
+      ),
     );
     context.stories.push(
-      ...matchingStories.slice(0, config.maxStories).map(this.mapStory)
+      ...matchingStories.slice(0, config.maxStories).map(this.mapStory),
     );
 
     // Get events matching keywords
     const allEvents = await this.eventRepo.findAllActive(familyId);
     const matchingEvents = allEvents.filter((event: { title: string }) =>
-      question.keywords.some((kw) => event.title.toLowerCase().includes(kw))
+      question.keywords.some((kw) => event.title.toLowerCase().includes(kw)),
     );
     context.events.push(
-      ...matchingEvents.slice(0, config.maxEvents).map(this.mapEvent)
+      ...matchingEvents.slice(0, config.maxEvents).map(this.mapEvent),
     );
 
     // If still no context, get some general claims
@@ -549,11 +549,11 @@ export class DataRetriever {
           question.keywords.some(
             (kw) =>
               claim.subject.toLowerCase().includes(kw) ||
-              JSON.stringify(claim.claimValue).toLowerCase().includes(kw)
-          )
+              JSON.stringify(claim.claimValue).toLowerCase().includes(kw),
+          ),
       );
       context.claims.push(
-        ...matchingClaims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim)
+        ...matchingClaims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
       );
     }
   }

@@ -61,7 +61,7 @@ export interface ImageLinkProcessorResult {
  */
 export type FilterProcessor = (
   eventId: string,
-  familyId: string
+  familyId: string,
 ) => Promise<FilterProcessorResult>;
 
 /**
@@ -70,7 +70,7 @@ export type FilterProcessor = (
  */
 export type ScribeProcessor = (
   eventId: string,
-  familyId: string
+  familyId: string,
 ) => Promise<ScribeDomainModel>;
 
 /**
@@ -79,7 +79,7 @@ export type ScribeProcessor = (
  */
 export type RegistrarProcessor = (
   domainModel: ScribeDomainModel,
-  familyId: string
+  familyId: string,
 ) => Promise<void>;
 
 /**
@@ -88,7 +88,7 @@ export type RegistrarProcessor = (
  */
 export type ImageLinkerProcessor = (
   eventId: string,
-  familyId: string
+  familyId: string,
 ) => Promise<ImageLinkProcessorResult>;
 
 /**
@@ -126,7 +126,7 @@ export interface RoutingProcessorResult {
  */
 export type RouterProcessor = (
   eventId: string,
-  familyId: string
+  familyId: string,
 ) => Promise<RoutingProcessorResult>;
 
 /**
@@ -136,7 +136,7 @@ export type RouterProcessor = (
 export type AdminProcessor = (
   eventId: string,
   familyId: string,
-  subtype: AdminSubtype
+  subtype: AdminSubtype,
 ) => Promise<{ success: boolean; error?: string }>;
 
 /**
@@ -145,7 +145,7 @@ export type AdminProcessor = (
  */
 export type HistorianProcessor = (
   eventId: string,
-  familyId: string
+  familyId: string,
 ) => Promise<{ success: boolean; error?: string }>;
 
 /**
@@ -155,7 +155,7 @@ export type HistorianProcessor = (
 export type OnImageCreatedCallback = (
   familyId: string,
   imageId: string,
-  eventId: string
+  eventId: string,
 ) => void;
 
 /**
@@ -300,7 +300,7 @@ export class MessageProcessor {
         await this.detectAndMarkAnswer(
           familyId,
           eventId,
-          event.externalReplyToId
+          event.externalReplyToId,
         );
       }
 
@@ -338,7 +338,7 @@ export class MessageProcessor {
             reason: routing.reason,
             tokensUsed: routing.tokensUsed,
           },
-          'Message routed'
+          'Message routed',
         );
 
         // Log routing decision
@@ -376,18 +376,18 @@ export class MessageProcessor {
           const result = await this.adminProcessor(
             eventId,
             familyId,
-            adminSubtype
+            adminSubtype,
           );
           if (!result.success) {
             this.logger.warn(
               { eventId, error: result.error },
-              'Admin processor failed'
+              'Admin processor failed',
             );
           }
         } else {
           this.logger.warn(
             { eventId, adminSubtype },
-            'Admin action routed but no admin processor configured'
+            'Admin action routed but no admin processor configured',
           );
         }
         // Mark as processed after admin handling
@@ -405,13 +405,13 @@ export class MessageProcessor {
           if (!result.success) {
             this.logger.warn(
               { eventId, error: result.error },
-              'Historian processor failed'
+              'Historian processor failed',
             );
           }
         } else {
           this.logger.warn(
             { eventId },
-            'Historian action routed but no historian processor configured'
+            'Historian action routed but no historian processor configured',
           );
         }
         // Fall through to also run scribe pipeline for extraction
@@ -477,7 +477,7 @@ export class MessageProcessor {
    */
   createHandler(): (
     eventId: string,
-    familyId: string
+    familyId: string,
   ) => Promise<ProcessingResult> {
     return (eventId, familyId) => this.process(eventId, familyId);
   }
@@ -487,7 +487,7 @@ export class MessageProcessor {
    */
   private async processTextContent(
     eventId: string,
-    familyId: string
+    familyId: string,
   ): Promise<void> {
     // Run Filter (if configured) to determine if message is relevant
     let shouldProcess = true;
@@ -503,7 +503,7 @@ export class MessageProcessor {
             reason: filterResult.reason,
             tokensUsed: filterResult.tokensUsed,
           },
-          'Message filtered out as not relevant'
+          'Message filtered out as not relevant',
         );
 
         // Log filter skip
@@ -529,7 +529,7 @@ export class MessageProcessor {
             reason: filterResult.reason,
             tokensUsed: filterResult.tokensUsed,
           },
-          'Message passed filter'
+          'Message passed filter',
         );
       }
     }
@@ -552,7 +552,7 @@ export class MessageProcessor {
             questions: domainModel.questions.length,
             imageReferences: domainModel.imageReferences?.length || 0,
           },
-          'Scribe extraction complete'
+          'Scribe extraction complete',
         );
       }
     }
@@ -566,7 +566,7 @@ export class MessageProcessor {
         // Check if Scribe already detected this image reference
         const existingRefs = domainModel.imageReferences || [];
         const alreadyDetected = existingRefs.some(
-          (ref) => ref.imageId === linkResult.imageId
+          (ref) => ref.imageId === linkResult.imageId,
         );
 
         if (!alreadyDetected) {
@@ -588,7 +588,7 @@ export class MessageProcessor {
               reason: linkResult.reason,
               tokensUsed: linkResult.tokensUsed,
             },
-            'Image Linker detected reference (Scribe missed)'
+            'Image Linker detected reference (Scribe missed)',
           );
 
           // Log the augmentation
@@ -610,7 +610,7 @@ export class MessageProcessor {
         } else {
           this.logger.debug(
             { eventId, imageId: linkResult.imageId },
-            'Image Linker confirmed Scribe detection'
+            'Image Linker confirmed Scribe detection',
           );
         }
       }
@@ -636,7 +636,7 @@ export class MessageProcessor {
       languageOriginal?: string;
       metadata?: Record<string, unknown>;
       actorDisplayName?: string;
-    }
+    },
   ): Promise<string | undefined> {
     const metadata = event.metadata || {};
     const fileId = (metadata.fileId as string) || '';
@@ -645,7 +645,7 @@ export class MessageProcessor {
     if (!fileUniqueId) {
       this.logger.warn(
         { eventId, eventType: event.eventType },
-        'Media event missing fileUniqueId, skipping image creation'
+        'Media event missing fileUniqueId, skipping image creation',
       );
       return undefined;
     }
@@ -654,13 +654,13 @@ export class MessageProcessor {
     let image = await this.imageRepo.findByExternalFileId(
       familyId,
       event.source,
-      fileUniqueId
+      fileUniqueId,
     );
 
     if (image) {
       this.logger.debug(
         { eventId, imageId: image.id },
-        'Image record already exists'
+        'Image record already exists',
       );
       return image.id;
     }
@@ -689,7 +689,7 @@ export class MessageProcessor {
 
     this.logger.info(
       { eventId, imageId: image.id, fileType },
-      'Image record created'
+      'Image record created',
     );
 
     // Notify for async Curator analysis (non-blocking)
@@ -700,7 +700,7 @@ export class MessageProcessor {
         // Don't fail processing if callback fails
         this.logger.warn(
           { imageId: image.id, error },
-          'onImageCreated callback failed'
+          'onImageCreated callback failed',
         );
       }
     }
@@ -714,13 +714,13 @@ export class MessageProcessor {
   private async detectAndMarkAnswer(
     familyId: string,
     answerEventId: string,
-    replyToExternalId: string
+    replyToExternalId: string,
   ): Promise<void> {
     try {
       // Look up if there's a question that was sent with this external message ID
       const question = await this.questionRepo.findByExternalMessageId(
         familyId,
-        replyToExternalId
+        replyToExternalId,
       );
 
       if (!question) {
@@ -732,7 +732,7 @@ export class MessageProcessor {
       if (question.status === 'answered') {
         this.logger.debug(
           { questionId: question.id, replyToExternalId },
-          'Question already marked as answered'
+          'Question already marked as answered',
         );
         return;
       }
@@ -741,7 +741,7 @@ export class MessageProcessor {
       await this.questionRepo.markAnswered(
         familyId,
         question.id,
-        answerEventId
+        answerEventId,
       );
 
       // Log the answer detection
@@ -761,7 +761,7 @@ export class MessageProcessor {
 
       this.logger.info(
         { familyId, questionId: question.id, answerEventId },
-        'Question marked as answered via reply detection'
+        'Question marked as answered via reply detection',
       );
     } catch (error) {
       // Don't fail processing if answer detection fails
@@ -769,7 +769,7 @@ export class MessageProcessor {
         error instanceof Error ? error.message : String(error);
       this.logger.warn(
         { familyId, replyToExternalId, error: errorMessage },
-        'Answer detection failed (non-fatal)'
+        'Answer detection failed (non-fatal)',
       );
     }
   }

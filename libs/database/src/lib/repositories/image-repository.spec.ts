@@ -78,7 +78,7 @@ describe('ImageRepository - addConnectedPeople', () => {
           'person-3',
           'person-4',
         ]),
-      })
+      }),
     );
   });
 
@@ -115,7 +115,7 @@ describe('ImageRepository - addConnectedPeople', () => {
     await imageRepo.addConnectedPeople(
       'family-abc',
       'img-123',
-      ['person-2', 'person-3'] // person-2 already exists
+      ['person-2', 'person-3'], // person-2 already exists
     );
 
     // Verify update was called with deduplicated array (person-2 not duplicated)
@@ -126,7 +126,7 @@ describe('ImageRepository - addConnectedPeople', () => {
           'person-2',
           'person-3',
         ]),
-      })
+      }),
     );
 
     // Verify the array length is 3, not 4
@@ -143,7 +143,7 @@ describe('ImageRepository - addConnectedPeople', () => {
     mockSupabaseClient.from.mockReturnValue(findChain);
 
     await expect(
-      imageRepo.addConnectedPeople('family-abc', 'nonexistent', ['person-1'])
+      imageRepo.addConnectedPeople('family-abc', 'nonexistent', ['person-1']),
     ).rejects.toThrow('Image not found: nonexistent');
   });
 
@@ -185,7 +185,7 @@ describe('ImageRepository - addConnectedPeople', () => {
     expect(updateChain.update).toHaveBeenCalledWith(
       expect.objectContaining({
         connected_people: ['person-1', 'person-2'],
-      })
+      }),
     );
   });
 });
@@ -242,7 +242,7 @@ describe('ImageRepository - addContext', () => {
       'family-abc',
       'img-123',
       'New context about the photo',
-      'event-2'
+      'event-2',
     );
 
     expect(updateChain.update).toHaveBeenCalledWith(
@@ -254,7 +254,7 @@ describe('ImageRepository - addContext', () => {
             { text: 'New context about the photo', sourceEventId: 'event-2' },
           ],
         },
-      })
+      }),
     );
   });
 
@@ -296,7 +296,7 @@ describe('ImageRepository - addContext', () => {
       'family-abc',
       'img-123',
       'First context',
-      'event-1'
+      'event-1',
     );
 
     expect(updateChain.update).toHaveBeenCalledWith(
@@ -305,7 +305,7 @@ describe('ImageRepository - addContext', () => {
           description: 'AI analysis',
           userContexts: [{ text: 'First context', sourceEventId: 'event-1' }],
         },
-      })
+      }),
     );
   });
 
@@ -348,7 +348,7 @@ describe('ImageRepository - addContext', () => {
       'family-abc',
       'img-123',
       'Context for unanalyzed image',
-      'event-1'
+      'event-1',
     );
 
     expect(updateChain.update).toHaveBeenCalledWith(
@@ -358,7 +358,7 @@ describe('ImageRepository - addContext', () => {
             { text: 'Context for unanalyzed image', sourceEventId: 'event-1' },
           ],
         },
-      })
+      }),
     );
   });
 
@@ -371,7 +371,7 @@ describe('ImageRepository - addContext', () => {
     mockSupabaseClient.from.mockReturnValue(findChain);
 
     await expect(
-      imageRepo.addContext('family-abc', 'nonexistent', 'context', 'event-1')
+      imageRepo.addContext('family-abc', 'nonexistent', 'context', 'event-1'),
     ).rejects.toThrow('Image not found: nonexistent');
   });
 
@@ -405,7 +405,7 @@ describe('ImageRepository - addContext', () => {
       'family-abc',
       'img-123',
       'Wedding photo from 1962',
-      'source-event-xyz'
+      'source-event-xyz',
     );
 
     const updateCall = updateChain.update.mock.calls[0][0];

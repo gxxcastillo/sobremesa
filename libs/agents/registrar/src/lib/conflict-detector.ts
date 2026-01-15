@@ -8,7 +8,7 @@
  */
 export function detectClaimConflict(
   existingValue: Record<string, unknown>,
-  newValue: Record<string, unknown>
+  newValue: Record<string, unknown>,
 ): boolean {
   // Compare key fields for contradiction
   for (const key of Object.keys(newValue)) {

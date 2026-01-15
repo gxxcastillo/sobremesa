@@ -90,7 +90,7 @@ export class AdminAgent {
   async handle(
     eventId: string,
     familyId: string,
-    subtype: AdminActionType
+    subtype: AdminActionType,
   ): Promise<AdminHandleResult> {
     this.logger.info({ eventId, familyId, subtype }, 'Handling admin action');
 
@@ -114,7 +114,7 @@ export class AdminAgent {
         error instanceof Error ? error.message : String(error);
       this.logger.error(
         { eventId, familyId, subtype, error: errorMessage },
-        'Admin action failed'
+        'Admin action failed',
       );
       return { success: false, action: subtype, error: errorMessage };
     }
@@ -125,7 +125,7 @@ export class AdminAgent {
    */
   private async handleStatusCommand(
     eventId: string,
-    familyId: string
+    familyId: string,
   ): Promise<AdminHandleResult> {
     // Load the event to get chat info for reply
     const event = await this.eventRepo.findById(familyId, eventId);
@@ -178,7 +178,7 @@ export class AdminAgent {
    */
   private async handleDirectMessage(
     eventId: string,
-    familyId: string
+    familyId: string,
   ): Promise<AdminHandleResult> {
     const event = await this.eventRepo.findById(familyId, eventId);
     if (!event) {
@@ -204,7 +204,7 @@ export class AdminAgent {
    */
   private async handleMemberEvent(
     eventId: string,
-    familyId: string
+    familyId: string,
   ): Promise<AdminHandleResult> {
     const event = await this.eventRepo.findById(familyId, eventId);
     if (!event) {
@@ -219,7 +219,7 @@ export class AdminAgent {
     // We could add welcome messages for new members in the future
     this.logger.info(
       { eventId, familyId, eventType: event.eventType },
-      'Member event processed (no action taken)'
+      'Member event processed (no action taken)',
     );
 
     await this.eventLog.log({
@@ -243,7 +243,7 @@ export class AdminAgent {
    */
   private async handleMention(
     eventId: string,
-    familyId: string
+    familyId: string,
   ): Promise<AdminHandleResult> {
     const event = await this.eventRepo.findById(familyId, eventId);
     if (!event) {
@@ -291,7 +291,7 @@ export class AdminAgent {
    * Get stats for a family.
    */
   private async getFamilyStats(
-    familyId: string
+    familyId: string,
   ): Promise<{ eventCount: number; memberCount: number }> {
     try {
       // Get family to find conversation ID
@@ -304,13 +304,13 @@ export class AdminAgent {
       const events = await this.eventRepo.findRecent(
         familyId,
         family.chatId,
-        1000
+        1000,
       );
       const eventCount = events.length;
 
       // Get unique members
       const members = new Set(
-        events.map((e) => e.actorExternalId).filter(Boolean)
+        events.map((e) => e.actorExternalId).filter(Boolean),
       );
       const memberCount = members.size;
 
@@ -325,14 +325,14 @@ export class AdminAgent {
    */
   private formatStatus(
     family: Family,
-    stats: { eventCount: number; memberCount: number }
+    stats: { eventCount: number; memberCount: number },
   ): string {
     const language = this.getLanguageFromConfig(family.config);
     return formatStatusMessage(
       language,
       family.name,
       stats,
-      family.createdAt ? new Date(family.createdAt) : undefined
+      family.createdAt ? new Date(family.createdAt) : undefined,
     );
   }
 
@@ -341,7 +341,7 @@ export class AdminAgent {
    * Defaults to 'en' if not configured.
    */
   private getLanguageFromConfig(
-    config: FamilyConfig | undefined
+    config: FamilyConfig | undefined,
   ): SupportedLanguage {
     return config?.languages?.primary ?? DEFAULT_LANGUAGE;
   }

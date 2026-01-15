@@ -12,7 +12,7 @@ import type pino from 'pino';
  */
 export type MessageHandler = (
   eventId: string,
-  familyId: string
+  familyId: string,
 ) => Promise<ProcessingResult>;
 
 /**
@@ -107,7 +107,7 @@ export class MessageQueue {
 
     const item = await this.repository.dequeueAny(
       this.workerId,
-      this.options.lockTimeoutMs
+      this.options.lockTimeoutMs,
     );
 
     if (!item) {
@@ -117,7 +117,7 @@ export class MessageQueue {
     const familyId = item.familyId;
     this.logger.debug(
       { itemId: item.id, eventId: item.conversationEventId, familyId },
-      'Processing message'
+      'Processing message',
     );
 
     try {
@@ -127,18 +127,18 @@ export class MessageQueue {
         await this.repository.complete(familyId, item.id);
         this.logger.debug(
           { itemId: item.id, duration: result.duration },
-          'Message processed successfully'
+          'Message processed successfully',
         );
       } else {
         await this.repository.fail(
           familyId,
           item.id,
           result.error || 'Unknown error',
-          this.options.maxRetries
+          this.options.maxRetries,
         );
         this.logger.warn(
           { itemId: item.id, error: result.error },
-          'Message processing failed'
+          'Message processing failed',
         );
       }
 
@@ -150,11 +150,11 @@ export class MessageQueue {
         familyId,
         item.id,
         errorMessage,
-        this.options.maxRetries
+        this.options.maxRetries,
       );
       this.logger.error(
         { itemId: item.id, error: errorMessage },
-        'Message processing threw exception'
+        'Message processing threw exception',
       );
       return true;
     }
@@ -197,7 +197,7 @@ export class MessageQueue {
       const err = error instanceof Error ? error : new Error(String(error));
       this.logger.error(
         { err: err.message, stack: err.stack },
-        'Error in poll loop'
+        'Error in poll loop',
       );
       this.pollTimeout = setTimeout(() => this.poll(), this.pollIntervalMs);
     }

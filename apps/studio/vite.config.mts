@@ -12,7 +12,7 @@ export default defineConfig(() => ({
     port: 3000,
     host: 'sobremesa.x',
     https: (() => {
-      const certDir = path.resolve(import.meta.dirname, '../../certs');
+      const certDir = path.resolve(import.meta.dirname, '../../.certs');
       const certPath = path.join(certDir, 'sobremesa.x-cert.pem');
       const keyPath = path.join(certDir, 'sobremesa.x-key.pem');
 
@@ -63,7 +63,7 @@ export default defineConfig(() => ({
     alias: {
       '@sobremesa/api-client': path.resolve(
         import.meta.dirname,
-        '../../libs/api-client/src/index.ts'
+        '../../libs/api-client/src/index.ts',
       ),
     },
   },

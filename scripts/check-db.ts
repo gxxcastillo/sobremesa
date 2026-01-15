@@ -41,7 +41,7 @@ async function main() {
         e.content_original?.slice(0, 50) +
         (e.content_original?.length > 50 ? '...' : '');
       console.log(
-        `  - ${e.id.slice(0, 8)}... processed=${e.processed} "${content}"`
+        `  - ${e.id.slice(0, 8)}... processed=${e.processed} "${content}"`,
       );
     });
   }
@@ -62,7 +62,7 @@ async function main() {
       console.log(
         `  - [${q.priority}] "${q.content_original?.slice(0, 60)}..." (${
           q.status
-        })`
+        })`,
       );
     });
   }
@@ -81,8 +81,8 @@ async function main() {
     console.log('Processing queue:', queue?.length || 0);
     queue?.forEach((q) =>
       console.log(
-        `  - ${q.conversation_event_id?.slice(0, 8)}... status=${q.status}`
-      )
+        `  - ${q.conversation_event_id?.slice(0, 8)}... status=${q.status}`,
+      ),
     );
   }
   console.log('');

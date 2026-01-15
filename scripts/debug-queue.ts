@@ -34,7 +34,7 @@ async function main() {
         'event:',
         item.conversation_event_id?.slice(0, 8),
         'status:',
-        item.status
+        item.status,
       );
     });
   }

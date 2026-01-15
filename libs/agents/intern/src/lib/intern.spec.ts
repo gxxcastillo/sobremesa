@@ -147,7 +147,7 @@ describe('InternAgent', () => {
           expect.objectContaining({
             model: DEFAULT_INTERN_CONFIG.model,
             max_tokens: DEFAULT_INTERN_CONFIG.maxTokens,
-          })
+          }),
         );
       });
 
@@ -224,7 +224,7 @@ describe('InternAgent', () => {
                 content: expect.stringContaining('Alice: "Previous message"'),
               }),
             ],
-          })
+          }),
         );
       });
     });
@@ -335,7 +335,7 @@ describe('InternAgent', () => {
 
       it('should return relevant=true on API error', async () => {
         mockAnthropicCreate.mockRejectedValue(
-          new Error('API rate limit exceeded')
+          new Error('API rate limit exceeded'),
         );
 
         const result = await intern.filter('event-123', 'family-abc');
@@ -348,7 +348,7 @@ describe('InternAgent', () => {
 
       it('should return relevant=true on repository error', async () => {
         mockEventRepo.findRecent.mockRejectedValue(
-          new Error('Database connection failed')
+          new Error('Database connection failed'),
         );
 
         const result = await intern.filter('event-123', 'family-abc');
@@ -484,7 +484,7 @@ describe('InternAgent', () => {
                 content: expect.stringContaining('img-123'),
               }),
             ],
-          })
+          }),
         );
       });
 
@@ -732,7 +732,7 @@ describe('InternAgent', () => {
 
       it('should return linked=false on repository error', async () => {
         mockImageRepo.findRecentInConversation.mockRejectedValue(
-          new Error('DB error')
+          new Error('DB error'),
         );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
@@ -755,7 +755,7 @@ describe('InternAgent', () => {
         SUPABASE_URL: 'http://localhost:54321',
         SUPABASE_ANON_KEY: 'test-anon-key-placeholder',
         SUPABASE_SERVICE_ROLE_KEY: 'test-secret-key-placeholder',
-      })
+      }),
     );
 
     afterAll(() => {
@@ -801,7 +801,7 @@ describe('InternAgent', () => {
         expect.objectContaining({
           model: 'claude-3-haiku-20240307',
           max_tokens: 50,
-        })
+        }),
       );
     });
   });
@@ -836,7 +836,7 @@ describe('InternAgent', () => {
           relevant: true,
           tokensUsed: 120,
         }),
-        'Filter result'
+        'Filter result',
       );
     });
 
@@ -862,7 +862,7 @@ describe('InternAgent', () => {
           linked: true,
           imageId: 'img-123',
         }),
-        'Image link result'
+        'Image link result',
       );
     });
   });

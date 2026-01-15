@@ -50,7 +50,7 @@ async function main() {
         console.log(
           `      "${p.notes_original.slice(0, 80)}${
             p.notes_original.length > 80 ? '...' : ''
-          }"`
+          }"`,
         );
       }
     }
@@ -65,7 +65,7 @@ async function main() {
       relationship_type,
       person_a:person_a_id(name),
       person_b:person_b_id(name)
-    `
+    `,
     )
     .eq('family_id', family.id);
 
@@ -108,7 +108,7 @@ async function main() {
         console.log(
           `      "${p.context_original.slice(0, 80)}${
             p.context_original.length > 80 ? '...' : ''
-          }"`
+          }"`,
         );
       }
     }
@@ -140,7 +140,7 @@ async function main() {
         console.log(
           `      "${e.description_original.slice(0, 80)}${
             e.description_original.length > 80 ? '...' : ''
-          }"`
+          }"`,
         );
       }
     }
@@ -164,8 +164,8 @@ async function main() {
         s.completeness === 'complete'
           ? '✓'
           : s.completeness === 'partial'
-          ? '◐'
-          : '○';
+            ? '◐'
+            : '○';
       console.log(`  ${status} ${title}`);
       if (s.themes?.length) {
         console.log(`      Themes: ${s.themes.join(', ')}`);
@@ -174,7 +174,7 @@ async function main() {
         console.log(
           `      "${s.content_original.slice(0, 100)}${
             s.content_original.length > 100 ? '...' : ''
-          }"`
+          }"`,
         );
       }
     }
@@ -189,11 +189,11 @@ async function main() {
 
   if (questionStats?.length) {
     const proposed = questionStats.filter(
-      (q) => q.status === 'proposed'
+      (q) => q.status === 'proposed',
     ).length;
     const asked = questionStats.filter((q) => q.status === 'asked').length;
     const answered = questionStats.filter(
-      (q) => q.status === 'answered'
+      (q) => q.status === 'answered',
     ).length;
 
     console.log('QUESTIONS');
@@ -230,12 +230,12 @@ async function main() {
   console.log(
     `  ${people?.length || 0} people, ${places?.length || 0} places, ${
       events?.length || 0
-    } events`
+    } events`,
   );
   console.log(
     `  ${relationships?.length || 0} relationships, ${
       stories?.length || 0
-    } stories`
+    } stories`,
   );
   console.log(`${'='.repeat(60)}\n`);
 }

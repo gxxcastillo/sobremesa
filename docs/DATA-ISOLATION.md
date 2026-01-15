@@ -120,7 +120,10 @@ SET app.current_family_id = 'family-uuid-here';
 export abstract class BaseRepository<T> {
   protected familyId: string;
 
-  constructor(protected db: SupabaseClient, familyId: string) {
+  constructor(
+    protected db: SupabaseClient,
+    familyId: string,
+  ) {
     if (!familyId) {
       throw new Error('family_id is required for all database operations');
     }
@@ -220,7 +223,7 @@ async function findPersonByName(name: string): Promise<Person | null> {
 // ✅ CORRECT - Deduplication within family only
 async function findPersonByName(
   familyId: string,
-  name: string
+  name: string,
 ): Promise<Person | null> {
   return db
     .from('people')

@@ -40,7 +40,7 @@ export async function buildScribeContext(
     questionRepo: QuestionRepository;
     imageRepo?: ImageRepository;
   },
-  options?: ContextBuilderOptions
+  options?: ContextBuilderOptions,
 ): Promise<ScribeContext> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
@@ -50,7 +50,7 @@ export async function buildScribeContext(
       repos.eventRepo.findRecent(
         familyId,
         conversationId,
-        opts.recentMessageCount
+        opts.recentMessageCount,
       ),
       repos.questionRepo.findPending(familyId, opts.maxQuestions),
       repos.claimRepo.findAllActive(familyId),
@@ -58,7 +58,7 @@ export async function buildScribeContext(
         ? repos.imageRepo.findRecentInConversation(
             familyId,
             conversationId,
-            opts.maxImages
+            opts.maxImages,
           )
         : Promise.resolve([]),
     ]);

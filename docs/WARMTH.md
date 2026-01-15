@@ -332,19 +332,15 @@ We'll be here whenever you're ready. 😊"
 Before any message goes out, ask:
 
 1. **Would I say this to my own grandmother?**
-
    - If no → rewrite
 
 2. **Does this acknowledge their effort?**
-
    - If no → add gratitude
 
 3. **Does this give permission to not know?**
-
    - If asking a question and no → add permission
 
 4. **Would this make me want to share more?**
-
    - If no → add warmth
 
 5. **Does this sound like a human who cares?**

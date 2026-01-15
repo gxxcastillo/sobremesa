@@ -56,7 +56,7 @@ export function getServiceClient(): SupabaseClient {
     const config = getDatabaseConfig();
     if (!config.serviceRoleKey) {
       throw new Error(
-        'SUPABASE_SERVICE_ROLE_KEY environment variable is required for service client'
+        'SUPABASE_SERVICE_ROLE_KEY environment variable is required for service client',
       );
     }
     serviceClientInstance = createClient(config.url, config.serviceRoleKey, {

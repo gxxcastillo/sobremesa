@@ -196,12 +196,12 @@ function runTests(): void {
         }
         if (parsedQuestion.timeReferences.length > 0) {
           console.log(
-            `   Time refs: ${parsedQuestion.timeReferences.join(', ')}`
+            `   Time refs: ${parsedQuestion.timeReferences.join(', ')}`,
           );
         }
         if (parsedQuestion.keywords.length > 0) {
           console.log(
-            `   Keywords: ${parsedQuestion.keywords.slice(0, 5).join(', ')}`
+            `   Keywords: ${parsedQuestion.keywords.slice(0, 5).join(', ')}`,
           );
         }
       }
@@ -211,12 +211,12 @@ function runTests(): void {
       console.log(`   Input: "${testCase.input}"`);
       if (!isQuestionPassed) {
         console.log(
-          `   isQuestion: expected ${testCase.expectedIsQuestion}, got ${actualIsQuestion}`
+          `   isQuestion: expected ${testCase.expectedIsQuestion}, got ${actualIsQuestion}`,
         );
       }
       if (!typePassed && parsedQuestion) {
         console.log(
-          `   Type: expected ${testCase.expectedType}, got ${parsedQuestion.type}`
+          `   Type: expected ${testCase.expectedType}, got ${parsedQuestion.type}`,
         );
       }
     }
@@ -224,7 +224,7 @@ function runTests(): void {
 
   console.log('\n' + '='.repeat(60));
   console.log(
-    `\nResults: ${passed} passed, ${failed} failed out of ${testCases.length} tests`
+    `\nResults: ${passed} passed, ${failed} failed out of ${testCases.length} tests`,
   );
 
   if (failed > 0) {
@@ -263,11 +263,11 @@ function testEntityExtraction(): void {
       parsed.entities.some(
         (pe) =>
           pe.toLowerCase().includes(e.toLowerCase()) ||
-          e.toLowerCase().includes(pe.toLowerCase())
-      )
+          e.toLowerCase().includes(pe.toLowerCase()),
+      ),
     );
     console.log(
-      `  ${allFound ? '✅' : '⚠️'} ${allFound ? 'Match' : 'Partial/No match'}`
+      `  ${allFound ? '✅' : '⚠️'} ${allFound ? 'Match' : 'Partial/No match'}`,
     );
   }
 }
@@ -291,7 +291,7 @@ function testTimeExtraction(): void {
     const parsed = parseQuestion(test.input);
     console.log(`\nInput: "${test.input}"`);
     console.log(
-      `  Time refs found: ${parsed.timeReferences.join(', ') || '(none)'}`
+      `  Time refs found: ${parsed.timeReferences.join(', ') || '(none)'}`,
     );
     console.log(`  Expected: ${test.expectedTimes.join(', ')}`);
   }

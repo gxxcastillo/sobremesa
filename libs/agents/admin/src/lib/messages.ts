@@ -139,7 +139,7 @@ export function formatHelpMessage(language: SupportedLanguage): string {
  */
 export function formatMentionMessage(
   language: SupportedLanguage,
-  familyName: string
+  familyName: string,
 ): string {
   const m = getMessages(language).mention;
   return [
@@ -161,7 +161,7 @@ export function formatStatusMessage(
   language: SupportedLanguage,
   familyName: string,
   stats: { eventCount: number; memberCount: number },
-  createdAt?: Date
+  createdAt?: Date,
 ): string {
   const m = getMessages(language).status;
   const lines: string[] = [
@@ -173,7 +173,7 @@ export function formatStatusMessage(
 
   if (createdAt) {
     const createdDate = createdAt.toLocaleDateString(
-      LANGUAGE_LOCALES[language]
+      LANGUAGE_LOCALES[language],
     );
     lines.push(m.activeSince(createdDate));
   }
