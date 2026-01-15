@@ -8,15 +8,18 @@ Complete directory structure for Sobremesa in an Nx workspace.
 sobremesa-workspace/
 ├── .claudeproject                    ← Root level (Claude Code reads this)
 │
-├── .claude/                          ← All documentation
+├── .claude/                          ← AI assistant context
+│   ├── NX.md                         ← Nx MCP instructions
+│   ├── CONFIGURATION.md              ← Config notes
+│   └── settings.local.json
+│
+├── docs/                             ← Human documentation
 │   ├── ARCHITECTURE.md
 │   ├── AGENTS.md
-│   ├── CONFIGURATION.md
 │   ├── WARMTH.md
 │   ├── CULTURE.md
-│   ├── DECISIONS.md
 │   ├── IMPLEMENTATION.md
-│   └── SCHEMA.sql
+│   └── adr/                          ← Architecture Decision Records
 │
 ├── prompts/                          ← System prompts for agents
 │   ├── facilitator.md
@@ -215,16 +218,19 @@ sobremesa-workspace/
 
 - `.claudeproject` → `/sobremesa-workspace/.claudeproject`
 
-**Placed in `.claude/`:**
+**Placed in `.claude/` (AI assistant context):**
 
-- `ARCHITECTURE.md` → `/sobremesa-workspace/.claude/ARCHITECTURE.md`
-- `AGENTS.md` → `/sobremesa-workspace/.claude/AGENTS.md`
-- `CONFIGURATION.md` → `/sobremesa-workspace/.claude/CONFIGURATION.md`
-- `WARMTH.md` → `/sobremesa-workspace/.claude/WARMTH.md`
-- `CULTURE.md` → `/sobremesa-workspace/.claude/CULTURE.md`
-- `DECISIONS.md` → `/sobremesa-workspace/.claude/DECISIONS.md`
-- `IMPLEMENTATION.md` → `/sobremesa-workspace/.claude/IMPLEMENTATION.md`
-- `SCHEMA.sql` → `/sobremesa-workspace/.claude/SCHEMA.sql`
+- `NX.md` → Nx MCP server instructions
+- `CONFIGURATION.md` → Configuration notes
+
+**Placed in `docs/` (human documentation):**
+
+- `ARCHITECTURE.md`, `AGENTS.md`, `WARMTH.md`, `CULTURE.md`, `IMPLEMENTATION.md`
+- `adr/` → Architecture Decision Records
+
+**Database schema:**
+
+- `apps/db/supabase/migrations/` → Source of truth for schema
 
 **Placed in `prompts/`:**
 
@@ -450,7 +456,7 @@ npm install -D @types/node
 
 ```bash
 # Run schema.sql on Supabase
-# Copy .claude/SCHEMA.sql to libs/database/src/migrations/
+# Copy apps/db/supabase/migrations/20260112074715_init_schema.sql to libs/database/src/migrations/
 ```
 
 ---

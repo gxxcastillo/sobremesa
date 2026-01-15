@@ -9,7 +9,7 @@
       "continuous": true,
       "executor": "nx:run-commands",
       "options": {
-        "command": "source .env && export TLS_CERT=certs/sobremesa.x-cert.pem TLS_KEY=certs/sobremesa.x-key.pem PORT=3001 && bun run apps/api/src/main.ts",
+        "command": "source .env && export TLS_CERT=.certs/sobremesa.x-cert.pem TLS_KEY=.certs/sobremesa.x-key.pem PORT=3001 && bun run apps/api/src/main.ts",
         "cwd": "{workspaceRoot}"
       }
     },

@@ -4,36 +4,24 @@ import { getServiceClient } from './client';
 
 /**
  * Initialize the database schema.
- * Reads SCHEMA.sql and executes it against Supabase.
+ * Reads the migration file and executes it against Supabase.
  */
 export async function initDb(): Promise<void> {
   const client = getServiceClient();
 
   // Find schema file relative to project root
-  const possiblePaths = [
-    join(process.cwd(), '.claude/SCHEMA.sql'),
-    join(
-      process.cwd(),
-      'apps/db/supabase/migrations/20260112074715_init_schema.sql'
-    ),
-  ];
+  const schemaPath = join(
+    process.cwd(),
+    'apps/db/supabase/migrations/20260112074715_init_schema.sql',
+  );
 
-  let schemaPath: string | null = null;
-  let schemaSql: string | null = null;
-
-  for (const path of possiblePaths) {
-    try {
-      schemaSql = readFileSync(path, 'utf-8');
-      schemaPath = path;
-      break;
-    } catch {
-      // Try next path
-    }
-  }
-
-  if (!schemaSql || !schemaPath) {
+  let schemaSql: string;
+  try {
+    schemaSql = readFileSync(schemaPath, 'utf-8');
+  } catch {
     throw new Error(
-      'Could not find SCHEMA.sql. Looked in:\n' + possiblePaths.join('\n')
+      `Could not find schema at: ${schemaPath}\n\n` +
+        'Please ensure you are running from the workspace root.',
     );
   }
 
@@ -48,7 +36,7 @@ export async function initDb(): Promise<void> {
     // This is a limitation - Supabase JS client doesn't support raw SQL execution
     // We need to use the REST API or pg directly
     console.warn(
-      'Note: exec_sql RPC not available, using alternative method...'
+      'Note: exec_sql RPC not available, using alternative method...',
     );
 
     // For Supabase, we can use the management API or just instruct the user
@@ -57,10 +45,10 @@ export async function initDb(): Promise<void> {
         'Please run the schema manually:\n' +
         '1. Go to your Supabase dashboard\n' +
         '2. Open SQL Editor\n' +
-        '3. Copy contents of .claude/SCHEMA.sql\n' +
+        '3. Copy contents of apps/db/supabase/migrations/20260112074715_init_schema.sql\n' +
         '4. Run the query\n\n' +
         'Or use the Supabase CLI:\n' +
-        '  supabase db push'
+        '  supabase db push',
     );
   }
 

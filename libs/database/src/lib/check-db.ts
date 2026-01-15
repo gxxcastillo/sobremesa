@@ -95,7 +95,9 @@ async function checkDb(): Promise<void> {
     console.log('  1. Go to your Supabase project dashboard');
     console.log('  2. Click "SQL Editor" in the left sidebar');
     console.log('  3. Click "New query"');
-    console.log('  4. Copy the contents of .claude/SCHEMA.sql');
+    console.log(
+      '  4. Copy the contents of apps/db/supabase/migrations/20260112074715_init_schema.sql',
+    );
     console.log('  5. Click "Run"\n');
   }
 }

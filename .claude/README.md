@@ -34,14 +34,14 @@ See `../docs/README.md` for complete index.
 
 ### AI Assistant Context (this directory)
 
-| Document                               | Purpose                                       |
-| -------------------------------------- | --------------------------------------------- |
-| [NX.md](NX.md)                         | Nx MCP server instructions for AI assistants  |
-| [CONFIGURATION.md](CONFIGURATION.md)   | Configuration notes                           |
-| [DECISIONS.md](DECISIONS.md)           | Architecture Decision Records (ADRs)          |
-| [SCHEMA.sql](SCHEMA.sql)               | PostgreSQL database schema (for AI reference) |
-| [SCHEMA-UPDATES.md](SCHEMA-UPDATES.md) | Migration notes                               |
-| settings.local.json                    | AI assistant settings                         |
+| Document                             | Purpose                                      |
+| ------------------------------------ | -------------------------------------------- |
+| [NX.md](NX.md)                       | Nx MCP server instructions for AI assistants |
+| [CONFIGURATION.md](CONFIGURATION.md) | Configuration notes                          |
+| [../docs/adr/](../docs/adr/)         | Architecture Decision Records (ADRs)         |
+| settings.local.json                  | AI assistant settings                        |
+
+**Database Schema:** See `apps/db/supabase/migrations/` for the source of truth.
 
 ---
 
@@ -64,19 +64,14 @@ Technical Setup
     ├── QUICKSTART.md       ← Get started
     ├── CONFIGURATION.md
     ├── NX-MONOREPO-STRUCTURE.md
-    └── SCHEMA.sql
+    └── apps/db/supabase/migrations/
 
 Agents (AI Components)
-    ├── AGENTS.md           ← Overview
-    ├── AGENT_FACILITATOR.md
-    ├── AGENT_ADMIN.md
-    ├── AGENT_SCRIBE.md
+    └── AGENTS.md           ← All agent specs (consolidated)
 .claude/ (AI Context)
     ├── NX.md                    ← Nx MCP instructions
-    ├── SCHEMA.sql               ← DB schema reference
     ├── CONFIGURATION.md         ← Config notes
-    ├── DECISIONS.md             ← ADRs
-    └── SCHEMA-UPDATES.md        ← Migration notes
+    └── ../docs/adr/             ← ADRs
 
 ../docs/ (Human Documentation)
     ├── README.md                ← Documentation index
@@ -87,7 +82,7 @@ Agents (AI Components)
 
 1. [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - Data flow and components
 2. [../docs/AGENTS.md](../docs/AGENTS.md) - Agent overview
-3. [SCHEMA.sql](SCHEMA.sql) - Database schema
+3. `apps/db/supabase/migrations/` - Database schema
 4. [../docs/DOMAIN-MODEL.md](../docs/DOMAIN-MODEL.md) - Data contracts
 
 ### Working with Nx
@@ -97,41 +92,30 @@ Agents (AI Components)
 
 ### Key Decisions
 
-- [DECISIONS.md](DECISIONS.md) - Architecture Decision Records
+- [../docs/adr/](../docs/adr/) - Architecture Decision Records
 - [CONFIGURATION.md](CONFIGURATION.md) - Configuration approach
 
 ### Making Changes
 
 1. Read relevant specs in `../docs/`
-2. Check [DECISIONS.md](DECISIONS.md) for context
-3. Update [SCHEMA-UPDATES.md](SCHEMA-UPDATES.md) for DB changes
-4. Update `../docs/IMPLEMENTATION.md` for progress trackingTION.md) |
-| Implement Scribe | [AGENT_SCRIBE.md](AGENT_SCRIBE.md) + [DOMAIN-MODEL.md](DOMAIN-MODEL.md) |
-| Write warm questions | [WARMTH.md](WARMTH.md) |
-| Adapt for culture | [CULTURE.md](CULTURE.md) |
-| Handle errors | [ERROR-HANDLING.md](ERROR-HANDLING.md) |
-| Ensure data isolation | [DATA-ISOLATION.md](DATA-ISOLATION.md) |
-| Understand decisions | [DECISIONS.md](DECISIONS.md) |
+2. Check [../docs/adr/](../docs/adr/) for context
+3. For DB changes, add migrations to `apps/db/supabase/migrations/`
+4. Update `../docs/IMPLEMENTATION.md` for progress tracking
 
 ---
 
-## 🔄 Documentation Versions
+## Quick Reference Table
 
-Current version: **1.0** (January 2026)
-
-This documentation set was created for the initial implementation. As the system evolves, maintain this index and update individual documents accordingly.
-
----
-
-**Ready to build?** → Start with [QUICKSTART.md](QUICKSTART.md)
-../docs/PRODUCT.md](../docs/PRODUCT.md) |
-| Set up dev environment | [../docs/QUICKSTART.md](../docs/QUICKSTART.md) |
-| Understand data flow | [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) |
-| Database schema | [SCHEMA.sql](SCHEMA.sql) |
-| Configuration approach | [CONFIGURATION.md](CONFIGURATION.md) |
-| Nx workspace tools | [NX.md](NX.md) |
-| Past decisions | [DECISIONS.md](DECISIONS.md) |
-| Migration notes | [SCHEMA-UPDATES.md](SCHEMA-UPDATES.md) |
+| Task                   | Documentation                                                             |
+| ---------------------- | ------------------------------------------------------------------------- |
+| Understand product     | [../docs/PRODUCT.md](../docs/PRODUCT.md)                                  |
+| Set up dev environment | [../docs/QUICKSTART.md](../docs/QUICKSTART.md)                            |
+| Understand data flow   | [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)                        |
+| Database schema        | `apps/db/supabase/migrations/`                                            |
+| Configuration approach | [CONFIGURATION.md](CONFIGURATION.md)                                      |
+| Nx workspace tools     | [NX.md](NX.md)                                                            |
+| Past decisions         | [../docs/adr/](../docs/adr/)                                              |
+| Implement agents       | [../docs/AGENTS.md](../docs/AGENTS.md) + individual AGENT\_\*.md files    |
 
 ---
 

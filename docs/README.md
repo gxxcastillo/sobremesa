@@ -39,14 +39,11 @@ This directory contains all specifications, decisions, and guides needed to buil
 
 ### Agents
 
-| Document                                     | Purpose                               |
-| -------------------------------------------- | ------------------------------------- |
-| [AGENTS.md](AGENTS.md)                       | Overview of all 5 agents              |
-| [AGENT_FACILITATOR.md](AGENT_FACILITATOR.md) | Facilitator agent specification       |
-| [AGENT_ADMIN.md](AGENT_ADMIN.md)             | Admin agent specification             |
-| [AGENT_SCRIBE.md](AGENT_SCRIBE.md)           | Scribe agent specification            |
-| [AGENT_CURATOR.md](AGENT_CURATOR.md)         | Curator agent specification           |
-| [AGENT_REGISTRAR.md](AGENT_REGISTRAR.md)     | Registrar specification (data writer) |
+| Document               | Purpose                                     |
+| ---------------------- | ------------------------------------------- |
+| [AGENTS.md](AGENTS.md) | All 7 agents: specs, flows, database access |
+
+Prompts are in `libs/prompts/src/agents/*.txt`
 
 ### Data Models
 
@@ -98,12 +95,7 @@ Technical Setup
     └── NX-MONOREPO-STRUCTURE.md
 
 Agents (AI Components)
-    ├── AGENTS.md           ← Overview
-    ├── AGENT_FACILITATOR.md
-    ├── AGENT_ADMIN.md
-    ├── AGENT_SCRIBE.md
-    ├── AGENT_CURATOR.md
-    └── AGENT_REGISTRAR.md
+    └── AGENTS.md           ← All agent specs (consolidated)
 
 Implementation
     └── IMPLEMENTATION.md   ← Build roadmap
@@ -124,9 +116,9 @@ Implementation
 
 **Building a specific component?**
 
-- **Scribe?** → [AGENT_SCRIBE.md](AGENT_SCRIBE.md), [DOMAIN-MODEL.md](DOMAIN-MODEL.md)
-- **Facilitator?** → [AGENT_FACILITATOR.md](AGENT_FACILITATOR.md), [WARMTH.md](WARMTH.md)
-- **Admin?** → [AGENT_ADMIN.md](AGENT_ADMIN.md)
+- **Any Agent?** → [AGENTS.md](AGENTS.md) (all specs consolidated)
+- **Scribe?** → [AGENTS.md](AGENTS.md#scribe-default-don-rubén), [DOMAIN-MODEL.md](DOMAIN-MODEL.md)
+- **Facilitator?** → [AGENTS.md](AGENTS.md#facilitator-default-carmencita), [WARMTH.md](WARMTH.md)
 - **Database?** → See `apps/db/supabase/migrations/`, [DATA-ISOLATION.md](DATA-ISOLATION.md)
 
 ### I'm a Product Manager
@@ -142,11 +134,10 @@ Implementation
 
 **Understanding the AI:**
 
-1. [AGENTS.md](AGENTS.md) - Agent overview
-2. [AGENT_SCRIBE.md](AGENT_SCRIBE.md) - Data extraction
-3. [AGENT_FACILITATOR.md](AGENT_FACILITATOR.md) - Decision logic
-4. [DOMAIN-MODEL.md](DOMAIN-MODEL.md) - Data structures
-5. [WARMTH.md](WARMTH.md) - Prompt engineering
+1. [AGENTS.md](AGENTS.md) - All agent specs (extraction, decision logic, flows)
+2. [DOMAIN-MODEL.md](DOMAIN-MODEL.md) - Data structures
+3. [WARMTH.md](WARMTH.md) - Prompt engineering
+4. Prompts: `libs/prompts/src/agents/*.txt`
 
 ---
 
@@ -172,20 +163,20 @@ Implementation
 
 ## 📝 Quick Reference
 
-| Need to...                   | See...                                                                  |
-| ---------------------------- | ----------------------------------------------------------------------- |
-| Understand product vision    | [PRODUCT.md](PRODUCT.md)                                                |
-| Set up dev environment       | [QUICKSTART.md](QUICKSTART.md)                                          |
-| Understand data flow         | [ARCHITECTURE.md](ARCHITECTURE.md)                                      |
-| Understand all data models   | [DATA-MODELS.md](DATA-MODELS.md)                                        |
-| Build relationships feature  | [RELATIONSHIPS.md](RELATIONSHIPS.md)                                    |
-| Build identity/multi-channel | [IDENTITIES.md](IDENTITIES.md)                                          |
-| Build person management      | [PERSONS.md](PERSONS.md)                                                |
-| Implement Scribe             | [AGENT_SCRIBE.md](AGENT_SCRIBE.md) + [DOMAIN-MODEL.md](DOMAIN-MODEL.md) |
-| Write warm questions         | [WARMTH.md](WARMTH.md)                                                  |
-| Adapt for culture            | [CULTURE.md](CULTURE.md)                                                |
-| Handle errors                | [ERROR-HANDLING.md](ERROR-HANDLING.md)                                  |
-| Ensure data isolation        | [DATA-ISOLATION.md](DATA-ISOLATION.md)                                  |
+| Need to...                   | See...                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------ |
+| Understand product vision    | [PRODUCT.md](PRODUCT.md)                                                             |
+| Set up dev environment       | [QUICKSTART.md](QUICKSTART.md)                                                       |
+| Understand data flow         | [ARCHITECTURE.md](ARCHITECTURE.md)                                                   |
+| Understand all data models   | [DATA-MODELS.md](DATA-MODELS.md)                                                     |
+| Build relationships feature  | [RELATIONSHIPS.md](RELATIONSHIPS.md)                                                 |
+| Build identity/multi-channel | [IDENTITIES.md](IDENTITIES.md)                                                       |
+| Build person management      | [PERSONS.md](PERSONS.md)                                                             |
+| Implement Scribe             | [AGENTS.md](AGENTS.md#scribe-default-don-rubén) + [DOMAIN-MODEL.md](DOMAIN-MODEL.md) |
+| Write warm questions         | [WARMTH.md](WARMTH.md)                                                               |
+| Adapt for culture            | [CULTURE.md](CULTURE.md)                                                             |
+| Handle errors                | [ERROR-HANDLING.md](ERROR-HANDLING.md)                                               |
+| Ensure data isolation        | [DATA-ISOLATION.md](DATA-ISOLATION.md)                                               |
 
 ---
 

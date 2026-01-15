@@ -141,7 +141,7 @@ export interface HistorianConfig {
  * Default configuration for the Historian agent.
  */
 export const DEFAULT_HISTORIAN_CONFIG: HistorianConfig = {
-  historianName: 'El Bibliotecario',
+  historianName: 'Clio',
   model: 'claude-sonnet-4-20250514',
   maxTokens: 1024,
   maxClaimsPerQuery: 20,
@@ -154,19 +154,31 @@ export const DEFAULT_HISTORIAN_CONFIG: HistorianConfig = {
 /**
  * Result of the Historian answering a question.
  */
-export interface HistorianResult {
+export type HistorianReply = HistorianReplySuccess | HistorianReplyFail;
+
+export type HistorianReplySuccess = {
   /** Whether the question was answered successfully */
-  success: boolean;
-  /** The answer text */
-  answer?: string;
+  success: true;
+  /** The answer text (raw, before Facilitator formatting) */
+  answer: string;
+  /** The original question that was asked */
+  originalQuestion: string;
+  /** Chat ID to send the response to */
+  chatId: string;
+  /** Message ID to reply to */
+  replyToMessageId: number;
   /** Question type that was detected */
-  questionType?: QuestionType;
+  questionType: QuestionType;
   /** Number of data points used in the answer */
-  dataPointsUsed?: number;
+  dataPointsUsed: number;
   /** Whether conflicts were present in the answer */
-  hasConflicts?: boolean;
-  /** Error message if unsuccessful */
-  error?: string;
+  hasConflicts: boolean;
   /** Tokens used for this call */
-  tokensUsed?: number;
-}
+  tokensUsed: number;
+  error?: never;
+};
+
+export type HistorianReplyFail = {
+  success: false;
+  error?: string;
+};

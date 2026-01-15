@@ -4,14 +4,13 @@ import {
   FamilyRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
-import { BotRole, type MessageSender } from '@sobremesa/shared-types';
 import type pino from 'pino';
 import { parseQuestion, isQuestion } from './question-parser';
 import { DataRetriever } from './retriever';
 import { buildSystemPrompt, buildUserPrompt } from './prompt-builder';
 import {
   type HistorianConfig,
-  type HistorianResult,
+  type HistorianReply,
   DEFAULT_HISTORIAN_CONFIG,
 } from './types';
 
@@ -21,16 +20,12 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnthropicClient = any;
 
-export type { MessageSender };
-
 /**
  * Options for HistorianAgent.
  */
 export interface HistorianAgentOptions {
   /** Anthropic client */
   anthropic: AnthropicClient;
-  /** Message sender (typically BotManager) */
-  messageSender: MessageSender;
   /** Conversation event repository */
   eventRepo?: ConversationEventRepository;
   /** Family repository */
@@ -48,11 +43,11 @@ export interface HistorianAgentOptions {
 /**
  * The Historian agent answers questions about collected family history.
  * It queries the database, retrieves relevant information, and synthesizes
- * warm, accurate responses with source attribution.
+ * accurate responses with source attribution. The response is returned
+ * for the Facilitator to format and send with appropriate warmth/language.
  */
 export class HistorianAgent {
   private anthropic: AnthropicClient;
-  private messageSender: MessageSender;
   private eventRepo: ConversationEventRepository;
   // @ts-expect-error FamilyRepo is available for future use (e.g., getting family name for responses)
   private _familyRepo: FamilyRepository;
@@ -63,7 +58,6 @@ export class HistorianAgent {
 
   constructor(options: HistorianAgentOptions) {
     this.anthropic = options.anthropic;
-    this.messageSender = options.messageSender;
     this.eventRepo = options.eventRepo || new ConversationEventRepository();
     this._familyRepo = options.familyRepo || new FamilyRepository();
     this.eventLog = options.eventLog || new EventLogRepository();
@@ -85,7 +79,7 @@ export class HistorianAgent {
    * @param eventId - The conversation event ID containing the question
    * @param familyId - The family ID
    */
-  async answer(eventId: string, familyId: string): Promise<HistorianResult> {
+  async answer(eventId: string, familyId: string): Promise<HistorianReply> {
     this.logger.info({ eventId, familyId }, 'Processing question');
 
     try {
@@ -109,14 +103,14 @@ export class HistorianAgent {
           entities: parsedQuestion.entities,
           keywords: parsedQuestion.keywords,
         },
-        'Question parsed'
+        'Question parsed',
       );
 
       // Retrieve relevant context
       const context = await this.retriever.retrieve(
         familyId,
         parsedQuestion,
-        this.config
+        this.config,
       );
       this.logger.debug(
         {
@@ -127,7 +121,7 @@ export class HistorianAgent {
           claimsCount: context.claims.length,
           hasConflicts: context.hasConflicts,
         },
-        'Context retrieved'
+        'Context retrieved',
       );
 
       // Build prompts
@@ -162,21 +156,16 @@ export class HistorianAgent {
         (response.usage?.input_tokens || 0) +
         (response.usage?.output_tokens || 0);
 
-      // Send the answer
+      // Prepare reply metadata
       const externalMessageId = event.externalEventId
         ? parseInt(event.externalEventId, 10)
         : undefined;
+      const replyToMessageId =
+        externalMessageId && !isNaN(externalMessageId)
+          ? externalMessageId
+          : NaN;
 
-      await this.messageSender.sendMessage(BotRole.HISTORIAN, {
-        chatId: event.conversationId,
-        text: answerText,
-        replyToMessageId:
-          externalMessageId && !isNaN(externalMessageId)
-            ? externalMessageId
-            : undefined,
-      });
-
-      // Log the interaction
+      // Log the answer generation (message will be sent by Facilitator)
       await this.eventLog.log({
         familyId,
         eventType: 'question_answered',
@@ -202,12 +191,16 @@ export class HistorianAgent {
           hasConflicts: context.hasConflicts,
           tokensUsed,
         },
-        'Question answered successfully'
+        'Answer generated successfully (pending Facilitator formatting)',
       );
 
+      // Return the answer for the Facilitator to format and send
       return {
         success: true,
         answer: answerText,
+        originalQuestion: questionText,
+        chatId: event.conversationId,
+        replyToMessageId,
         questionType: parsedQuestion.type,
         dataPointsUsed,
         hasConflicts: context.hasConflicts,
@@ -218,7 +211,7 @@ export class HistorianAgent {
         error instanceof Error ? error.message : String(error);
       this.logger.error(
         { eventId, familyId, error: errorMessage },
-        'Failed to answer question'
+        'Failed to answer question',
       );
       return { success: false, error: errorMessage };
     }

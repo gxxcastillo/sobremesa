@@ -1,11 +1,7 @@
-export {
-  HistorianAgent,
-  type HistorianAgentOptions,
-  type MessageSender,
-} from './lib/historian';
+export { HistorianAgent, type HistorianAgentOptions } from './lib/historian';
 export {
   type HistorianConfig,
-  type HistorianResult,
+  type HistorianReply,
   type QuestionType,
   type ParsedQuestion,
   type RetrievedContext,

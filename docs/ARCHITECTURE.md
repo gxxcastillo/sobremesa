@@ -358,4 +358,4 @@ See other documentation files for details:
 - CONFIGURATION.md - How to configure
 - AGENTS.md - Agent specifications
 - IMPLEMENTATION.md - Build plan
-- DECISIONS.md - Why we made these choices
+- [adr/](adr/) - Architecture decision records

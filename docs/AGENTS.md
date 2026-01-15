@@ -2,137 +2,25 @@
 
 High-level overview of the AI agents that power Sobremesa's family history collection system.
 
-For detailed specifications, see individual agent files in this directory.
-
 ---
 
-## The Six Agents
+## The Seven Agents
 
-| Agent           | Role                   | Visible? | Calls Claude API? | Model  | Prompt File              |
-| --------------- | ---------------------- | -------- | ----------------- | ------ | ------------------------ |
-| **Facilitator** | Asks warm questions    | ✅ Yes   | ✅ Yes            | Sonnet | `prompts/facilitator.md` |
-| **Admin**       | Celebrates & mediates  | ✅ Yes   | ✅ Yes            | Sonnet | `prompts/admin.md`       |
-| **Scribe**      | Extracts data          | ❌ No    | ✅ Yes            | Sonnet | `prompts/scribe.md`      |
-| **Curator**     | Analyzes photos        | ❌ No    | ✅ Yes            | Sonnet | `prompts/curator.md`     |
-| **Intern**      | Filters & links images | ❌ No    | ✅ Yes            | Haiku  | None (code prompts)      |
-| **Registrar**   | Saves to database      | ❌ No    | ❌ No             | N/A    | None (pure logic)        |
-
----
-
-## Quick Overview
-
-### 👥 Facilitator (Carmencita)
-
-**What:** Asks warm, thoughtful questions to fill gaps in stories  
-**When:** After Scribe detects missing information  
-**How:** Uses 4-part warmth formula: [Warmth] + [Question] + [Permission] + [Gratitude]
-
-**Key Decisions:**
-
-- Should I ask this question now? (10-step decision logic)
-- Is the conversation active? (real-time flow detection)
-- Is this too soon after sensitive content?
-- Has this been answered already?
-
-**See:** [`.claude/AGENT_FACILITATOR.md`](AGENT_FACILITATOR.md) for complete specification
-
----
-
-### 🔧 Admin (La Directora)
-
-**What:** Project manager - celebrates milestones, mediates conflicts, coaches system  
-**When:** Milestones reached, conflicts detected, silence too long  
-**How:** 5-part celebration structure, conflict mediation framework, coaching signals
-
-**Key Responsibilities:**
-
-- **Celebrate** - 10, 25, 50, 100 story milestones
-- **Mediate** - Handle conflicting claims (never take sides)
-- **Re-engage** - Gently prompt after prolonged silence
-- **Coach** - Adjust facilitator behavior based on family response
-
-**See:** [`.claude/AGENT_ADMIN.md`](AGENT_ADMIN.md) for complete specification
-
----
-
-### 📝 Scribe (Don Rubén)
-
-**What:** Silent data extractor - processes messages, creates claims, generates questions  
-**When:** Every message received  
-**How:** Claude API processes message → outputs domain model → detects conflicts
-
-**Key Outputs:**
-
-- **Entities** - People, places, events, stories
-- **Claims** - Every fact with source and confidence
-- **Questions** - Generated from detected gaps
-- **Conflicts** - Flagged but never resolved
-- **Answers** - Detected from conversation
-
-**See:** [`.claude/AGENT_SCRIBE.md`](AGENT_SCRIBE.md) for complete specification
-
----
-
-### 🎨 Curator (Hidden)
-
-**What:** Async image analyzer - OCR, era estimation, photo identification  
-**When:** Image shared in conversation  
-**How:** Claude vision API → analysis → questions for Facilitator
-
-**Key Outputs:**
-
-- Visual description (people, setting, objects)
-- OCR text extraction (signs, handwriting)
-- Era estimation (based on photo technology, clothing, etc.)
-- Connections to existing stories
-- Questions about the photo
-
-**See:** [`.claude/AGENT_CURATOR.md`](AGENT_CURATOR.md) for complete specification
-
----
-
-### 📋 Intern (Preprocessing)
-
-**What:** Lightweight preprocessing agent using Haiku for fast, low-cost operations
-**When:** Before and after Scribe during message processing
-**How:** Uses Claude Haiku (`claude-3-5-haiku-20241022`) for quick classification tasks
-
-**Key Functions:**
-
-- **Filter** - Determines if a message is relevant for Scribe processing
-- **Image Link** - Detects when text messages reference recently shared images
-- **Augment** - Adds image references to domain model if Scribe missed them
-
-**Image Reference Types:**
-
-- `describes` - Text describes what's in the image
-- `identifies_people` - Text identifies people in the image
-- `provides_context` - Text provides context about the image (date, location, event)
-- `asks_about` - Text asks a question about the image
-
-**Key Benefit:** Uses Haiku for preprocessing tasks, reducing Sonnet API costs while maintaining quality for the main extraction.
-
----
-
-### 💾 Registrar (Backend)
-
-**What:** Single database writer - receives domain models, saves to Supabase
-**When:** After Scribe or Curator completes processing
-**How:** Pure TypeScript logic (no AI)
-
-**Key Functions:**
-
-- **Map** - Domain model → database schema
-- **Deduplicate** - Fuzzy match on names/aliases
-- **Save** - Insert/update in Supabase
-- **Link** - Connect claims to conflicts
-- **Web3** - Optional Solana writes
-
-**See:** [AGENT_REGISTRAR.md](AGENT_REGISTRAR.md) for complete specification
+| Agent           | Role                      | Visible? | Calls Claude API? | Model  | Prompt File                               |
+| --------------- | ------------------------- | -------- | ----------------- | ------ | ----------------------------------------- |
+| **Facilitator** | Asks questions & responds | Yes      | Yes               | Sonnet | `libs/prompts/src/agents/facilitator.txt` |
+| **Historian**   | Answers @mention queries  | No       | Yes               | Sonnet | `libs/prompts/src/agents/historian.txt`   |
+| **Admin**       | Celebrates & mediates     | Yes      | Yes               | Sonnet | `libs/prompts/src/agents/admin.txt`       |
+| **Scribe**      | Extracts data             | No       | Yes               | Sonnet | `libs/prompts/src/agents/scribe.txt`      |
+| **Curator**     | Analyzes photos           | No       | Yes               | Sonnet | `libs/prompts/src/agents/curator.txt`     |
+| **Intern**      | Filters & links images    | No       | Yes               | Haiku  | `libs/prompts/src/agents/intern-*.txt`    |
+| **Registrar**   | Saves to database         | No       | No                | N/A    | None (pure logic)                         |
 
 ---
 
 ## System Flow
+
+### Normal Message Processing
 
 ```
 1. Message arrives in Chat Provider
@@ -141,7 +29,8 @@ For detailed specifications, see individual agent files in this directory.
    ↓
 3. Added to ordered queue
    ↓
-4. Intern filters (determines if relevant for extraction)
+4. Intern routes message
+   ├─ @mention question → Go to "Question Answering" flow
    ├─ NOT RELEVANT → Mark processed, skip to step 8
    └─ RELEVANT → Continue
    ↓
@@ -152,7 +41,7 @@ For detailed specifications, see individual agent files in this directory.
 7. Registrar saves (domain model → database)
    ↓
 8. Facilitator checks if should ask question
-   ├─ YES → Asks warmly using 4-part formula
+   ├─ YES → Asks warmly in PRIMARY_LANGUAGE
    └─ NO → Waits (logs reason in event_log)
    ↓
 9. Admin monitors and adjusts
@@ -161,30 +50,392 @@ For detailed specifications, see individual agent files in this directory.
    └─ Coaches Facilitator
 ```
 
-## Question Lifecycle (Authoritative)
+### Question Answering (@mentions)
 
-A “question” is a first-class object with its own lifecycle. Multiple agents participate, but only the Facilitator speaks to the family.
+```
+1. @mention question routed by Intern
+   ↓
+2. Historian queries database
+   ├─ People, claims, relationships
+   ├─ Events, stories, images
+   └─ Detects conflicts
+   ↓
+3. Historian synthesizes raw answer
+   ├─ Source attribution
+   ├─ Confidence levels
+   └─ Conflict presentation
+   ↓
+4. Facilitator receives answer
+   ├─ Detects question language
+   ├─ Applies warmth + personality
+   └─ Sends in QUESTION language
+   ↓
+5. Event log updated
+   ├─ question_answered (Historian)
+   └─ question_responded (Facilitator)
+```
 
-1. Propose (Scribe / Curator)
-   • Scribe proposes questions when it detects gaps in a story, and stores them in the questions table with priority + context.
-   • Curator proposes questions when an image/document is analyzed (identification, era, text, connections), also stored in questions.
+---
 
-2. Decide if/when to ask (Facilitator)
-   • Facilitator is the only agent allowed to ask questions in the group.
-   • It reads pending questions and applies: real-time levers → coaching signal → rate limits → timing rules.
-   • If it asks, it must use: [Warmth] + [Question] + [Permission] + [Gratitude].
+## Question Lifecycle
 
-3. Detect answers (Scribe)
-   • Scribe processes every new message and checks whether it answers any pending question(s).
-   • Answer detection produces a structured “answered” signal tied to the source message.
+A "question" is a first-class object with its own lifecycle. Multiple agents participate, but only the Facilitator speaks to the family.
 
-4. Persist state (Registrar)
-   • Registrar is the single writer that updates canonical persistence: question status changes (asked/answered/retired), links to messages, and any resulting claims/entities.
+### System-Generated Questions (Proactive)
 
-5. Adapt behavior (Admin)
-   • Admin monitors engagement outcomes (ignored vs answered) and adjusts facilitator_rules / real-time levers over time (rate-limited), never changing content or facts.
+1. **Propose** (Scribe / Curator) - Store in questions table with priority + context
+2. **Decide if/when to ask** (Facilitator) - Apply rules, rate limits, warmth formula
+3. **Detect answers** (Scribe) - Check if messages answer pending questions
+4. **Persist state** (Registrar) - Update question status (asked/answered/retired)
+5. **Adapt behavior** (Admin) - Monitor outcomes, adjust rules
 
-Key rule: Scribe/Curator propose questions, Facilitator asks, Scribe detects answers, Registrar writes state, Admin tunes behavior.
+### User @Mention Questions (Reactive)
+
+1. **Route** (Intern) - Detect @mention with question pattern
+2. **Answer** (Historian) - Query database, synthesize answer with sources
+3. **Format & Send** (Facilitator) - Apply warmth, send in question's language
+
+**Key rule:** Facilitator is the ONLY agent that sends messages to the family.
+
+---
+
+## Agent Specifications
+
+### Facilitator (Default: "Carmencita")
+
+**Role:** Ask warm questions AND send formatted responses to @mentions
+
+**Internal Name:** `BotRole.FACILITATOR`
+
+**Language Behavior:**
+
+- **Proactive questions:** Always use configured `PRIMARY_LANGUAGE`
+- **@mention responses:** Match the language of the original question
+
+**Decision Logic:**
+
+```typescript
+async shouldAskQuestion(question: Question): boolean {
+  // === REAL-TIME CHECKS (Highest Priority) ===
+  // 1. Active conversation? → cooldown
+  // 2. Someone storytelling? → cooldown
+  // 3. Recent sensitive content? → skip
+  // 4. Grace period? → wait
+
+  // === QUESTION-SPECIFIC CHECKS ===
+  // 5. Already answered in context? → retire
+  // 6. Asked too many times? → retire
+
+  // === COACHING SIGNALS ===
+  // 7. Coach says hold back? → skip
+
+  // === STANDARD RATE LIMITS ===
+  // 8. Rate limit exceeded? → skip
+  // 9. Too soon after last question? → skip
+  // 10. Maximum silence threshold met? → ask
+}
+```
+
+**Responding to @Mentions:**
+
+```typescript
+interface SendResponseOptions {
+  familyId: string;
+  originalQuestion: string; // For language detection
+  historianAnswer: string; // Raw answer to format
+  chatId: string;
+  replyToMessageId?: number;
+}
+```
+
+**Database Access:**
+
+- **Read:** questions, facilitator_rules, real_time_levers, messages
+- **Write:** event_log (decisions only)
+
+**Common Mistakes:**
+
+- Interrupting active conversations
+- Asking questions without warmth formula
+- Ignoring coaching signals
+- Processing message content (Scribe's job)
+
+---
+
+### Historian (Default: "Clio")
+
+**Role:** Answer questions about collected family history (does NOT send directly)
+
+**Internal Name:** `BotRole.HISTORIAN`
+
+**Question Types:**
+
+| Type         | Example                                | Primary Tables        |
+| ------------ | -------------------------------------- | --------------------- |
+| person_info  | "Tell me about grandpa Abraham"        | people, claims        |
+| relationship | "How is Maria related to Roberto?"     | relationships, people |
+| timeline     | "When did the family come to America?" | events, claims        |
+| location     | "Where did grandma grow up?"           | places, claims        |
+| event        | "What happened at the 1962 wedding?"   | events, claims        |
+| story        | "What's the story about the store?"    | stories, claims       |
+| verification | "Is it true that...?"                  | claims                |
+
+**Handling Conflicts:**
+
+```typescript
+// Present both versions without resolving
+"There are different accounts in the family:
+• According to Aunt Maria, grandma was born in 1928
+• Uncle David mentioned it was 1930
+
+Both memories are valuable parts of the family story."
+```
+
+**Output:** Returns `HistorianReply` to Facilitator (never sends directly)
+
+**Database Access:**
+
+- **Read:** people, claims, relationships, events, stories, places, images
+- **Write:** event_log (question_answered)
+
+**Common Mistakes:**
+
+- Inventing facts not in the database
+- Resolving conflicting claims
+- Cold, encyclopedic responses
+- Ignoring source attribution
+
+---
+
+### Admin (Default: "La Directora")
+
+**Role:** Project manager - celebrate milestones, mediate conflicts, coach system
+
+**Internal Name:** `BotRole.ADMIN`
+
+**Celebration Structure:**
+
+```
+1. Exciting opening: "🎉 [Milestone]!"
+2. Specific metrics: "X stories, Y timespan, Z contributors"
+3. Emotional statement: "This is OUR family coming to life"
+4. Name contributors: "Special thanks to Uncle David..."
+5. Forward momentum: "Who's ready to keep going?"
+```
+
+**Conflict Mediation Framework:**
+
+```
+1. Validate BOTH sides: "Both memories are valuable"
+2. Reframe as richness: "Different perspectives show full picture"
+3. NEVER take sides
+4. Redirect to shared values: "We all care about this"
+5. De-escalate if needed: "Let's take a breath"
+```
+
+**Coaching Module:**
+
+```typescript
+async evaluateAndAdjust(performance: FacilitatorPerformance): Promise<void> {
+  const ignoreRate = performance.ignored / performance.asked;
+  const responseRate = performance.answered / performance.asked;
+
+  // TOO AGGRESSIVE? → hold_back signal, reduce frequency
+  // GOOD ENGAGEMENT? → jump_in signal, increase frequency
+  // Rate limits: Max 1 rule change/day, no reversals within 48 hours
+}
+```
+
+**Database Access:**
+
+- **Read:** All tables (needs complete system view)
+- **Write:** facilitator_rules, real_time_levers, event_log
+
+**Common Mistakes:**
+
+- Taking sides in conflicts
+- Cold/administrative tone
+- Making too many rule changes too quickly
+
+---
+
+### Scribe (Default: "Don Rubén")
+
+**Role:** Silent data extractor and question generator
+
+**Internal Name:** `BotRole.SCRIBE`
+
+**Outputs Domain Model:**
+
+```typescript
+{
+  people: [{ name, aliases, relationships, confidence }],
+  places: [{ name, type, city, context }],
+  events: [{ title, description, date, people, significance }],
+  stories: [{ title, content_original, language, themes, completeness }],
+  claims: [{ claim_type, subject, claim_value, claimed_by, confidence }],
+  questions: [{ question, type, priority, context, best_person_to_ask }],
+  answeredQuestions: [{ questionId, answeredBy, completeness }],
+  conflicts: [{ topic, versions: [{ source, value, confidence }] }]
+}
+```
+
+**Context Strategy (cost optimization):**
+
+- Recent 5 messages: Full text
+- Messages 6-20: Summaries
+- Active entities: Last 20 messages
+- Pending questions: All
+- Recent claims: Last 10
+
+**Responsibilities:**
+
+1. Entity extraction (people, places, dates, events)
+2. Story identification
+3. Relationship mapping
+4. Conflict detection (flag, never resolve)
+5. Question generation
+6. Answer detection
+7. Language detection + translation
+8. Cultural term preservation
+
+**Database Access:**
+
+- **Read:** messages, people, places, events, stories, questions, claims
+- **Write:** None (outputs domain model to Registrar)
+
+**Common Mistakes:**
+
+- Writing directly to database
+- Auto-resolving conflicts
+- Missing answer detection
+- Translating cultural terms
+
+---
+
+### Curator (Hidden)
+
+**Role:** Async image analyzer - OCR, era estimation, photo identification
+
+**Internal Name:** `BotRole.CURATOR`
+
+**Outputs:**
+
+```typescript
+{
+  imageAnalysis: {
+    description: string,
+    peopleCount: number,
+    setting: string,
+    estimatedEra: string,
+    visibleText: string[],
+    ocrLanguages: string[]
+  },
+  potentialConnections: [{ storyId, reason, confidence }],
+  questions: [{ text, priority, type: 'identification' }]
+}
+```
+
+**Processing:**
+
+- Async (doesn't block text processing)
+- Uses Claude vision API
+- Cross-references with existing stories
+
+**Database Access:**
+
+- **Read:** messages, people, stories, events, images
+- **Write:** None (outputs to Registrar)
+
+**Common Mistakes:**
+
+- Blocking text processing
+- Missing OCR opportunities
+- Not cross-referencing stories
+
+---
+
+### Intern (Preprocessing)
+
+**Role:** Lightweight preprocessing using Haiku for fast, low-cost operations
+
+**Internal Name:** `BotRole.INTERN`
+
+**Functions:**
+
+- **Filter** - Determines if message is relevant for Scribe
+- **Image Link** - Detects when text references recently shared images
+- **Route** - Directs @mentions to Historian vs Admin
+
+**Image Reference Types:**
+
+- `describes` - Text describes what's in the image
+- `identifies_people` - Text identifies people in the image
+- `provides_context` - Text provides context (date, location, event)
+- `asks_about` - Text asks a question about the image
+
+**Routing Logic:**
+
+```typescript
+if (isBotMentioned(message) && isQuestion(message)) {
+  return { action: 'historian' };
+}
+if (isBotMentioned(message)) {
+  return { action: 'admin', adminSubtype: 'mention' };
+}
+if (isRelevantContent(message)) {
+  return { action: 'scribe' };
+}
+return { action: 'ignore', reason: 'noise' };
+```
+
+**Database Access:**
+
+- **Read:** conversation_events, images (recent)
+- **Write:** event_log (filter/link decisions)
+
+---
+
+### Registrar (Backend)
+
+**Role:** Database gatekeeper - ONLY component that writes to core tables
+
+**Internal Name:** `BotRole.REGISTRAR`
+
+**Responsibilities:**
+
+1. Schema mapping (domain model → database)
+2. Deduplication (fuzzy matching on names/aliases)
+3. Claim creation (store as claims, not facts)
+4. Conflict preservation (link conflicting claims)
+5. Provenance tracking (link to source messages)
+6. Bilingual storage (original + translations)
+7. Web3 integration (optional blockchain writes)
+
+**Deduplication Hard Rule:**
+Deduplication applies only to entity identity (same person/place/event represented multiple ways). It must NEVER merge, delete, or "choose" between competing claims. Conflicting claims are preserved and linked.
+
+**Process:**
+
+```typescript
+async process(domainModel: DomainModel): Promise<void> {
+  // For each person: find existing or insert new
+  // For each claim: check for conflicts, link them, insert
+  // Optional: Web3 write if enabled
+}
+```
+
+**Database Access:**
+
+- **Read:** All tables (for deduplication checks)
+- **Write:** All core tables (EXCLUSIVE access)
+
+**Common Mistakes:**
+
+- Allowing other components to write
+- Auto-resolving conflicts
+- Missing provenance
+- Weak deduplication
 
 ---
 
@@ -194,63 +445,24 @@ Key rule: Scribe/Curator propose questions, Facilitator asks, Scribe detects ans
 
 ```
 config.bots.facilitator.personality
-  ↓
-Initial values for formality, verbosity, engagement, etc.
+  → Initial values for formality, verbosity, engagement
 ```
 
 ### Dynamic Rules (Adjusted by Coach)
 
 ```
 facilitator_rules table
-  ↓
-max_questions_per_window: 2
-minimum_wait_after_question: 24 hours
-current_signal: "neutral"
+  → max_questions_per_window, minimum_wait_after_question, current_signal
 ```
 
 ### Real-Time Levers (Immediate)
 
 ```
 real_time_levers table
-  ↓
-active_conversation_cooldown: 30 min
-sensitive_topic_cooldown: 24 hours
-emotional_keywords: ["died", "death", "war"...]
+  → active_conversation_cooldown, sensitive_topic_cooldown, emotional_keywords
 ```
 
 **Flow:** Static config → Dynamic rules → Real-time levers → Facilitator decision
-
----
-
-## Key Design Principles
-
-### 1. Warmth is Non-Negotiable
-
-Every question MUST use the 4-part formula. No exceptions.
-
-### 2. Claims Over Facts
-
-Everything is a claim with a source. Provenance for everything.
-
-### 3. Preserve Conflicts
-
-Different memories are honored, never auto-resolved.
-
-### 4. Single Writer Pattern
-
-ONLY Registrar modifies core database tables.
-
-### 5. Sequential Processing
-
-One message at a time, in order. Context matters.
-
-### 6. Adaptive Behavior
-
-System learns and optimizes based on family response patterns.
-
-### 7. Complete Audit Trail
-
-Every decision logged in event_log.
 
 ---
 
@@ -258,16 +470,29 @@ Every decision logged in event_log.
 
 All access scoped by family_id
 
-| Agent           | **Reads**                                                           | **Writes**                                                 |
-| --------------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
-| **Facilitator** | questions, facilitator_rules, real_time_levers, messages (activity) | event_log (decisions only)                                 |
-| **Admin**       | All tables                                                          | facilitator_rules, real_time_levers, event_log             |
-| **Intern**      | conversation_events, images (recent)                                | event_log (filter/link decisions)                          |
-| **Scribe**      | messages, people, places, questions (to detect answers)             | None (outputs domain model)                                |
-| **Curator**     | messages, images, stories (for connections)                         | None (outputs to Registrar)                                |
-| **Registrar**   | All tables (for deduplication)                                      | people, places, events, stories, claims, questions, images |
+| Agent           | Reads                                          | Writes                                             |
+| --------------- | ---------------------------------------------- | -------------------------------------------------- |
+| **Facilitator** | questions, rules, levers, messages             | event_log (decisions only)                         |
+| **Historian**   | people, claims, relationships, events, stories | event_log (question_answered)                      |
+| **Admin**       | All tables                                     | facilitator_rules, real_time_levers, event_log     |
+| **Intern**      | conversation_events, images                    | event_log (filter/link decisions)                  |
+| **Scribe**      | messages, people, places, questions            | None (outputs domain model)                        |
+| **Curator**     | messages, images, stories                      | None (outputs to Registrar)                        |
+| **Registrar**   | All tables (for deduplication)                 | people, places, events, stories, claims, questions |
 
 **Key:** Only Registrar modifies core tables. Agents output domain models or signals.
+
+---
+
+## Key Design Principles
+
+1. **Warmth is Non-Negotiable** - Every question uses the 4-part formula
+2. **Claims Over Facts** - Everything is a claim with a source
+3. **Preserve Conflicts** - Different memories honored, never auto-resolved
+4. **Single Writer Pattern** - Only Registrar modifies core tables
+5. **Sequential Processing** - One message at a time, in order
+6. **Adaptive Behavior** - System learns from family response patterns
+7. **Complete Audit Trail** - Every decision logged in event_log
 
 ---
 
@@ -282,88 +507,44 @@ interface SobremesaConfig {
   bots: {
     facilitator: { displayName: string; personality: {...} };
     admin: { displayName: string; personality: {...} };
-    scribe: { displayName: string; personality: {...} };
+    historian: { displayName: string; personality: {...} };
   };
   culturalTerms: string[];
-  // ... see CONFIGURATION.md for complete schema
 }
 ```
 
-**Internal code uses:** `BotRole.FACILITATOR`, `BotRole.ADMIN`, etc.  
+**Internal code uses:** `BotRole.FACILITATOR`, `BotRole.ADMIN`, etc.
 **Configuration provides:** Display names, personality traits, cultural adaptation
-
----
-
-## Coaching Loop
-
-```
-Admin monitors Facilitator performance
-  ↓
-Detects patterns (ignores, timing issues, etc.)
-  ↓
-Adjusts dynamic rules in facilitator_rules table
-  ↓
-Adjusts real-time levers if needed
-  ↓
-Logs changes in event_log
-  ↓
-Facilitator reads updated rules
-  ↓
-Behavior changes
-  ↓
-Repeat every 24 hours
-```
-
-**Rate limits:**
-
-- Max 1 rule change per day
-- No reversals within 48 hours
-- Only adjust when thresholds hit
-
----
-
-## For Detailed Specifications
-
-Each agent has a complete specification document:
-
-- **[Facilitator](.claude/AGENT_FACILITATOR.md)** - 10-step decision logic, warmth formula, real-time checks
-- **[Admin](.claude/AGENT_ADMIN.md)** - Celebration structure, mediation framework, coaching module
-- **[Scribe](.claude/AGENT_SCRIBE.md)** - Entity extraction, claim creation, conflict detection
-- **[Curator](.claude/AGENT_CURATOR.md)** - Image analysis, OCR, question generation
-- **[Registrar](.claude/AGENT_REGISTRAR.md)** - Schema mapping, deduplication, Web3 integration
 
 ---
 
 ## Implementation Libraries
 
-In the Nx monorepo:
-
 ```
 libs/agents/
-├── facilitator/        ← Implements facilitator.md spec
-├── admin/              ← Implements admin.md spec
-├── scribe/             ← Implements scribe.md spec
-├── curator/            ← Implements curator.md spec
-├── intern/             ← Lightweight preprocessing (Haiku-based)
-└── registrar/          ← Single writer (pure TypeScript logic)
+├── facilitator/    ← Question asking + response formatting
+├── historian/      ← Database querying + answer synthesis
+├── admin/          ← Celebrations, mediation, coaching
+├── scribe/         ← Entity extraction + question generation
+├── curator/        ← Image analysis
+├── intern/         ← Filtering, routing, image linking
+└── registrar/      ← Database persistence (no LLM)
 ```
 
-**Agent Model Allocation:**
+**Model Allocation:**
 
-- **Intern** uses Claude Haiku (`claude-3-5-haiku-20241022`) for fast, low-cost preprocessing
-- **Scribe, Curator, Facilitator, Admin** use Claude Sonnet for complex reasoning
+- **Intern** uses Claude Haiku for fast, low-cost preprocessing
+- **Facilitator, Historian, Scribe, Curator, Admin** use Claude Sonnet
 - **Registrar** requires no LLM (pure TypeScript logic)
-
-Each library loads its corresponding prompt from `prompts/` and implements the decision logic described in its spec.
 
 ---
 
 ## Related Documentation
 
-- **[WARMTH.md](WARMTH.md)** - Core philosophy behind the warmth formula
+- **[WARMTH.md](../docs/WARMTH.md)** - Core philosophy behind the warmth formula
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design and data flow
-- **[CONFIGURATION.md](CONFIGURATION.md)** - How to configure for your family
-- **[DECISIONS.md](DECISIONS.md)** - Why we made these architectural choices
+- **[CONFIGURATION.md](../docs/CONFIGURATION.md)** - How to configure for your family
+- **[ADRs](adr/)** - Architecture decision records
 
 ---
 

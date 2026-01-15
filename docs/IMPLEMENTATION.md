@@ -26,7 +26,7 @@ Progress tracker for Sobremesa development.
 ### Database Setup
 
 - [x] Create Supabase project
-- [x] Run SCHEMA.sql
+- [x] Run migration schema (`apps/db/supabase/migrations/`)
 - [x] Verify all tables created
 - [x] Test connection from Node.js
 
@@ -277,9 +277,7 @@ SUPABASE_SERVICE_ROLE_KEY=eyJ...
 ANTHROPIC_API_KEY=sk-ant-...
 
 # Telegram Bots
-TELEGRAM_BOT_TOKEN_SCRIBE=123456:ABC...
-TELEGRAM_BOT_TOKEN_FACILITATOR=123456:DEF...
-TELEGRAM_BOT_TOKEN_ADMIN=123456:GHI...  # Optional
+TELEGRAM_BOT_TOKEN=123456:ABC...
 ```
 
 ---

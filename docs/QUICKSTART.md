@@ -10,7 +10,7 @@ Get Sobremesa running locally in under 30 minutes.
 - **pnpm** - `npm install -g pnpm`
 - **Supabase Account** - [supabase.com](https://supabase.com/) (free tier works)
 - **Claude API Key** - [console.anthropic.com](https://console.anthropic.com/)
-- **Telegram Bots** - Create via [@BotFather](https://t.me/botfather)
+- **Telegram Bot** - Create via [@BotFather](https://t.me/botfather)
 
 ---
 
@@ -76,7 +76,7 @@ From Project Settings > API:
 ### Apply Schema
 
 1. Go to SQL Editor in Supabase dashboard
-2. Copy contents of `.claude/SCHEMA.sql`
+2. Copy contents of `apps/db/supabase/migrations/20260112074715_init_schema.sql`
 3. Run the query
 
 ### Create Test Family
@@ -109,10 +109,8 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 # Claude API
 ANTHROPIC_API_KEY=sk-ant-api03-...
 
-# Telegram Bots
-TELEGRAM_BOT_TOKEN_SCRIBE=123456789:AAF...
-TELEGRAM_BOT_TOKEN_FACILITATOR=123456789:BBG...
-TELEGRAM_BOT_TOKEN_ADMIN=123456789:CCH...
+# Telegram Bot
+TELEGRAM_BOT_TOKEN=123456789:AAF...
 ```
 
 ---
@@ -120,8 +118,8 @@ TELEGRAM_BOT_TOKEN_ADMIN=123456789:CCH...
 ## Step 5: Create Telegram Group
 
 1. Create a new Telegram group
-2. Add all three bots to the group
-3. Make sure bots have permission to read messages
+2. Add the bot to the group
+3. Make sure the bot has permission to read messages
 
 ---
 

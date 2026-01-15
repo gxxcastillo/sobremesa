@@ -10,8 +10,14 @@ import {
   type Question,
   type Family,
   type MessageSender,
+  detectLanguage,
 } from '@sobremesa/shared-types';
-import { buildSystemPrompt, buildUserPrompt } from './prompt-builder';
+import {
+  buildSystemPrompt,
+  buildUserPrompt,
+  buildResponseSystemPrompt,
+  buildResponseUserPrompt,
+} from './prompt-builder';
 
 export type { MessageSender };
 
@@ -52,6 +58,31 @@ export interface AskQuestionResult {
   questionContent?: string;
   error?: string;
   skippedReason?: string;
+}
+
+/**
+ * Result of sending a response (formatted historian answer).
+ */
+export interface SendResponseResult {
+  success: boolean;
+  formattedResponse?: string;
+  error?: string;
+}
+
+/**
+ * Options for sending a historian response through the Facilitator.
+ */
+export interface SendResponseOptions {
+  /** Family ID */
+  familyId: string;
+  /** The original question that was asked */
+  originalQuestion: string;
+  /** The raw answer from the historian */
+  historianAnswer: string;
+  /** Chat ID to send to */
+  chatId: string;
+  /** Message ID to reply to (optional) */
+  replyToMessageId?: number;
 }
 
 /** Model to use for warmth transformation (fast and cheap) */
@@ -277,5 +308,126 @@ export class FacilitatorAgent {
     }
 
     return results;
+  }
+
+  /**
+   * Format and send a historian's answer with appropriate warmth and language.
+   * Detects the language of the original question and responds in that language.
+   */
+  async sendResponse(
+    options: SendResponseOptions,
+  ): Promise<SendResponseResult> {
+    const {
+      familyId,
+      originalQuestion,
+      historianAnswer,
+      chatId,
+      replyToMessageId,
+    } = options;
+
+    this.logger.info({ familyId }, 'Formatting historian response');
+
+    try {
+      // 1. Get the family for config
+      const family = await this.familyRepo.findById(familyId);
+      if (!family) {
+        return { success: false, error: 'Family not found' };
+      }
+
+      // 2. Format the response with warmth and appropriate language
+      let formattedResponse: string;
+      if (this.anthropic) {
+        try {
+          formattedResponse = await this.formatResponseWithWarmth(
+            family,
+            originalQuestion,
+            historianAnswer,
+          );
+          this.logger.debug({ familyId }, 'Applied warmth formula to response');
+        } catch (error) {
+          this.logger.warn(
+            { familyId, error },
+            'Failed to apply warmth to response, falling back to raw answer',
+          );
+          formattedResponse = historianAnswer;
+        }
+      } else {
+        // No AI client - send raw historian answer
+        formattedResponse = historianAnswer;
+      }
+
+      // 3. Send the response via Facilitator bot
+      await this.messageSender.sendMessage(BotRole.FACILITATOR, {
+        chatId,
+        text: formattedResponse,
+        replyToMessageId,
+      });
+
+      // 4. Log the event
+      await this.eventLog.log({
+        familyId,
+        eventType: 'question_responded',
+        eventCategory: 'bot_action',
+        actor: 'facilitator',
+        actorType: 'system',
+        eventData: {
+          questionLength: originalQuestion.length,
+          responseLength: formattedResponse.length,
+          hasReplyTo: !!replyToMessageId,
+        },
+      });
+
+      this.logger.info({ familyId }, 'Response sent successfully');
+
+      return {
+        success: true,
+        formattedResponse,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        { familyId, error: errorMessage },
+        'Failed to send response',
+      );
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Apply warmth formula and language detection to a historian response.
+   */
+  private async formatResponseWithWarmth(
+    family: Family,
+    originalQuestion: string,
+    historianAnswer: string,
+  ): Promise<string> {
+    // Detect the language of the original question
+    const questionLanguage = detectLanguage(originalQuestion);
+    this.logger.debug({ questionLanguage }, 'Detected question language');
+
+    const systemPrompt = buildResponseSystemPrompt(
+      family.config,
+      questionLanguage,
+    );
+    const userPrompt = buildResponseUserPrompt(
+      originalQuestion,
+      historianAnswer,
+    );
+
+    const response = await this.anthropic.messages.create({
+      model: WARMTH_MODEL,
+      max_tokens: 1024, // Responses can be longer than questions
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    // Extract the text from the response
+    const content = response.content[0];
+    if (content.type !== 'text') {
+      throw new Error('Unexpected response type from AI');
+    }
+
+    return content.text.trim();
   }
 }

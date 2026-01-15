@@ -14,9 +14,7 @@ const logger = createLogger({ name: 'chatbots' });
 function validateEnv(): { token: string; anthropicApiKey?: string } {
   const missing: string[] = [];
 
-  const token =
-    process.env['TELEGRAM_BOT_TOKEN'] ||
-    process.env['TELEGRAM_BOT_TOKEN_SCRIBE'];
+  const token = process.env['TELEGRAM_BOT_TOKEN'];
   if (!token) missing.push('TELEGRAM_BOT_TOKEN');
 
   if (!process.env['SUPABASE_URL']) missing.push('SUPABASE_URL');
@@ -34,7 +32,7 @@ function validateEnv(): { token: string; anthropicApiKey?: string } {
     logger.warn('ANTHROPIC_API_KEY not set - agents will not process messages');
   }
 
-  return { token: token!, anthropicApiKey };
+  return { token: token as string, anthropicApiKey };
 }
 
 async function main() {
@@ -90,10 +88,7 @@ async function main() {
       });
       const scribe = new ScribeAgent({ anthropic });
       const registrar = new RegistrarAgent();
-      const historian = new HistorianAgent({
-        anthropic,
-        messageSender: botManager,
-      });
+      const historian = new HistorianAgent({ anthropic });
 
       // Set router (Intern routes to admin/scribe/ignore)
       processor.setRouter((eventId, familyId) =>
@@ -106,8 +101,22 @@ async function main() {
         scribe.process(eventId, familyId),
       );
       processor.setHistorianProcessor(async (eventId, familyId) => {
+        // 1. Historian generates the answer
         const result = await historian.answer(eventId, familyId);
-        return { success: result.success, error: result.error };
+        if (!result.success || !result.answer) {
+          return { success: result.success, error: result.error ?? '' };
+        }
+
+        // 2. Facilitator formats and sends the response with appropriate warmth/language
+        const responseResult = await facilitator.sendResponse({
+          familyId,
+          originalQuestion: result.originalQuestion,
+          historianAnswer: result.answer,
+          chatId: result.chatId,
+          replyToMessageId: result.replyToMessageId,
+        });
+
+        return { success: responseResult.success, error: responseResult.error };
       });
       processor.setRegistrar(async (model, familyId) => {
         await registrar.persist(model, familyId);

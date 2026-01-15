@@ -184,7 +184,7 @@ supabase start
 # Apply schema
 supabase db reset --db-url postgresql://postgres:postgres@localhost:54322/postgres
 # OR
-psql -h localhost -p 54322 -U postgres -d postgres -f .claude/SCHEMA.sql
+psql -h localhost -p 54322 -U postgres -d postgres -f apps/db/supabase/migrations/20260112074715_init_schema.sql
 ```
 
 ### Production

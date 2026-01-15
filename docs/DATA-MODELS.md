@@ -5,14 +5,12 @@
 ### Core Systems
 
 1. **[Relationships](./RELATIONSHIPS.md)** - How people are connected
-
    - Structural model (parent, spouse only)
    - Derived relationships (siblings, cousins via graph traversal)
    - Category/status/qualifier for relationship nuance
    - Normalization rules for consistent storage
 
 2. **[Identities](./IDENTITIES.md)** - Chat provider accounts
-
    - Maps Telegram/WhatsApp/SMS to family tree persons
    - Separates provider accounts from real people
    - One person can have multiple chat identities
@@ -371,7 +369,7 @@ INSERT INTO event_log (
 
 - **ADR-001**: [Family Tree Traversal Service](./adr/001-family-tree-traversal.md) - How to derive extended relationships
 - **Architecture**: [ARCHITECTURE.md](./ARCHITECTURE.md) - System design overview
-- **Schema Updates**: [.claude/SCHEMA-UPDATES.md](../.claude/SCHEMA-UPDATES.md) - Recent schema changes
+- **Database Schema**: `apps/db/supabase/migrations/` - Source of truth for schema
 
 ---
 
