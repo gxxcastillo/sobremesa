@@ -1,4 +1,5 @@
 import { ImageRepository } from '@sobremesa/database';
+import { loadPrompt } from '@sobremesa/prompts';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 
@@ -56,24 +57,6 @@ export interface CuratorOptions {
 }
 
 /**
- * System prompt for image analysis.
- * Focused on extracting visual facts, not entities or questions.
- */
-const SYSTEM_PROMPT = `You are analyzing images shared in a family group chat. Extract visual information that will help identify people, places, and time periods.
-
-Output JSON with these fields:
-{
-  "description": "Brief factual description (1-2 sentences)",
-  "people_count": number or null,
-  "estimated_era": "decade estimate based on clothing, photo quality, setting" or null,
-  "visible_text": ["any text visible in signs, documents, captions"],
-  "image_type": "photo|document|handwritten|newspaper|formal_portrait|casual|group|landscape",
-  "setting_hints": "beach, urban, rural, indoor, formal event, etc." or null
-}
-
-Focus on observable facts. Be concise. If uncertain, use null.`;
-
-/**
  * The Curator is a vision service that analyzes images and stores visual metadata.
  * It does NOT extract entities or generate questions - that's Scribe's job.
  * Curator provides visual context that Scribe can use when processing related text messages.
@@ -98,7 +81,7 @@ export class Curator {
   async analyze(
     familyId: string,
     imageId: string,
-    imageData: Buffer
+    imageData: Buffer,
   ): Promise<ImageAnalysis> {
     this.logger.info({ familyId, imageId }, 'Curator analyzing image');
 
@@ -121,7 +104,7 @@ export class Curator {
       const response = await this.anthropic.messages.create({
         model: this.config.model,
         max_tokens: this.config.maxTokens,
-        system: SYSTEM_PROMPT,
+        system: loadPrompt('curator'),
         messages: [
           {
             role: 'user',
@@ -148,7 +131,7 @@ export class Curator {
 
       // Extract text content
       const textContent = response.content.find(
-        (c: { type: string; text?: string }) => c.type === 'text'
+        (c: { type: string; text?: string }) => c.type === 'text',
       );
       if (!textContent || textContent.type !== 'text' || !textContent.text) {
         throw new Error('No text content in Claude response');
@@ -172,7 +155,7 @@ export class Curator {
           estimatedEra: analysis.estimatedEra,
           hasVisibleText: analysis.visibleText.length > 0,
         },
-        'Image analysis complete'
+        'Image analysis complete',
       );
 
       return analysis;
@@ -189,7 +172,7 @@ export class Curator {
    */
   async analyzeMetadataOnly(
     familyId: string,
-    imageId: string
+    imageId: string,
   ): Promise<ImageAnalysis> {
     this.logger.info({ familyId, imageId }, 'Curator analyzing metadata only');
 
@@ -235,7 +218,7 @@ export class Curator {
       parts.push(
         `[${image.id.slice(0, 8)}] ${
           image.fileType || 'image'
-        } (not yet analyzed)`
+        } (not yet analyzed)`,
       );
     } else {
       const desc =

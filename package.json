@@ -37,7 +37,7 @@
     "jsonc-eslint-parser": "^2.1.0",
     "lint-staged": "^16.2.7",
     "nx": "22.3.3",
-    "prettier": "^2.6.2",
+    "prettier": "~3.6.2",
     "swc-loader": "0.1.15",
     "tslib": "^2.3.0",
     "tsx": "^4.21.0",

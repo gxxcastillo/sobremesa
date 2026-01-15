@@ -5,7 +5,7 @@
     "importHelpers": true,
     "isolatedModules": true,
     "lib": ["es2022"],
-    "module": "ESNext",
+    "module": "esnext",
     "moduleResolution": "bundler",
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
@@ -14,6 +14,9 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "es2022",
-    "baseUrl": "."
+    "baseUrl": ".",
+    "paths": {
+      "@sobremesa/prompts": ["libs/prompts/src/index.ts"]
+    }
   }
 }

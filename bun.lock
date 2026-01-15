@@ -37,7 +37,7 @@
         "jsonc-eslint-parser": "^2.1.0",
         "lint-staged": "^16.2.7",
         "nx": "22.3.3",
-        "prettier": "^2.6.2",
+        "prettier": "~3.6.2",
         "swc-loader": "0.1.15",
         "tslib": "^2.3.0",
         "tsx": "^4.21.0",
@@ -195,6 +195,10 @@
         "@sobremesa/shared-utils": "workspace:*",
         "tslib": "^2.3.0",
       },
+    },
+    "libs/prompts": {
+      "name": "@sobremesa/prompts",
+      "version": "0.0.1",
     },
     "libs/queue": {
       "name": "@sobremesa/queue",
@@ -774,6 +778,8 @@
     "@sobremesa/db": ["@sobremesa/db@workspace:apps/db"],
 
     "@sobremesa/ingester": ["@sobremesa/ingester@workspace:libs/ingester"],
+
+    "@sobremesa/prompts": ["@sobremesa/prompts@workspace:libs/prompts"],
 
     "@sobremesa/queue": ["@sobremesa/queue@workspace:libs/queue"],
 
@@ -2033,7 +2039,7 @@
 
     "prelude-ls": ["prelude-ls@1.2.1", "", {}, "sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g=="],
 
-    "prettier": ["prettier@2.8.8", "", { "bin": { "prettier": "bin-prettier.js" } }, "sha512-tdN8qQGvNjw4CHbY+XXk0JgCXn9QiF21a55rBe5LJAU+kDyC4WQn4+awm2Xfk2lQMk5fKup9XgzTZtGkjBdP9Q=="],
+    "prettier": ["prettier@3.6.2", "", { "bin": { "prettier": "bin/prettier.cjs" } }, "sha512-I7AIg5boAr5R0FFtJ6rCfD+LFsWHp81dolrFD8S79U9tb8Az2nGrJncnMSnys+bpQJfRUzqs9hnA81OAA3hCuQ=="],
 
     "pretty-format": ["pretty-format@30.2.0", "", { "dependencies": { "@jest/schemas": "30.0.5", "ansi-styles": "^5.2.0", "react-is": "^18.3.1" } }, "sha512-9uBdv/B4EefsuAL+pWqueZyZS2Ba+LxfFeQ9DN14HU4bN8bhaxKdkpjpB6fs9+pSjIBu+FXQHImEg8j/Lw0+vA=="],
 

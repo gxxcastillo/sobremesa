@@ -1,6 +1,6 @@
 {
   "name": "agents-facilitator",
-  "tags": ["scope:async"],
+  "tags": ["scope:service"],
   "targets": {
     "types": {
       "executor": "nx:run-commands",

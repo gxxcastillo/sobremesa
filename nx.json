@@ -26,7 +26,8 @@
           "buildDepsName": "build-deps",
           "watchDepsName": "watch-deps"
         }
-      }
+      },
+      "exclude": ["libs/prompts/*"]
     },
     {
       "plugin": "@nx/vite/plugin",
@@ -51,6 +52,15 @@
       "plugin": "@nx/vitest",
       "options": {
         "testTargetName": "test"
+      }
+    },
+    {
+      "plugin": "@nx/js/typescript",
+      "include": ["libs/prompts/*"],
+      "options": {
+        "typecheck": {
+          "targetName": "typecheck"
+        }
       }
     }
   ],

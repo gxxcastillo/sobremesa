@@ -1,0 +1,9 @@
+{
+  "name": "@sobremesa/prompts",
+  "type": "module",
+  "version": "0.0.1",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  }
+}

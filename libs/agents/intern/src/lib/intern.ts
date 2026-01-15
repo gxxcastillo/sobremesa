@@ -1,3 +1,4 @@
+import { loadPrompt } from '@sobremesa/prompts';
 import {
   ConversationEventRepository,
   ImageRepository,
@@ -104,53 +105,11 @@ export interface InternAgentOptions {
   config?: Partial<InternConfig>;
 }
 
-const FILTER_SYSTEM_PROMPT = `You are a message filter for a family history application. Your job is to decide if a message might contain family history information worth extracting.
-
-RELEVANT messages (process these):
-- Stories about family members, ancestors, or relatives
-- Mentions of births, deaths, marriages, or other life events
-- References to places where family lived or traveled
-- Descriptions of family traditions, recipes, or customs
-- Old photos being discussed or described
-- Memories or anecdotes about family members
-- Genealogical information (dates, relationships, names)
-- Immigration or migration stories
-- Family business or work history
-
-NOT RELEVANT messages (skip these):
-- General greetings ("Hi!", "Good morning everyone!")
-- Logistics and scheduling ("What time is dinner?", "See you tomorrow")
-- Reactions and acknowledgments ("Thanks!", "OK", "👍", "LOL")
-- Off-topic conversations (weather, sports, news)
-- Technical chat issues ("Can you hear me?", "Is this working?")
-- Simple confirmations without context ("Yes", "No", "Sure")
-
-IMPORTANT: When in doubt, mark as RELEVANT. It's better to process an irrelevant message than miss family history.
-
-Respond with ONLY a JSON object:
-{"relevant": true/false, "reason": "brief explanation"}`;
-
-const IMAGE_LINK_SYSTEM_PROMPT = `You are an assistant that determines if a text message is referencing a recently shared image.
-
-You will be given:
-1. A list of recently shared images with their IDs and descriptions
-2. A text message to evaluate
-
-Determine if the message is talking about, describing, or asking about one of the images.
-
-Reference types:
-- "describes": The message describes what's in the image ("That's a beautiful photo", "I see a house in the background")
-- "identifies_people": The message identifies who is in the image ("That's grandma on the left", "The tall one is Uncle Roberto")
-- "provides_context": The message gives context about the image ("This was taken at the wedding", "That's from 1962 in Buenos Aires")
-- "asks_about": The message asks a question about the image ("Who is that?", "Where was this taken?", "Is that dad?")
-
-IMPORTANT:
-- Only link if the message CLEARLY refers to one of the listed images
-- If the message could be about any image or is ambiguous, don't link
-- If no images are provided, always return linked: false
-
-Respond with ONLY a JSON object:
-{"linked": true/false, "image_id": "id or null", "reference_type": "type or null", "reason": "brief explanation"}`;
+/**
+ * NOTE: System prompts are now loaded from:
+ * - /prompts/intern-filter.md (for message filtering)
+ * - /prompts/intern-image-link.md (for image reference detection)
+ */
 
 /**
  * The Intern agent uses Haiku for fast, lightweight preprocessing tasks.
@@ -209,7 +168,7 @@ export class InternAgent {
       const recentMessages = await this.eventRepo.findRecent(
         familyId,
         event.conversationId,
-        this.config.recentMessageCount + 1 // +1 to include current, then filter it out
+        this.config.recentMessageCount + 1, // +1 to include current, then filter it out
       );
 
       // Build context from recent messages (excluding current)
@@ -217,7 +176,7 @@ export class InternAgent {
         .filter((m) => m.id !== eventId && m.contentOriginal)
         .slice(0, this.config.recentMessageCount)
         .map(
-          (m) => `- ${m.actorDisplayName || 'Someone'}: "${m.contentOriginal}"`
+          (m) => `- ${m.actorDisplayName || 'Someone'}: "${m.contentOriginal}"`,
         )
         .join('\n');
 
@@ -230,7 +189,7 @@ export class InternAgent {
       const response = await this.anthropic.messages.create({
         model: this.config.model,
         max_tokens: this.config.maxTokens,
-        system: FILTER_SYSTEM_PROMPT,
+        system: loadPrompt('internFilter'),
         messages: [{ role: 'user', content: userMessage }],
       });
 
@@ -239,7 +198,7 @@ export class InternAgent {
       if (content.type !== 'text') {
         this.logger.warn(
           { eventId },
-          'Unexpected response type, defaulting to relevant'
+          'Unexpected response type, defaulting to relevant',
         );
         return { relevant: true, reason: 'Unexpected response type' };
       }
@@ -259,7 +218,7 @@ export class InternAgent {
           tokensUsed,
           messagePreview: messageText.slice(0, 50),
         },
-        'Filter result'
+        'Filter result',
       );
 
       return { ...result, tokensUsed };
@@ -268,7 +227,7 @@ export class InternAgent {
         error instanceof Error ? error.message : String(error);
       this.logger.error(
         { eventId, error: errorMessage },
-        'Filter error, defaulting to relevant'
+        'Filter error, defaulting to relevant',
       );
       // Default to relevant on error - don't skip messages due to filter failures
       return { relevant: true, reason: `Filter error: ${errorMessage}` };
@@ -317,7 +276,7 @@ export class InternAgent {
    */
   async linkToImage(
     eventId: string,
-    familyId: string
+    familyId: string,
   ): Promise<ImageLinkResult> {
     try {
       // Load the event
@@ -344,7 +303,7 @@ export class InternAgent {
       const recentImages = await this.imageRepo.findRecentInConversation(
         familyId,
         event.conversationId,
-        5 // Check last 5 images
+        5, // Check last 5 images
       );
 
       if (recentImages.length === 0) {
@@ -363,7 +322,7 @@ export class InternAgent {
       const response = await this.anthropic.messages.create({
         model: this.config.model,
         max_tokens: this.config.maxTokens,
-        system: IMAGE_LINK_SYSTEM_PROMPT,
+        system: loadPrompt('internImageLink'),
         messages: [{ role: 'user', content: userMessage }],
       });
 
@@ -372,7 +331,7 @@ export class InternAgent {
       if (content.type !== 'text') {
         this.logger.warn(
           { eventId },
-          'Unexpected response type for image link'
+          'Unexpected response type for image link',
         );
         return { linked: false, reason: 'Unexpected response type' };
       }
@@ -394,7 +353,7 @@ export class InternAgent {
           tokensUsed,
           messagePreview: messageText.slice(0, 50),
         },
-        'Image link result'
+        'Image link result',
       );
 
       return { ...result, tokensUsed };
@@ -447,7 +406,7 @@ export class InternAgent {
     // This prevents matching email-like patterns (email@bot.com)
     const mentionPattern = new RegExp(
       `(?<![a-zA-Z0-9])@${this.config.botUsername}\\b`,
-      'i'
+      'i',
     );
     return mentionPattern.test(messageText);
   }
@@ -560,7 +519,7 @@ export class InternAgent {
         if (command === '/sobremesa' || command.startsWith('/sobremesa@')) {
           this.logger.debug(
             { eventId, command },
-            'Routing to admin: sobremesa command'
+            'Routing to admin: sobremesa command',
           );
           return {
             action: 'admin',
@@ -572,7 +531,7 @@ export class InternAgent {
         if (command === '/status' || command.startsWith('/status@')) {
           this.logger.debug(
             { eventId, command },
-            'Routing to admin: status command'
+            'Routing to admin: status command',
           );
           return {
             action: 'admin',
@@ -595,7 +554,7 @@ export class InternAgent {
         if (this.isQuestion(messageText)) {
           this.logger.debug(
             { eventId },
-            'Routing to historian: question to bot'
+            'Routing to historian: question to bot',
           );
           return {
             action: 'historian',
@@ -625,7 +584,7 @@ export class InternAgent {
       if (event.eventType === 'join' || event.eventType === 'leave') {
         this.logger.debug(
           { eventId, eventType: event.eventType },
-          'Routing to admin: member event'
+          'Routing to admin: member event',
         );
         return {
           action: 'admin',
@@ -664,7 +623,7 @@ export class InternAgent {
         error instanceof Error ? error.message : String(error);
       this.logger.error(
         { eventId, error: errorMessage },
-        'Routing error, defaulting to scribe'
+        'Routing error, defaulting to scribe',
       );
       return {
         action: 'scribe',

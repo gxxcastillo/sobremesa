@@ -1,3 +1,4 @@
+import { loadPrompt } from '@sobremesa/prompts';
 import type {
   HistorianConfig,
   RetrievedContext,
@@ -6,77 +7,13 @@ import type {
 } from './types';
 
 /**
- * System prompt for the Historian agent.
- */
-const SYSTEM_PROMPT_TEMPLATE = `You are {HISTORIAN_NAME}, the family's warm and knowledgeable historian.
-
-Your role is to answer questions about the family's collected history.
-You have access to stories, facts, and memories shared by family members.
-
-## LANGUAGE
-
-Primary Language: {PRIMARY_LANGUAGE}
-
-**IMPORTANT:** Always respond in the primary language ({PRIMARY_LANGUAGE}).
-- Maintain warmth and conversational tone in the target language
-- If the question is in a different language, still respond in the primary language
-- Preserve cultural terms and names exactly as stored (don't translate proper nouns)
-
-## RESPONSE GUIDELINES
-
-### 1. WARMTH
-Answer like a family member sharing cherished memories:
-- "What a lovely question! From what the family has shared..."
-- "I found some wonderful details about that..."
-- "The family has some beautiful memories of this..."
-
-### 2. ACCURACY
-Always cite your sources:
-- "According to Uncle David..."
-- "Based on what Aunt Maria shared..."
-- Never invent or assume facts not in the provided data
-- If information is missing, say so warmly
-
-### 3. UNCERTAINTY
-Be honest about confidence levels:
-- High confidence: State as fact with source
-- Medium confidence: "From what we've gathered..."
-- Low confidence: "There's a mention, though we're not certain..."
-
-### 4. CONFLICTS
-Honor all versions of family memories:
-- Present differing accounts without choosing sides
-- "The family has different memories of this..."
-- "There are two accounts - both valuable..."
-- Never resolve conflicts - they're all part of the family tapestry
-
-### 5. GAPS
-Acknowledge what we don't know gracefully:
-- "I don't have that information yet, but it would be wonderful to learn!"
-- "That's a great question - maybe someone in the family remembers?"
-- Suggest that the family could share more
-
-## NEVER
-- Invent information not in the provided context
-- Resolve conflicting claims by picking one
-- Be cold, clinical, or encyclopedic
-- Dismiss low-confidence information entirely
-- Skip source attribution
-
-## RESPONSE FORMAT
-- Keep answers conversational, 2-4 paragraphs max
-- Lead with the most relevant information
-- Include source attribution naturally in the text
-- End warmly, perhaps with an invitation for more stories`;
-
-/**
  * Build the system prompt with config values substituted.
  */
 export function buildSystemPrompt(config: HistorianConfig): string {
-  return SYSTEM_PROMPT_TEMPLATE.replace(
-    '{HISTORIAN_NAME}',
-    config.historianName
-  ).replace(/{PRIMARY_LANGUAGE}/g, config.primaryLanguage);
+  return loadPrompt('historian', {
+    HISTORIAN_NAME: config.historianName,
+    PRIMARY_LANGUAGE: config.primaryLanguage,
+  });
 }
 
 /**
@@ -84,7 +21,7 @@ export function buildSystemPrompt(config: HistorianConfig): string {
  */
 export function buildUserPrompt(
   question: ParsedQuestion,
-  context: RetrievedContext
+  context: RetrievedContext,
 ): string {
   const parts: string[] = [];
 
@@ -132,7 +69,7 @@ export function buildUserPrompt(
       const personBName = personNameById.get(rel.personBId) || rel.personBId;
       parts.push(
         `- ${personAName} is ${rel.relationshipType} of ${personBName}` +
-          (rel.confidence ? ` (${rel.confidence} confidence)` : '')
+          (rel.confidence ? ` (${rel.confidence} confidence)` : ''),
       );
     }
     parts.push('');
@@ -183,7 +120,7 @@ export function buildUserPrompt(
   // Add additional claims
   const standaloneClaims = context.claims.filter(
     (claim) =>
-      !context.people.some((p) => p.claims.some((c) => c.id === claim.id))
+      !context.people.some((p) => p.claims.some((c) => c.id === claim.id)),
   );
   if (standaloneClaims.length > 0) {
     parts.push('## ADDITIONAL CLAIMS FROM FAMILY');
@@ -216,7 +153,7 @@ export function buildUserPrompt(
   if (context.hasConflicts) {
     parts.push('## NOTE: CONFLICTING INFORMATION');
     parts.push(
-      'The following subjects have different accounts from different family members:'
+      'The following subjects have different accounts from different family members:',
     );
     for (const [subject, claims] of context.conflicts.entries()) {
       parts.push(`- **${subject}**:`);
@@ -225,7 +162,7 @@ export function buildUserPrompt(
       }
     }
     parts.push(
-      'Present BOTH versions without resolving - both memories are valuable.'
+      'Present BOTH versions without resolving - both memories are valuable.',
     );
     parts.push('');
   }
@@ -239,7 +176,7 @@ export function buildUserPrompt(
   ) {
     parts.push('## NO INFORMATION FOUND');
     parts.push(
-      "The family records don't have information about this topic yet."
+      "The family records don't have information about this topic yet.",
     );
     parts.push('');
 
@@ -247,34 +184,34 @@ export function buildUserPrompt(
     if (question.entities.length > 0) {
       parts.push(
         `Entities searched: ${question.entities.join(
-          ', '
-        )} - no matches found in family records.`
+          ', ',
+        )} - no matches found in family records.`,
       );
     }
     if (question.keywords.length > 0) {
       parts.push(
         `Keywords searched: ${question.keywords.join(
-          ', '
-        )} - no relevant records found.`
+          ', ',
+        )} - no relevant records found.`,
       );
     }
     parts.push('');
 
     parts.push('IMPORTANT INSTRUCTIONS FOR THIS RESPONSE:');
     parts.push(
-      "1. Be transparent: Clearly state that you don't have information about the specific people/topics mentioned in the question."
+      "1. Be transparent: Clearly state that you don't have information about the specific people/topics mentioned in the question.",
     );
     parts.push(
-      '2. Echo the question: Reference what was actually asked (e.g., "I don\'t have any records about Michael or his marriage...").'
+      '2. Echo the question: Reference what was actually asked (e.g., "I don\'t have any records about Michael or his marriage...").',
     );
     parts.push(
-      '3. Stay relevant: Any follow-up question MUST directly relate to the original question. Do NOT ask about unrelated topics like dates, summers, or locations that were not mentioned.'
+      '3. Stay relevant: Any follow-up question MUST directly relate to the original question. Do NOT ask about unrelated topics like dates, summers, or locations that were not mentioned.',
     );
     parts.push(
-      '4. Invite specific contributions: Ask if anyone in the family knows about the specific person or topic asked about.'
+      '4. Invite specific contributions: Ask if anyone in the family knows about the specific person or topic asked about.',
     );
     parts.push(
-      '5. NEVER invent context: Do not imply you know anything you don\'t (e.g., don\'t ask "which summer?" if no summer was mentioned).'
+      '5. NEVER invent context: Do not imply you know anything you don\'t (e.g., don\'t ask "which summer?" if no summer was mentioned).',
     );
     parts.push('');
   }
@@ -284,7 +221,7 @@ export function buildUserPrompt(
   parts.push(
     'Please answer the question using ONLY the information provided above. ' +
       'Be warm and conversational. Cite sources naturally. ' +
-      'If there are conflicts, present both versions without resolving.'
+      'If there are conflicts, present both versions without resolving.',
   );
 
   return parts.join('\n');
