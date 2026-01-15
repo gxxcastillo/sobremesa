@@ -160,7 +160,8 @@ export class ImageRepository extends BaseRepository<Image> {
       .filter((row) => row.conversation_events !== null)
       .map((row) => {
         // Remove the joined data before mapping
-        const { conversation_events: _conversation_events, ...imageRow } = row;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { conversation_events: ignore, ...imageRow } = row;
         return this.mapFromDb(imageRow);
       });
   }
