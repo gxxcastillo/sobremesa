@@ -5,7 +5,7 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "../../types/global/index.d.ts"],
   "exclude": [
     "vite.config.ts",
     "vite.config.mts",

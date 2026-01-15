@@ -1,12 +1,12 @@
-# Publisher Setup Complete
+# Studio Setup Complete
 
-You now have a complete 3-tier architecture for the Publisher app:
+You now have a complete 3-tier architecture for the Studio app:
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
-│  apps/publisher (Solid.js Frontend)          │
+│  apps/studio (Solid.js Frontend)          │
 │  - Renders UI with "Generate Preview" btn    │
 │  - Displays family summary data              │
 └────────────────┬────────────────────────────┘
@@ -16,7 +16,7 @@ You now have a complete 3-tier architecture for the Publisher app:
 ┌─────────────────────────────────────────────┐
 │  libs/api-client (TypeScript Library)        │
 │  - Types: FamilySummary, Person, etc.        │
-│  - PublisherApiClient class                  │
+│  - StudioApiClient class                  │
 │  - Makes HTTP calls to API server            │
 └────────────────┬────────────────────────────┘
                  │
@@ -43,10 +43,10 @@ bun run src/main.ts
 
 The API will run on `http://localhost:3000`
 
-### Start the Publisher frontend (Terminal 2)
+### Start the Studio frontend (Terminal 2)
 
 ```bash
-nx serve publisher
+nx serve studio
 ```
 
 The UI will run on `http://localhost:4200`
@@ -69,11 +69,3 @@ To extend this system, you can:
 4. **Add authentication**: Secure the API endpoints if needed
 
 5. **Deploy**: Package the Bun app and frontend for production
-
-## Files Changed
-
-- ✅ Created `apps/api/` - Bun.js Express server
-- ✅ Created `apps/publisher/` - Solid.js frontend app
-- ✅ Created `libs/api-client/` - TypeScript API client library
-- ✅ Updated `apps/publisher/src/app/App.tsx` - Now uses api-client
-- ✅ Updated `libs/api-client/src/lib/api-client.ts` - Implements HTTP calls

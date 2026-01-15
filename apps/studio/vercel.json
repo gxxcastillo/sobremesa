@@ -1,6 +1,6 @@
 {
   "bunVersion": "1.x",
-  "buildCommand": "cd ../.. && bun nx build publisher",
+  "buildCommand": "cd ../.. && bun nx build studio",
   "outputDirectory": "dist",
   "installCommand": "cd ../.. && bun install",
   "framework": null,

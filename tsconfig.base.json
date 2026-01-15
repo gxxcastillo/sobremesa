@@ -15,9 +15,5 @@
     "skipLibCheck": true,
     "strict": true,
     "baseUrl": "."
-  },
-  "files": [
-    "libs/shared/types/src/global/txt.d.ts",
-    "libs/shared/types/src/global/md.d.ts"
-  ]
+  }
 }

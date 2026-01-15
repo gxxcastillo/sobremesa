@@ -33,14 +33,14 @@ bun run src/main.ts
 Expected output:
 
 ```
-📚 Publisher API server running on http://localhost:3000
+📚 Studio API server running on http://localhost:3000
    Health check: http://localhost:3000/health
 ```
 
-### Terminal 2: Start the Publisher Frontend
+### Terminal 2: Start the Studio Frontend
 
 ```bash
-nx serve publisher
+nx serve studio
 ```
 
 Expected output will show the Vite dev server starting on `http://localhost:4200`
@@ -88,7 +88,7 @@ sobremesa/
 │   ├── api/                    # Bun.js API for the publishing app
 │   ├── chatbots/               # Chat bot service
 │   ├── db/                     # Supabase database
-│   └── publisher/              # Solid.js frontend for publishing content
+│   └── studio/                 # Solid.js frontend for studio content
 ├── libs/
 │   ├── api-client/             # API client library
 │   ├── database/               # Database layer (existing)
@@ -103,6 +103,6 @@ sobremesa/
 2. **Start services**: Follow the "Start the System" section above
 3. **Test the API**: Use curl or your browser
 4. **Extend the API**: Add more endpoints in `apps/api/src/main.ts`
-5. **Improve the UI**: Enhance `apps/publisher/src/app/App.tsx`
+5. **Improve the UI**: Enhance `apps/studio/src/app/App.tsx`
 
 Happy narrating! 📚✍️

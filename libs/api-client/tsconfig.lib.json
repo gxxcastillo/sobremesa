@@ -6,5 +6,5 @@
     "types": ["node", "vite/client"],
     "lib": ["es2022", "dom"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "../../types/global/index.d.ts"]
 }

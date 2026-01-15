@@ -32,7 +32,7 @@ jobs:
       - uses: nrwl/nx-set-shas@v4
 
       - name: Run CI for API
-        run: npx nx affected -t lint test build types --projects=api
+        run: npx nx run-many -t lint test build types --projects=api
 
   deploy:
     needs: [ci]

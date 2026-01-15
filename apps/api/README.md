@@ -1,6 +1,6 @@
 # API Server
 
-A Bun.js Express API server for the Publisher app.
+A Bun.js Express API server for the Studio app.
 
 ## Features
 

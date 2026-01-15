@@ -192,7 +192,4 @@ export class StudioApiClient {
   }
 }
 
-/** @deprecated Use StudioApiClient instead */
-export const PublisherApiClient = StudioApiClient;
-
 export default StudioApiClient;
