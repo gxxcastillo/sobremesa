@@ -190,4 +190,69 @@ export class FamilyRepository {
 
     return mapRowToCamelCase<Family>(data);
   }
+
+  /**
+   * Update a specific field in family configuration using JSON path.
+   * Uses PostgreSQL's jsonb_set to update nested paths without overwriting.
+   *
+   * @param id - Family ID
+   * @param path - JSON path as array (e.g., ['languages', 'primary'])
+   * @param value - Value to set
+   */
+  async updateConfigPath(
+    id: string,
+    path: string[],
+    value: unknown,
+  ): Promise<Family> {
+    // Build the path for jsonb_set: '{languages,primary}'
+    const pathStr = `{${path.join(',')}}`;
+
+    const { data, error } = await this.client.rpc('update_family_config_path', {
+      family_id: id,
+      config_path: pathStr,
+      config_value: JSON.stringify(value),
+    });
+
+    if (error) {
+      // Fallback: read-modify-write if RPC doesn't exist
+      const family = await this.findById(id);
+      if (!family) {
+        throw new Error('Family not found');
+      }
+
+      const config = (family.config || {}) as Record<string, unknown>;
+      let current = config;
+
+      // Navigate to parent and set value
+      for (let i = 0; i < path.length - 1; i++) {
+        if (!(path[i] in current)) {
+          current[path[i]] = {};
+        }
+        current = current[path[i]] as Record<string, unknown>;
+      }
+      current[path[path.length - 1]] = value;
+
+      return this.updateConfig(id, config);
+    }
+
+    return mapRowToCamelCase<Family>(data);
+  }
+
+  /**
+   * Get a specific config value by path.
+   */
+  async getConfigValue(id: string, path: string[]): Promise<unknown> {
+    const family = await this.findById(id);
+    if (!family) return undefined;
+
+    let current: unknown = family.config;
+    for (const key of path) {
+      if (current && typeof current === 'object' && key in current) {
+        current = (current as Record<string, unknown>)[key];
+      } else {
+        return undefined;
+      }
+    }
+    return current;
+  }
 }

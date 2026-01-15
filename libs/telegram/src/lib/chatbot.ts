@@ -129,6 +129,14 @@ function transformDocumentMessage(
   };
 }
 
+// Supported language codes
+const SUPPORTED_LANGUAGES = ['en', 'es', 'pt', 'fr', 'de'] as const;
+type LanguageCode = (typeof SUPPORTED_LANGUAGES)[number];
+
+function isLanguageCode(value: string): value is LanguageCode {
+  return SUPPORTED_LANGUAGES.includes(value as LanguageCode);
+}
+
 /**
  * Unified chatbot handler.
  *
@@ -154,11 +162,22 @@ export class ChatbotHandler implements BotHandler {
   }
 
   /**
-   * Get family ID for a chat, or null if not registered.
+   * Get family for a chat if registered and not paused.
+   * Returns null if not registered or paused.
    */
-  private async getFamilyIdForChat(chatId: string): Promise<string | null> {
+  private async getActiveFamilyForChat(
+    chatId: string,
+  ): Promise<{ id: string } | null> {
     const family = await this.familyRepo.findByChatId(chatId);
-    return family?.id || null;
+    if (!family) return null;
+
+    // Check if paused
+    const config = (family.config || {}) as Record<string, unknown>;
+    if (config.paused === true) {
+      return null;
+    }
+
+    return { id: family.id };
   }
 
   configure(bot: Telegraf): void {
@@ -240,9 +259,166 @@ export class ChatbotHandler implements BotHandler {
       return;
     }
 
+    // Extract arguments from command
+    const messageText =
+      'text' in (ctx.message || {})
+        ? (ctx.message as { text: string }).text
+        : '';
+    const args = messageText
+      .replace(/^\/sobremesa(@\w+)?\s*/, '')
+      .trim()
+      .toLowerCase();
+
     // Check if already registered
     const existingFamily = await this.familyRepo.findByChatId(chatId);
     if (existingFamily) {
+      // Handle language code argument (e.g., /sobremesa en, /sobremesa es)
+      if (isLanguageCode(args)) {
+        try {
+          await this.familyRepo.updateConfigPath(
+            existingFamily.id,
+            ['languages', 'primary'],
+            args,
+          );
+          const langNames: Record<LanguageCode, string> = {
+            en: 'English',
+            es: 'Español',
+            pt: 'Português',
+            fr: 'Français',
+            de: 'Deutsch',
+          };
+          await ctx.reply(`Language set to ${langNames[args]}.`);
+          this.logger.info(
+            { familyId: existingFamily.id, language: args },
+            'Language updated via /sobremesa command',
+          );
+        } catch (error) {
+          this.logger.error({ error }, 'Failed to update language');
+          await ctx.reply('Failed to update language. Please try again.');
+        }
+        return;
+      }
+
+      // Handle pause command
+      if (args === 'pause' || args === 'stop') {
+        try {
+          const config = (existingFamily.config || {}) as Record<
+            string,
+            unknown
+          >;
+          const alreadyPaused = config.paused === true;
+
+          if (alreadyPaused) {
+            await ctx.reply(
+              "Sobremesa is already paused. I'm not processing any messages right now.\n\n" +
+                'Use /sobremesa resume when you want me to start listening again.',
+            );
+          } else {
+            await this.familyRepo.updateConfigPath(
+              existingFamily.id,
+              ['paused'],
+              true,
+            );
+            await ctx.reply(
+              "Sobremesa is now paused. I'll stop processing messages until you resume.\n\n" +
+                'Use /sobremesa resume when you want me to start listening again.',
+            );
+            this.logger.info({ familyId: existingFamily.id }, 'Family paused');
+          }
+        } catch (error) {
+          this.logger.error({ error }, 'Failed to pause');
+          await ctx.reply('Failed to pause. Please try again.');
+        }
+        return;
+      }
+
+      // Handle resume command
+      if (args === 'resume' || args === 'start') {
+        try {
+          const config = (existingFamily.config || {}) as Record<
+            string,
+            unknown
+          >;
+          const wasPaused = config.paused === true;
+
+          if (!wasPaused) {
+            await ctx.reply(
+              "Sobremesa is already running! I'm listening and preserving your family stories.",
+            );
+          } else {
+            await this.familyRepo.updateConfigPath(
+              existingFamily.id,
+              ['paused'],
+              false,
+            );
+            await ctx.reply(
+              "Sobremesa is back! I'm now listening and preserving your family stories again.",
+            );
+            this.logger.info({ familyId: existingFamily.id }, 'Family resumed');
+          }
+        } catch (error) {
+          this.logger.error({ error }, 'Failed to resume');
+          await ctx.reply('Failed to resume. Please try again.');
+        }
+        return;
+      }
+
+      // Handle status command
+      if (args === 'status') {
+        const config = (existingFamily.config || {}) as Record<string, unknown>;
+        const isPaused = config.paused === true;
+        const languages = config.languages as
+          | Record<string, unknown>
+          | undefined;
+        const primaryLang = languages?.primary as string | undefined;
+
+        const langNames: Record<string, string> = {
+          en: 'English',
+          es: 'Español',
+          pt: 'Português',
+          fr: 'Français',
+          de: 'Deutsch',
+        };
+
+        const statusEmoji = isPaused ? '⏸️' : '▶️';
+        const statusText = isPaused ? 'Paused' : 'Running';
+        const langDisplay = primaryLang
+          ? langNames[primaryLang] || primaryLang
+          : 'Not set';
+
+        const createdDate = existingFamily.createdAt
+          ? new Date(existingFamily.createdAt).toLocaleDateString()
+          : 'Unknown';
+
+        await ctx.reply(
+          `📊 *Sobremesa Status*\n\n` +
+            `${statusEmoji} *Status:* ${statusText}\n` +
+            `👨‍👩‍👧‍👦 *Family:* ${existingFamily.name}\n` +
+            `🌐 *Language:* ${langDisplay}\n` +
+            `📅 *Created:* ${createdDate}`,
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+
+      // Handle help command
+      if (args === 'help') {
+        await ctx.reply(
+          `📖 *Sobremesa Commands*\n\n` +
+            `*/sobremesa status* - Show current status\n` +
+            `*/sobremesa pause* - Pause message processing\n` +
+            `*/sobremesa resume* - Resume message processing\n` +
+            `*/sobremesa en* - Set language to English\n` +
+            `*/sobremesa es* - Set language to Español\n` +
+            `*/sobremesa pt* - Set language to Português\n` +
+            `*/sobremesa fr* - Set language to Français\n` +
+            `*/sobremesa de* - Set language to Deutsch\n` +
+            `*/sobremesa help* - Show this help message`,
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+
       // Already registered - enqueue as text message so Intern can route to Admin for status
       // The message will be processed and Admin will show status
       const msg = ctx.message as Message.TextMessage & { from: User };
@@ -272,16 +448,15 @@ export class ChatbotHandler implements BotHandler {
     }
 
     // Extract family name from command arguments or chat title
-    const messageText =
-      'text' in (ctx.message || {})
-        ? (ctx.message as { text: string }).text
-        : '';
-    const args = messageText.replace(/^\/sobremesa(@\w+)?\s*/, '').trim();
+    // (use original args without toLowerCase for family name)
+    const originalArgs = messageText
+      .replace(/^\/sobremesa(@\w+)?\s*/, '')
+      .trim();
     const chatTitle =
       'title' in (ctx.chat || {})
         ? (ctx.chat as { title: string }).title
         : undefined;
-    const familyName = args || chatTitle || 'My Family';
+    const familyName = originalArgs || chatTitle || 'My Family';
 
     try {
       // Create the family
@@ -321,22 +496,22 @@ export class ChatbotHandler implements BotHandler {
       return;
     }
 
-    // Look up family for this chat
-    const familyId = await this.getFamilyIdForChat(chatId);
-    if (!familyId) {
+    // Look up active family for this chat (not registered or paused = null)
+    const family = await this.getActiveFamilyForChat(chatId);
+    if (!family) {
       this.logger.debug(
         { chatId, messageId: msg.message_id },
-        'Chat not registered, ignoring message',
+        'Chat not registered or paused, ignoring message',
       );
       return;
     }
 
     const input = transformTextMessage(msg);
-    const eventId = await this.ingester.ingestTextMessage(familyId, input);
+    const eventId = await this.ingester.ingestTextMessage(family.id, input);
 
     if (eventId) {
       this.logger.info(
-        { eventId, messageId: msg.message_id, familyId },
+        { eventId, messageId: msg.message_id, familyId: family.id },
         'Text message ingested and queued',
       );
     }
@@ -349,22 +524,22 @@ export class ChatbotHandler implements BotHandler {
     const msg = ctx.message;
     const chatId = String(msg.chat.id);
 
-    // Look up family for this chat
-    const familyId = await this.getFamilyIdForChat(chatId);
-    if (!familyId) {
+    // Look up active family for this chat (not registered or paused = null)
+    const family = await this.getActiveFamilyForChat(chatId);
+    if (!family) {
       this.logger.debug(
         { chatId, messageId: msg.message_id },
-        'Chat not registered, ignoring photo',
+        'Chat not registered or paused, ignoring photo',
       );
       return;
     }
 
     const input = transformPhotoMessage(msg);
-    const eventId = await this.ingester.ingestPhotoMessage(familyId, input);
+    const eventId = await this.ingester.ingestPhotoMessage(family.id, input);
 
     if (eventId) {
       this.logger.info(
-        { eventId, messageId: msg.message_id, familyId },
+        { eventId, messageId: msg.message_id, familyId: family.id },
         'Photo message ingested and queued',
       );
     }
@@ -379,22 +554,22 @@ export class ChatbotHandler implements BotHandler {
     const msg = ctx.message;
     const chatId = String(msg.chat.id);
 
-    // Look up family for this chat
-    const familyId = await this.getFamilyIdForChat(chatId);
-    if (!familyId) {
+    // Look up active family for this chat (not registered or paused = null)
+    const family = await this.getActiveFamilyForChat(chatId);
+    if (!family) {
       this.logger.debug(
         { chatId, messageId: msg.message_id },
-        'Chat not registered, ignoring document',
+        'Chat not registered or paused, ignoring document',
       );
       return;
     }
 
     const input = transformDocumentMessage(msg);
-    const eventId = await this.ingester.ingestDocumentMessage(familyId, input);
+    const eventId = await this.ingester.ingestDocumentMessage(family.id, input);
 
     if (eventId) {
       this.logger.info(
-        { eventId, messageId: msg.message_id, familyId },
+        { eventId, messageId: msg.message_id, familyId: family.id },
         'Document message ingested and queued',
       );
     }
@@ -408,12 +583,12 @@ export class ChatbotHandler implements BotHandler {
   ): Promise<void> {
     const chatId = String(ctx.chat?.id);
 
-    // Look up family for this chat
-    const familyId = await this.getFamilyIdForChat(chatId);
-    if (!familyId) {
+    // Look up active family for this chat (not registered or paused = null)
+    const family = await this.getActiveFamilyForChat(chatId);
+    if (!family) {
       this.logger.debug(
         { chatId },
-        'Chat not registered, ignoring chat_member event',
+        'Chat not registered or paused, ignoring chat_member event',
       );
       return;
     }
@@ -423,7 +598,7 @@ export class ChatbotHandler implements BotHandler {
     const newMember = ctx.chatMember.new_chat_member;
     this.logger.info(
       {
-        familyId,
+        familyId: family.id,
         chatId,
         userId: newMember.user.id,
         username: newMember.user.username,
