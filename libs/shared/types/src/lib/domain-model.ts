@@ -72,6 +72,8 @@ export interface GeneratedQuestion {
   targetPerson?: string;
   targetEvent?: string;
   targetPlace?: string;
+  /** Brief context about the story this question aims to enrich */
+  storyContext?: string;
 }
 
 /**

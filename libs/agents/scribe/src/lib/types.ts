@@ -145,6 +145,7 @@ export interface RawScribeResponse {
     target_person?: string;
     target_event?: string;
     target_place?: string;
+    story_context?: string;
   }>;
   answered_questions?: Array<{
     question_id: string;

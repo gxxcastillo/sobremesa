@@ -7,16 +7,17 @@
     "lib": ["es2022"],
     "module": "esnext",
     "moduleResolution": "bundler",
+    "target": "es2022",
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "skipLibCheck": true,
     "strict": true,
-    "target": "es2022",
-    "baseUrl": ".",
-    "paths": {
-      "@sobremesa/prompts": ["libs/prompts/src/index.ts"]
-    }
-  }
+    "baseUrl": "."
+  },
+  "files": [
+    "./libs/shared/types/src/global/md.d.ts",
+    "./libs/shared/types/src/global/txt.d.ts"
+  ]
 }

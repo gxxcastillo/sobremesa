@@ -61,7 +61,7 @@ export class QuestionRepository {
    */
   async findByStatus(
     familyId: string,
-    status: Question['status']
+    status: Question['status'],
   ): Promise<Question[]> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -101,7 +101,7 @@ export class QuestionRepository {
   async createFromGenerated(
     familyId: string,
     generated: GeneratedQuestion,
-    sourceMessageId?: string
+    sourceMessageId?: string,
   ): Promise<Question> {
     const record = {
       family_id: familyId,
@@ -111,6 +111,10 @@ export class QuestionRepository {
       status: 'proposed',
       priority: generated.priority,
       source_message_id: sourceMessageId,
+      target_person: generated.targetPerson,
+      target_event: generated.targetEvent,
+      target_place: generated.targetPlace,
+      story_context: generated.storyContext,
     };
 
     const { data, error } = await this.client
@@ -130,7 +134,7 @@ export class QuestionRepository {
    * Insert a new question.
    */
   async insert(
-    record: Omit<Question, 'id' | 'createdAt' | 'updatedAt'>
+    record: Omit<Question, 'id' | 'createdAt' | 'updatedAt'>,
   ): Promise<Question> {
     const dbRecord = this.mapToDb(record as Question);
 
@@ -154,7 +158,7 @@ export class QuestionRepository {
     familyId: string,
     id: string,
     askedByIdentityId?: string,
-    externalMessageId?: string | number
+    externalMessageId?: string | number,
   ): Promise<Question> {
     const updates: Record<string, unknown> = {
       status: 'asked',
@@ -189,7 +193,7 @@ export class QuestionRepository {
    */
   async findByExternalMessageId(
     familyId: string,
-    externalMessageId: string
+    externalMessageId: string,
   ): Promise<Question | null> {
     const { data, error } = await this.client
       .from(this.tableName)
@@ -203,7 +207,7 @@ export class QuestionRepository {
         return null;
       }
       throw new Error(
-        `Failed to find question by external message id: ${error.message}`
+        `Failed to find question by external message id: ${error.message}`,
       );
     }
 
@@ -216,7 +220,7 @@ export class QuestionRepository {
   async markAnswered(
     familyId: string,
     id: string,
-    answerMessageId?: string
+    answerMessageId?: string,
   ): Promise<Question> {
     const updates: Record<string, unknown> = {
       status: 'answered',

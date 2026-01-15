@@ -60,24 +60,29 @@ async function main() {
       messageSender: botManager,
     });
     processor.setAdminProcessor((eventId, familyId, subtype) =>
-      admin.handle(eventId, familyId, subtype)
+      admin.handle(eventId, familyId, subtype),
     );
     logger.info('Admin agent configured');
 
-    // Configure Facilitator agent
+    // Create Anthropic client if API key is available
+    const anthropic = anthropicApiKey
+      ? new Anthropic({ apiKey: anthropicApiKey })
+      : undefined;
+
+    // Configure Facilitator agent (with optional AI for warmth transformation)
     logger.debug('Configuring Facilitator agent...');
     const facilitator = new FacilitatorAgent({
       messageSender: botManager,
+      anthropic, // Pass anthropic client for warmth formula
       minMinutesBetweenQuestions: 5,
     });
-    logger.info('Facilitator agent configured');
+    logger.info({ hasAI: !!anthropic }, 'Facilitator agent configured');
 
     // Configure AI agents if API key is available
-    if (anthropicApiKey) {
+    if (anthropic) {
       logger.debug(
-        'Configuring Intern, Scribe, Registrar and Historian agents...'
+        'Configuring Intern, Scribe, Registrar and Historian agents...',
       );
-      const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
       const intern = new InternAgent({
         anthropic,
@@ -92,13 +97,13 @@ async function main() {
 
       // Set router (Intern routes to admin/scribe/ignore)
       processor.setRouter((eventId, familyId) =>
-        intern.route(eventId, familyId)
+        intern.route(eventId, familyId),
       );
       processor.setImageLinker((eventId, familyId) =>
-        intern.linkToImage(eventId, familyId)
+        intern.linkToImage(eventId, familyId),
       );
       processor.setScribe((eventId, familyId) =>
-        scribe.process(eventId, familyId)
+        scribe.process(eventId, familyId),
       );
       processor.setHistorianProcessor(async (eventId, familyId) => {
         const result = await historian.answer(eventId, familyId);
@@ -114,21 +119,21 @@ async function main() {
             if (result.questionContent) {
               logger.info(
                 { familyId, questionId: result.questionId },
-                'Facilitator asked question'
+                'Facilitator asked question',
               );
             } else if (result.skippedReason) {
               logger.debug(
                 { familyId, reason: result.skippedReason },
-                'Facilitator skipped asking'
+                'Facilitator skipped asking',
               );
             }
           },
           (err) => {
             logger.error(
               { familyId, err },
-              'Facilitator failed to ask question'
+              'Facilitator failed to ask question',
             );
-          }
+          },
         );
       });
 

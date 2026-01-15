@@ -11,8 +11,17 @@ import {
   type Family,
   type MessageSender,
 } from '@sobremesa/shared-types';
+import { buildSystemPrompt, buildUserPrompt } from './prompt-builder';
 
 export type { MessageSender };
+
+/**
+ * Anthropic client interface.
+ * Using unknown to avoid TypeScript version mismatches across workspace packages.
+ * The actual Anthropic client from @anthropic-ai/sdk should be passed.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnthropicClient = any;
 
 /**
  * Options for FacilitatorAgent.
@@ -20,6 +29,8 @@ export type { MessageSender };
 export interface FacilitatorAgentOptions {
   /** Message sender (typically BotManager) */
   messageSender: MessageSender;
+  /** Anthropic client for warmth transformation (optional - falls back to verbatim if not provided) */
+  anthropic?: AnthropicClient;
   /** Question repository */
   questionRepo?: QuestionRepository;
   /** Family repository */
@@ -43,12 +54,17 @@ export interface AskQuestionResult {
   skippedReason?: string;
 }
 
+/** Model to use for warmth transformation (fast and cheap) */
+const WARMTH_MODEL = 'claude-3-5-haiku-latest';
+
 /**
  * The Facilitator agent asks warm follow-up questions to families.
  * It picks the highest priority pending question and sends it via the Facilitator bot.
+ * When an Anthropic client is provided, it applies the warmth formula to questions.
  */
 export class FacilitatorAgent {
   private messageSender: MessageSender;
+  private anthropic?: AnthropicClient;
   private questionRepo: QuestionRepository;
   private familyRepo: FamilyRepository;
   private eventLog: EventLogRepository;
@@ -57,6 +73,7 @@ export class FacilitatorAgent {
 
   constructor(options: FacilitatorAgentOptions) {
     this.messageSender = options.messageSender;
+    this.anthropic = options.anthropic;
     this.questionRepo = options.questionRepo || new QuestionRepository();
     this.familyRepo = options.familyRepo || new FamilyRepository();
     this.eventLog = options.eventLog || new EventLogRepository();
@@ -110,7 +127,7 @@ export class FacilitatorAgent {
         familyId,
         question.id,
         undefined,
-        externalMessageId
+        externalMessageId,
       );
 
       // 6. Log the event
@@ -129,7 +146,7 @@ export class FacilitatorAgent {
 
       this.logger.info(
         { familyId, questionId: question.id, priority: question.priority },
-        'Question asked successfully'
+        'Question asked successfully',
       );
 
       return {
@@ -142,7 +159,7 @@ export class FacilitatorAgent {
         error instanceof Error ? error.message : String(error);
       this.logger.error(
         { familyId, error: errorMessage },
-        'Failed to ask question'
+        'Failed to ask question',
       );
       return { success: false, error: errorMessage };
     }
@@ -150,20 +167,65 @@ export class FacilitatorAgent {
 
   /**
    * Send a question to the family chat.
+   * Applies warmth formula via AI if Anthropic client is available.
    * Returns the Telegram message_id of the sent message.
    */
   private async sendQuestion(
     family: Family,
-    question: Question
+    question: Question,
   ): Promise<number> {
-    // Format the question with warmth
-    // The question should already be warm from Scribe, but we can add context
-    const message = question.contentOriginal;
+    // Apply warmth formula via AI if available
+    let message: string;
+    if (this.anthropic) {
+      try {
+        message = await this.formatWithWarmth(family, question);
+        this.logger.debug(
+          { questionId: question.id },
+          'Applied warmth formula via AI',
+        );
+      } catch (error) {
+        this.logger.warn(
+          { questionId: question.id, error },
+          'Failed to apply warmth, falling back to verbatim',
+        );
+        message = question.contentOriginal;
+      }
+    } else {
+      // No AI client - send verbatim
+      message = question.contentOriginal;
+    }
 
     return await this.messageSender.sendMessage(BotRole.FACILITATOR, {
       chatId: family.chatId!,
       text: message,
     });
+  }
+
+  /**
+   * Apply the warmth formula to a question using AI.
+   * Uses Haiku for fast, cheap transformation.
+   */
+  private async formatWithWarmth(
+    family: Family,
+    question: Question,
+  ): Promise<string> {
+    const systemPrompt = buildSystemPrompt(family.config);
+    const userPrompt = buildUserPrompt(question);
+
+    const response = await this.anthropic.messages.create({
+      model: WARMTH_MODEL,
+      max_tokens: 512,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    // Extract the text from the response
+    const content = response.content[0];
+    if (content.type !== 'text') {
+      throw new Error('Unexpected response type from AI');
+    }
+
+    return content.text.trim();
   }
 
   /**
@@ -206,7 +268,7 @@ export class FacilitatorAgent {
 
     this.logger.info(
       { familyCount: activeFamilies.length },
-      'Checking questions for all families'
+      'Checking questions for all families',
     );
 
     for (const family of activeFamilies) {

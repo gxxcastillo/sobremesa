@@ -493,11 +493,11 @@ Questions are not just messages — they have:
 
 Multiple agents participate in the process.
 
-**Decision:**  
+**Decision:**
 Questions are treated as first-class entities with a lifecycle:
 
 - Scribe and Curator propose questions
-- Facilitator decides if/when to ask
+- Facilitator decides if/when to ask and applies warmth formula via AI
 - Scribe detects answers
 - Registrar persists state changes
 - Admin adapts behavior based on outcomes

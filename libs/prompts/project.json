@@ -5,5 +5,18 @@
   "projectType": "library",
   "tags": [],
   "// targets": "to see all targets run: nx show project prompts --web",
-  "targets": {}
+  "targets": {
+    "types": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --noEmit -p libs/queue/tsconfig.lib.json"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint libs/queue"
+      }
+    }
+  }
 }

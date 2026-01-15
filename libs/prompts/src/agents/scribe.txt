@@ -269,11 +269,10 @@ Return a structured JSON object (domain model, NOT database schema):
       "question_en": "What kind of shop did Abraham run?",
       "question_type": "gap_fill",
       "priority": 70,
-      "context": {
-        "story_id": "story_001",
-        "topic": "shop details"
-      },
-      "best_person_to_ask": "Uncle David"
+      "target_person": "Uncle David",
+      "target_event": "The Shop on Nalewki Street",
+      "target_place": "Warsaw",
+      "story_context": "Uncle David mentioned a family shop but didn't specify what goods they sold"
     }
   ],
 

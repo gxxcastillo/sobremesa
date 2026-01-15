@@ -221,6 +221,14 @@ export interface Question {
   answeredAt?: Date;
   answerMessageId?: string;
   askedExternalMessageId?: string; // External message ID for answer detection
+  /** Name of the person this question should be directed to */
+  targetPerson?: string;
+  /** Name/title of the event this question relates to */
+  targetEvent?: string;
+  /** Name of the place this question relates to */
+  targetPlace?: string;
+  /** Brief context about the story this question aims to enrich */
+  storyContext?: string;
   createdAt: Date;
   updatedAt: Date;
 }

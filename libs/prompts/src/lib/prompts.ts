@@ -1,10 +1,10 @@
-import adminPrompt from '../agents/admin.md?raw';
-import curatorPrompt from '../agents/curator.md?raw';
-import facilitatorPrompt from '../agents/facilitator.md?raw';
-import historianPrompt from '../agents/historian.md?raw';
-import internFilterPrompt from '../agents/intern-filter.md?raw';
-import internImageLinkPrompt from '../agents/intern-image-link.md?raw';
-import scribePrompt from '../agents/scribe.md?raw';
+import adminPrompt from '../agents/admin.txt?raw';
+import curatorPrompt from '../agents/curator.txt?raw';
+import facilitatorPrompt from '../agents/facilitator.txt?raw';
+import historianPrompt from '../agents/historian.txt?raw';
+import internFilterPrompt from '../agents/intern-filter.txt?raw';
+import internImageLinkPrompt from '../agents/intern-image-link.txt?raw';
+import scribePrompt from '../agents/scribe.txt?raw';
 
 export type PromptName = keyof typeof prompts;
 

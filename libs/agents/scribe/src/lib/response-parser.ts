@@ -60,7 +60,7 @@ function parseClaimSourceType(value?: string): ClaimSourceType | undefined {
  * Parse image reference type string.
  */
 function parseImageReferenceType(
-  value?: string
+  value?: string,
 ): 'describes' | 'identifies_people' | 'provides_context' | 'asks_about' {
   if (!value) return 'describes';
   const lower = value.toLowerCase();
@@ -101,7 +101,7 @@ function extractJson(text: string): string {
 export function parseScribeResponse(
   rawText: string,
   sourceEventId: string,
-  familyId: string
+  familyId: string,
 ): ScribeDomainModel {
   let raw: RawScribeResponse;
 
@@ -111,7 +111,7 @@ export function parseScribeResponse(
   } catch (error) {
     logger.warn(
       { error, rawText: rawText.slice(0, 500) },
-      'Failed to parse Scribe response JSON'
+      'Failed to parse Scribe response JSON',
     );
     // Return empty domain model on parse failure
     return createEmptyDomainModel(sourceEventId, familyId);
@@ -156,7 +156,7 @@ export function parseScribeResponse(
       personBName: r.person_b,
       relationshipType: r.relationship_type,
       confidence: parseConfidence(r.confidence),
-    })
+    }),
   );
 
   // Parse claims
@@ -191,6 +191,7 @@ export function parseScribeResponse(
     targetPerson: q.target_person,
     targetEvent: q.target_event,
     targetPlace: q.target_place,
+    storyContext: q.story_context,
   }));
 
   // Parse answered questions
@@ -217,7 +218,7 @@ export function parseScribeResponse(
       peopleIdentified: r.people_identified,
       contextProvided: r.context_provided,
       confidence: parseConfidence(r.confidence),
-    })
+    }),
   );
 
   return {
@@ -243,7 +244,7 @@ export function parseScribeResponse(
  */
 function createEmptyDomainModel(
   sourceEventId: string,
-  familyId: string
+  familyId: string,
 ): ScribeDomainModel {
   return {
     sourceEventId,

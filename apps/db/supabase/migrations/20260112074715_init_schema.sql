@@ -687,6 +687,12 @@ CREATE TABLE IF NOT EXISTS questions (
   -- External message tracking (for answer detection)
   asked_external_message_id TEXT NULL,
 
+  -- Targeting metadata (for Facilitator warmth formatting)
+  target_person TEXT NULL,
+  target_event TEXT NULL,
+  target_place TEXT NULL,
+  story_context TEXT NULL,
+
   -- Timestamps
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -694,6 +700,10 @@ CREATE TABLE IF NOT EXISTS questions (
 
 COMMENT ON TABLE questions IS 'Question lifecycle managed by Facilitator.';
 COMMENT ON COLUMN questions.asked_external_message_id IS 'External message ID of the sent question, for matching replies';
+COMMENT ON COLUMN questions.target_person IS 'Name of the person this question should be directed to';
+COMMENT ON COLUMN questions.target_event IS 'Name/title of the event this question relates to';
+COMMENT ON COLUMN questions.target_place IS 'Name of the place this question relates to';
+COMMENT ON COLUMN questions.story_context IS 'Brief context about the story this question aims to enrich';
 
 CREATE INDEX IF NOT EXISTS idx_questions_family_status
   ON questions(family_id, status);

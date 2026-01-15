@@ -99,6 +99,8 @@ export interface FamilyBotConfig {
       formality?: 'casual' | 'friendly' | 'professional' | 'formal';
       emojiUsage?: 'none' | 'minimal' | 'moderate' | 'generous';
       engagement?: 'gentle' | 'curious' | 'enthusiastic';
+      verbosity?: 'concise' | 'moderate' | 'detailed';
+      patience?: 'brief' | 'moderate' | 'extensive';
     };
   };
   admin?: {
