@@ -18,7 +18,7 @@ RUN bun install
 
 # Build the API
 WORKDIR /app/apps/api
-RUN bun build src/main.ts --outdir dist --target bun
+RUN bun build src/main.ts --outdir dist --target bun --loader:.txt=text
 
 # Production stage
 FROM oven/bun:1.3.6-slim AS production

@@ -15,7 +15,7 @@ RUN bun install
 
 # Build with sourcemaps
 WORKDIR /app/apps/chatbots
-RUN bun build src/main.ts --outdir dist --target bun --sourcemap
+RUN bun run build.ts
 
 # Production stage
 FROM oven/bun:1.3.6-slim AS production
