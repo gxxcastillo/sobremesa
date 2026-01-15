@@ -414,15 +414,10 @@ export class MessageProcessor {
             'Historian action routed but no historian processor configured'
           );
         }
-        // Mark as processed after historian handling
-        await this.eventRepo.markProcessed(familyId, eventId);
-        return {
-          success: true,
-          duration: Date.now() - startTime,
-        };
+        // Fall through to also run scribe pipeline for extraction
       }
 
-      // Route to scribe pipeline (default)
+      // Route to scribe pipeline (runs for both historian and scribe routing)
       // Process text content through Filter/Scribe (including media captions)
       if (event.contentOriginal || event.eventType === 'message') {
         await this.processTextContent(eventId, familyId);

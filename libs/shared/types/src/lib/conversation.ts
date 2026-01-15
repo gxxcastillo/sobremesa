@@ -1,4 +1,4 @@
-import { LanguageCode } from './languages';
+import { LanguageCode, type SupportedLanguage } from './languages';
 
 /**
  * Supported chat providers.
@@ -82,12 +82,65 @@ export interface Identity {
 }
 
 /**
+ * Configuration for a family's language and cultural settings.
+ */
+export interface FamilyLanguageConfig {
+  /** Primary language for bot responses */
+  primary: SupportedLanguage;
+}
+
+/**
+ * Configuration for bot personalities.
+ */
+export interface FamilyBotConfig {
+  facilitator?: {
+    displayName?: string;
+    personality?: {
+      formality?: 'casual' | 'friendly' | 'professional' | 'formal';
+      emojiUsage?: 'none' | 'minimal' | 'moderate' | 'generous';
+      engagement?: 'gentle' | 'curious' | 'enthusiastic';
+    };
+  };
+  admin?: {
+    displayName?: string;
+    personality?: {
+      formality?: 'casual' | 'friendly' | 'professional' | 'formal';
+      emojiUsage?: 'none' | 'minimal' | 'moderate' | 'generous';
+      celebration?: 'understated' | 'warm' | 'enthusiastic';
+    };
+  };
+  scribe?: {
+    displayName?: string;
+    personality?: {
+      thoroughness?: 'essential' | 'standard' | 'comprehensive';
+    };
+  };
+  historian?: {
+    displayName?: string;
+  };
+}
+
+/**
+ * Complete family configuration stored in the config JSONB column.
+ */
+export interface FamilyConfig {
+  /** Language settings */
+  languages?: FamilyLanguageConfig;
+  /** Bot personality configurations */
+  bots?: FamilyBotConfig;
+  /** Cultural terms to preserve (never translate) */
+  culturalTerms?: string[];
+  /** Project display name */
+  projectName?: string;
+}
+
+/**
  * A family space (tenant).
  */
 export interface Family {
   id: string;
   name: string;
-  config: Record<string, unknown>;
+  config: FamilyConfig;
   chatId?: string;
   isActive: boolean;
   createdAt: Date;

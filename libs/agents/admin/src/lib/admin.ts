@@ -8,8 +8,16 @@ import type pino from 'pino';
 import {
   BotRole,
   type Family,
+  type FamilyConfig,
   type MessageSender,
+  type SupportedLanguage,
+  DEFAULT_LANGUAGE,
 } from '@sobremesa/shared-types';
+import {
+  formatHelpMessage,
+  formatMentionMessage,
+  formatStatusMessage,
+} from './messages';
 
 export type { MessageSender };
 
@@ -135,7 +143,7 @@ export class AdminAgent {
     const stats = await this.getFamilyStats(familyId);
 
     // Build status message
-    const statusMessage = this.formatStatusMessage(family, stats);
+    const statusMessage = this.formatStatus(family, stats);
 
     // Get external message ID to reply to
     const externalMessageId = event.externalEventId
@@ -177,13 +185,11 @@ export class AdminAgent {
       return { success: false, action: 'dm', error: 'Event not found' };
     }
 
-    const helpMessage =
-      "Hi! I'm the Sobremesa family history bot.\n\n" +
-      'Add me to your family group chat and use /sobremesa to start preserving your family stories.\n\n' +
-      'Commands:\n' +
-      '• /sobremesa - Set up family archive (in new group) or show status (in registered group)\n' +
-      '• /status - Show family archive status\n\n' +
-      "Just chat naturally in your family group - I'll listen and preserve the important stories!";
+    // Get family config for language
+    const family = await this.familyRepo.findById(familyId);
+    const language = this.getLanguageFromConfig(family?.config);
+
+    const helpMessage = formatHelpMessage(language);
 
     await this.messageSender.sendMessage(BotRole.ADMIN, {
       chatId: event.conversationId,
@@ -244,19 +250,12 @@ export class AdminAgent {
       return { success: false, action: 'mention', error: 'Event not found' };
     }
 
-    // Load family info for context
+    // Load family info for context and language
     const family = await this.familyRepo.findById(familyId);
     const familyName = family?.name || 'your family';
+    const language = this.getLanguageFromConfig(family?.config);
 
-    // For now, provide a helpful response
-    // TODO: Expand with more conversational capabilities
-    const response =
-      `Hi! I'm here to help preserve ${familyName}'s stories.\n\n` +
-      'You can:\n' +
-      '• Share family memories and stories in this chat\n' +
-      "• Share old photos and I'll help identify people\n" +
-      "• Use /status to see what we've collected\n\n" +
-      "Just chat naturally - I'm listening!";
+    const response = formatMentionMessage(language, familyName);
 
     // Get external message ID to reply to
     const externalMessageId = event.externalEventId
@@ -322,26 +321,28 @@ export class AdminAgent {
   }
 
   /**
-   * Format the status message.
+   * Format the status message using language-aware templates.
    */
-  private formatStatusMessage(
+  private formatStatus(
     family: Family,
     stats: { eventCount: number; memberCount: number }
   ): string {
-    const lines: string[] = [
-      `Family Archive: ${family.name}`,
-      '',
-      `Messages archived: ${stats.eventCount}`,
-      `Family members seen: ${stats.memberCount}`,
-    ];
+    const language = this.getLanguageFromConfig(family.config);
+    return formatStatusMessage(
+      language,
+      family.name,
+      stats,
+      family.createdAt ? new Date(family.createdAt) : undefined
+    );
+  }
 
-    if (family.createdAt) {
-      const createdDate = new Date(family.createdAt).toLocaleDateString();
-      lines.push(`Active since: ${createdDate}`);
-    }
-
-    lines.push('', 'Keep sharing your family stories!');
-
-    return lines.join('\n');
+  /**
+   * Extract primary language from family config.
+   * Defaults to 'en' if not configured.
+   */
+  private getLanguageFromConfig(
+    config: FamilyConfig | undefined
+  ): SupportedLanguage {
+    return config?.languages?.primary ?? DEFAULT_LANGUAGE;
   }
 }

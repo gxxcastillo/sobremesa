@@ -1,4 +1,9 @@
-import type { Confidence, Person, Relationship } from '@sobremesa/shared-types';
+import type {
+  Confidence,
+  Person,
+  Relationship,
+  SupportedLanguage,
+} from '@sobremesa/shared-types';
 
 /**
  * Types of questions the Historian can answer.
@@ -128,6 +133,8 @@ export interface HistorianConfig {
   maxEvents: number;
   /** Whether to suggest follow-up questions */
   suggestFollowUps: boolean;
+  /** Primary language for responses */
+  primaryLanguage: SupportedLanguage;
 }
 
 /**
@@ -141,6 +148,7 @@ export const DEFAULT_HISTORIAN_CONFIG: HistorianConfig = {
   maxStories: 5,
   maxEvents: 10,
   suggestFollowUps: true,
+  primaryLanguage: 'en',
 };
 
 /**

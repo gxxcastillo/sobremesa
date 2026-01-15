@@ -13,6 +13,15 @@ const SYSTEM_PROMPT_TEMPLATE = `You are {HISTORIAN_NAME}, the family's warm and 
 Your role is to answer questions about the family's collected history.
 You have access to stories, facts, and memories shared by family members.
 
+## LANGUAGE
+
+Primary Language: {PRIMARY_LANGUAGE}
+
+**IMPORTANT:** Always respond in the primary language ({PRIMARY_LANGUAGE}).
+- Maintain warmth and conversational tone in the target language
+- If the question is in a different language, still respond in the primary language
+- Preserve cultural terms and names exactly as stored (don't translate proper nouns)
+
 ## RESPONSE GUIDELINES
 
 ### 1. WARMTH
@@ -67,7 +76,7 @@ export function buildSystemPrompt(config: HistorianConfig): string {
   return SYSTEM_PROMPT_TEMPLATE.replace(
     '{HISTORIAN_NAME}',
     config.historianName
-  );
+  ).replace(/{PRIMARY_LANGUAGE}/g, config.primaryLanguage);
 }
 
 /**
@@ -232,8 +241,40 @@ export function buildUserPrompt(
     parts.push(
       "The family records don't have information about this topic yet."
     );
+    parts.push('');
+
+    // Be specific about what was searched for
+    if (question.entities.length > 0) {
+      parts.push(
+        `Entities searched: ${question.entities.join(
+          ', '
+        )} - no matches found in family records.`
+      );
+    }
+    if (question.keywords.length > 0) {
+      parts.push(
+        `Keywords searched: ${question.keywords.join(
+          ', '
+        )} - no relevant records found.`
+      );
+    }
+    parts.push('');
+
+    parts.push('IMPORTANT INSTRUCTIONS FOR THIS RESPONSE:');
     parts.push(
-      'Respond warmly, acknowledging the gap and suggesting the family could share what they know.'
+      "1. Be transparent: Clearly state that you don't have information about the specific people/topics mentioned in the question."
+    );
+    parts.push(
+      '2. Echo the question: Reference what was actually asked (e.g., "I don\'t have any records about Michael or his marriage...").'
+    );
+    parts.push(
+      '3. Stay relevant: Any follow-up question MUST directly relate to the original question. Do NOT ask about unrelated topics like dates, summers, or locations that were not mentioned.'
+    );
+    parts.push(
+      '4. Invite specific contributions: Ask if anyone in the family knows about the specific person or topic asked about.'
+    );
+    parts.push(
+      '5. NEVER invent context: Do not imply you know anything you don\'t (e.g., don\'t ask "which summer?" if no summer was mentioned).'
     );
     parts.push('');
   }

@@ -1,5 +1,32 @@
 /**
- * Supported language codes.
+ * Languages the application supports for bot responses and UI.
+ * ISO 639-1 codes.
+ */
+export type SupportedLanguage = 'en' | 'es';
+
+/**
+ * Default language when none is configured.
+ */
+export const DEFAULT_LANGUAGE: SupportedLanguage = 'en';
+
+/**
+ * Map of supported languages to their locale strings for formatting.
+ */
+export const LANGUAGE_LOCALES: Record<SupportedLanguage, string> = {
+  en: 'en-US',
+  es: 'es-ES',
+};
+
+/**
+ * Check if a string is a supported language.
+ */
+export function isSupportedLanguage(lang: string): lang is SupportedLanguage {
+  return lang === 'en' || lang === 'es';
+}
+
+/**
+ * Language codes for content detection (broader than SupportedLanguage).
+ * Includes 'mixed' for bilingual content and allows any string for extensibility.
  */
 export type LanguageCode = 'es' | 'en' | 'mixed' | string;
 

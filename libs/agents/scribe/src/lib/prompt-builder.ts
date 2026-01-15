@@ -161,6 +161,20 @@ NEVER translate these terms: {CULTURAL_TERMS}
 
 Instead, preserve them and add explanation in parentheses.
 
+## Language Settings
+
+Primary Language: {PRIMARY_LANGUAGE}
+
+**IMPORTANT:** Generate all questions in the primary language ({PRIMARY_LANGUAGE}).
+- If primary language is "es": "¿Alguien recuerda cuándo llegó Abraham?"
+- If primary language is "en": "Does anyone remember when Abraham arrived?"
+
+Warm phrases by language:
+- Spanish: "¿Alguien recuerda...", "Me encantaría saber más sobre...", "¿Alguien sabe...", "Sería maravilloso escuchar..."
+- English: "Does anyone remember...", "I'd love to know more about...", "Does anyone happen to know...", "It would be wonderful to hear..."
+
+Always match the warmth formula to the primary language while maintaining the same warm, inviting tone.
+
 ## Output Format
 
 Return ONLY a valid JSON object with this structure:
@@ -275,9 +289,10 @@ export function buildSystemPrompt(config: ScribeConfig): string {
       : '(none configured)';
 
   return SYSTEM_PROMPT_TEMPLATE.replace('{SCRIBE_NAME}', config.scribeName)
-    .replace('{CULTURAL_TERMS}', culturalTermsStr)
+    .replace(/{CULTURAL_TERMS}/g, culturalTermsStr)
     .replace('{THOROUGHNESS}', config.thoroughness)
-    .replace('{CONFIDENCE}', config.confidence);
+    .replace('{CONFIDENCE}', config.confidence)
+    .replace(/{PRIMARY_LANGUAGE}/g, config.primaryLanguage);
 }
 
 /**

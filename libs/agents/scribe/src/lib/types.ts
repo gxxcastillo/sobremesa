@@ -1,3 +1,5 @@
+import type { SupportedLanguage } from '@sobremesa/shared-types';
+
 /**
  * Configuration for the Scribe agent.
  */
@@ -14,6 +16,8 @@ export interface ScribeConfig {
   culturalTerms: string[];
   /** Scribe name for prompts */
   scribeName: string;
+  /** Primary language for generating questions */
+  primaryLanguage: SupportedLanguage;
 }
 
 /**
@@ -26,6 +30,7 @@ export const DEFAULT_SCRIBE_CONFIG: ScribeConfig = {
   confidence: 'moderate',
   culturalTerms: [],
   scribeName: 'Scribe',
+  primaryLanguage: 'en',
 };
 
 /**
