@@ -16,8 +16,5 @@
     "strict": true,
     "baseUrl": "."
   },
-  "files": [
-    "./libs/shared/types/src/global/md.d.ts",
-    "./libs/shared/types/src/global/txt.d.ts"
-  ]
+  "include": ["libs/shared/types/src/global/**/*.d.ts"]
 }

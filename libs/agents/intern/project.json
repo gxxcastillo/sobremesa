@@ -15,7 +15,7 @@
       }
     },
     "test": {
-      "executor": "@nx/vite:test",
+      "executor": "@nx/vitest:test",
       "options": {
         "config": "libs/agents/intern/vite.config.ts"
       }
