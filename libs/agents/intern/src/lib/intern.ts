@@ -440,6 +440,28 @@ export class InternAgent {
   }
 
   /**
+   * Check if a question is about the bot itself (meta-question).
+   * These should go to admin, not historian.
+   */
+  private isMetaQuestion(text: string): boolean {
+    const metaPatterns = [
+      // Questions about bot behavior/functionality
+      /\b(you|your|you're|bot)\b.*\b(working|doing|send|sending|respond|responding|greeting|message|broken|bug|error|issue)/i,
+      // "why aren't you..." / "why don't you..."
+      /\bwhy\s+(aren't|arent|are\s*n[o']t|don't|dont|do\s*n[o']t)\s+you\b/i,
+      // "why didn't you..."
+      /\bwhy\s+(didn't|didnt|did\s*n[o']t)\s+you\b/i,
+      // "what's wrong with you"
+      /\bwhat('s|s|\s+is)\s+wrong\s+with\s+you\b/i,
+      // "are you working/ok/broken"
+      /\bare\s+you\s+(working|ok|okay|broken|bugged|down)\b/i,
+      // "can you hear me" / "do you work"
+      /\b(can|do)\s+you\s+(hear|see|work|respond)\b/i,
+    ];
+    return metaPatterns.some((pattern) => pattern.test(text));
+  }
+
+  /**
    * Parse the JSON response from the image link prompt.
    */
   private parseImageLinkResponse(text: string): ImageLinkResult {
@@ -550,8 +572,21 @@ export class InternAgent {
 
       // Check for @ mentions of the bot (deterministic routing)
       if (this.config.botUsername && this.isBotMentioned(messageText)) {
-        // If it's a question, route to historian for answering
+        // If it's a question, check if it's about the bot itself
         if (this.isQuestion(messageText)) {
+          // Meta questions about bot behavior go to admin
+          if (this.isMetaQuestion(messageText)) {
+            this.logger.debug(
+              { eventId },
+              'Routing to admin: meta question about bot',
+            );
+            return {
+              action: 'admin',
+              adminSubtype: 'mention',
+              reason: 'Meta question about bot behavior',
+            };
+          }
+          // Regular family history questions go to historian
           this.logger.debug(
             { eventId },
             'Routing to historian: question to bot',
