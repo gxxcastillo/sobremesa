@@ -337,7 +337,7 @@ const app = new Elysia()
   )
   /**
    * DELETE /api/admin/chats/:chatId
-   * Remove a chat ID from the whitelist
+   * Remove a chat ID from the allowlist
    */
   .delete(
     '/api/admin/chats/:chatId',
@@ -350,7 +350,7 @@ const app = new Elysia()
       params: t.Object({ chatId: t.String() }),
       detail: {
         tags: ['Admin'],
-        description: 'Remove a chat ID from the whitelist',
+        description: 'Remove a chat ID from the allowlist',
       },
     },
   )

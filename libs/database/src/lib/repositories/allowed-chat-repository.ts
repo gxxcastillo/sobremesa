@@ -2,7 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient } from '../client.js';
 
 /**
- * Repository for allowed chats whitelist.
+ * Repository for allowed chats allowlist.
  */
 export class AllowedChatRepository {
   private client: SupabaseClient;
@@ -30,7 +30,7 @@ export class AllowedChatRepository {
   }
 
   /**
-   * Add a chat to the whitelist.
+   * Add a chat to the allowlist.
    */
   async add(chatId: string, note?: string, source = 'telegram'): Promise<void> {
     const { error } = await this.client
@@ -43,7 +43,7 @@ export class AllowedChatRepository {
   }
 
   /**
-   * Remove a chat from the whitelist.
+   * Remove a chat from the allowlist.
    */
   async remove(chatId: string): Promise<void> {
     const { error } = await this.client

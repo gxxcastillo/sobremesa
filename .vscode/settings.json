@@ -1,5 +1,5 @@
 {
-  "cSpell.words": ["chatbots", "sobremesa", "supabase"],
+  "cSpell.words": ["chatbots", "Elysia", "sobremesa", "supabase"],
   "typescript.tsdk": "node_modules/typescript/lib",
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",

@@ -182,7 +182,7 @@ export class StudioApiClient {
   }
 
   /**
-   * Remove a chat ID from the whitelist
+   * Remove a chat ID from the allowlist
    * @param chatId The chat ID to remove
    */
   async removeChat(chatId: string): Promise<void> {

@@ -890,7 +890,7 @@ CREATE INDEX IF NOT EXISTS idx_event_log_family_actor
   ON event_log(family_id, actor);
 
 -- ============================================================================
--- ALLOWED CHATS (Global whitelist - checked before any processing)
+-- ALLOWED CHATS (Global allowlist - checked before any processing)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS allowed_chats (
   chat_id TEXT PRIMARY KEY,                     -- Provider chat ID (e.g., Telegram chat_id as string)
@@ -899,19 +899,7 @@ CREATE TABLE IF NOT EXISTS allowed_chats (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-COMMENT ON TABLE allowed_chats IS 'Global whitelist of chat IDs allowed to use the bot. Checked before any processing.';
-
--- ============================================================================
--- ALLOWED CHATS (Global whitelist - checked before any processing)
--- ============================================================================
-CREATE TABLE IF NOT EXISTS allowed_chats (
-  chat_id TEXT PRIMARY KEY,                     -- Provider chat ID (e.g., Telegram chat_id as string)
-  source VARCHAR(50) NOT NULL DEFAULT 'telegram', -- 'telegram', 'whatsapp', etc.
-  note TEXT,                                    -- e.g., "Garcia family group", "Test chat"
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-COMMENT ON TABLE allowed_chats IS 'Global whitelist of chat IDs allowed to use the bot. Checked before any processing.';
+COMMENT ON TABLE allowed_chats IS 'Global allowlist of chat IDs allowed to use the bot. Checked before any processing.';
 
 -- ============================================================================
 -- Enable RLS so client roles cannot write without explicit policies.

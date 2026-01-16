@@ -434,16 +434,16 @@ export class ChatbotHandler implements BotHandler {
       return;
     }
 
-    // Not registered - check whitelist and create family
+    // Not registered - check allowlist and create family
     const isAllowed = await this.allowedChatRepo.isAllowed(chatId);
     if (!isAllowed) {
       this.logger.warn(
         { chatId },
-        'Registration attempted from non-whitelisted chat',
+        'Registration attempted from unauthorized chat',
       );
       await ctx.reply(
         'This chat is not authorized to use Sobremesa. ' +
-          'Please contact the administrator to whitelist this chat.',
+          'Please contact the administrator.',
       );
       return;
     }

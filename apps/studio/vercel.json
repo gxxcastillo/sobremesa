@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://sobremesa-api.fly.dev/:path*"
+      "destination": "https://sobremesa-api.fly.dev/api/:path*"
     },
     {
       "source": "/(.*)",
