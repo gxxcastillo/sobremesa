@@ -18,6 +18,14 @@ export interface BotConfig {
 }
 
 /**
+ * Configuration for message spacing.
+ */
+export interface MessageSpacingConfig {
+  /** Minimum seconds between messages to the same chat (default: 3) */
+  minSecondsBetweenMessages?: number;
+}
+
+/**
  * Configuration for the BotManager (single bot mode).
  */
 export interface BotManagerConfig {
@@ -25,6 +33,8 @@ export interface BotManagerConfig {
   token: string;
   /** Logger instance */
   logger?: pino.Logger;
+  /** Message spacing configuration */
+  messageSpacing?: MessageSpacingConfig;
 }
 
 /**

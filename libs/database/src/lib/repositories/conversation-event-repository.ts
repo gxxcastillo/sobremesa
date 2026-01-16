@@ -117,6 +117,54 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
     return this.mapFromDb(data);
   }
 
+  /**
+   * Find unprocessed events of a specific type for a conversation.
+   * Useful for consolidating events (e.g., multiple join events).
+   */
+  async findUnprocessedByType(
+    familyId: string,
+    conversationId: string,
+    eventType: string,
+  ): Promise<ConversationEvent[]> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('conversation_id', conversationId)
+      .eq('event_type', eventType)
+      .eq('processed', false)
+      .eq('redacted', false)
+      .order('occurred_at', { ascending: true });
+
+    if (error) {
+      throw new Error(
+        `Failed to find unprocessed events by type: ${error.message}`,
+      );
+    }
+
+    return (data || []).map((row) => this.mapFromDb(row));
+  }
+
+  /**
+   * Mark multiple events as processed in a single operation.
+   */
+  async markManyProcessed(familyId: string, ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+
+    const { error } = await this.client
+      .from(this.tableName)
+      .update({
+        processed: true,
+        processed_at: new Date().toISOString(),
+      })
+      .eq('family_id', familyId)
+      .in('id', ids);
+
+    if (error) {
+      throw new Error(`Failed to mark events as processed: ${error.message}`);
+    }
+  }
+
   protected mapFromDb(row: Record<string, unknown>): ConversationEvent {
     return mapRowToCamelCase<ConversationEvent>(row);
   }

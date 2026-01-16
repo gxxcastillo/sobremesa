@@ -33,6 +33,13 @@ export interface AdminMessages {
     activeSince: (date: string) => string;
     encouragement: string;
   };
+  memberJoin: {
+    notification: (memberName: string, familyName: string) => string;
+    notificationPlural: (memberNames: string[], familyName: string) => string;
+  };
+  memberLeave: {
+    notification: (memberName: string) => string;
+  };
 }
 
 const MESSAGES_EN: AdminMessages = {
@@ -63,6 +70,21 @@ const MESSAGES_EN: AdminMessages = {
     activeSince: (date) => `Active since: ${date}`,
     encouragement: 'Keep sharing your family stories!',
   },
+  memberJoin: {
+    notification: (memberName, familyName) =>
+      `${memberName} joined the ${familyName} chat.`,
+    notificationPlural: (memberNames, familyName) => {
+      if (memberNames.length === 2) {
+        return `${memberNames[0]} and ${memberNames[1]} joined the ${familyName} chat.`;
+      }
+      const allButLast = memberNames.slice(0, -1);
+      const lastMember = memberNames[memberNames.length - 1];
+      return `${allButLast.join(', ')}, and ${lastMember} joined the ${familyName} chat.`;
+    },
+  },
+  memberLeave: {
+    notification: (memberName) => `${memberName} left the chat.`,
+  },
 };
 
 const MESSAGES_ES: AdminMessages = {
@@ -92,6 +114,21 @@ const MESSAGES_ES: AdminMessages = {
     membersActive: (count) => `Miembros de la familia vistos: ${count}`,
     activeSince: (date) => `Activo desde: ${date}`,
     encouragement: '¡Sigan compartiendo sus historias familiares!',
+  },
+  memberJoin: {
+    notification: (memberName, familyName) =>
+      `${memberName} se unió al chat de ${familyName}.`,
+    notificationPlural: (memberNames, familyName) => {
+      if (memberNames.length === 2) {
+        return `${memberNames[0]} y ${memberNames[1]} se unieron al chat de ${familyName}.`;
+      }
+      const allButLast = memberNames.slice(0, -1);
+      const lastMember = memberNames[memberNames.length - 1];
+      return `${allButLast.join(', ')} y ${lastMember} se unieron al chat de ${familyName}.`;
+    },
+  },
+  memberLeave: {
+    notification: (memberName) => `${memberName} salió del chat.`,
   },
 };
 
@@ -181,4 +218,42 @@ export function formatStatusMessage(
   lines.push('', m.encouragement);
 
   return lines.join('\n');
+}
+
+/**
+ * Format the member join notification message for a single member.
+ */
+export function formatMemberJoinMessage(
+  language: SupportedLanguage,
+  memberName: string,
+  familyName: string,
+): string {
+  return getMessages(language).memberJoin.notification(memberName, familyName);
+}
+
+/**
+ * Format the member join notification message for multiple members.
+ */
+export function formatMemberJoinPluralMessage(
+  language: SupportedLanguage,
+  memberNames: string[],
+  familyName: string,
+): string {
+  if (memberNames.length === 1) {
+    return formatMemberJoinMessage(language, memberNames[0], familyName);
+  }
+  return getMessages(language).memberJoin.notificationPlural(
+    memberNames,
+    familyName,
+  );
+}
+
+/**
+ * Format the member leave notification message.
+ */
+export function formatMemberLeaveMessage(
+  language: SupportedLanguage,
+  memberName: string,
+): string {
+  return getMessages(language).memberLeave.notification(memberName);
 }

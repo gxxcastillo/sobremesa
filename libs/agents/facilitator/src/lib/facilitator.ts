@@ -11,6 +11,7 @@ import {
   type Family,
   type MessageSender,
   detectLanguage,
+  Priorities,
 } from '@sobremesa/shared-types';
 import {
   buildSystemPrompt,
@@ -207,7 +208,15 @@ export class FacilitatorAgent {
   ): Promise<number> {
     // Apply warmth formula via AI if available
     let message: string;
-    if (this.anthropic) {
+    if (!family.chatId) {
+      const error = new Error('Failed to send message, missing clientId');
+      this.logger.warn(
+        { questionId: question.id, error },
+        'Failed to apply warmth, falling back to verbatim',
+      );
+
+      return NaN;
+    } else if (this.anthropic) {
       try {
         message = await this.formatWithWarmth(family, question);
         this.logger.debug(
@@ -226,10 +235,15 @@ export class FacilitatorAgent {
       message = question.contentOriginal;
     }
 
-    return await this.messageSender.sendMessage(BotRole.FACILITATOR, {
-      chatId: family.chatId!,
-      text: message,
-    });
+    // Bot-initiated question, low priority (shouldn't interrupt user interactions)
+    return await this.messageSender.sendMessage(
+      BotRole.FACILITATOR,
+      {
+        chatId: family.chatId,
+        text: message,
+      },
+      { priority: Priorities.BOT_QUESTION },
+    );
   }
 
   /**
@@ -356,12 +370,16 @@ export class FacilitatorAgent {
         formattedResponse = historianAnswer;
       }
 
-      // 3. Send the response via Facilitator bot
-      await this.messageSender.sendMessage(BotRole.FACILITATOR, {
-        chatId,
-        text: formattedResponse,
-        replyToMessageId,
-      });
+      // 3. Send the response via Facilitator bot (bot-initiated, low priority)
+      await this.messageSender.sendMessage(
+        BotRole.FACILITATOR,
+        {
+          chatId,
+          text: formattedResponse,
+          replyToMessageId,
+        },
+        { priority: Priorities.BOT_QUESTION },
+      );
 
       // 4. Log the event
       await this.eventLog.log({

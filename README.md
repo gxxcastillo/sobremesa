@@ -12,6 +12,10 @@ An AI-powered family history collection system that preserves your family's stor
 - **Multiple languages** - Bilingual storage with cultural context
 - **Everything is sourced** - Complete provenance for every fact
 
+## How It Works
+
+A pipeline of specialized AI agents processes incoming chat messages: extracting claims, resolving entities, detecting conflicts, and building a structured knowledge graph — all while maintaining complete provenance.
+
 ## Quick Start
 
 ```bash

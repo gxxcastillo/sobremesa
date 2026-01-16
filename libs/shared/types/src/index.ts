@@ -17,5 +17,8 @@ export * from './lib/domain-model';
 // Queue types
 export * from './lib/queue';
 
+// Outgoing queue types
+export * from './lib/outgoing-queue';
+
 // Event log types
 export * from './lib/event-log';

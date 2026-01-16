@@ -1,5 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { QueueItem, QueueItemStatus } from '@sobremesa/shared-types';
+import type {
+  QueueItem,
+  QueueItemStatus,
+  EnqueueOptions,
+} from '@sobremesa/shared-types';
+import { QueuePriority } from '@sobremesa/shared-types';
 import { getServiceClient } from '../client.js';
 import { mapRowToCamelCase } from '../base-repository.js';
 
@@ -17,11 +22,19 @@ export class ProcessingQueueRepository {
 
   /**
    * Enqueue a conversation event for processing.
+   * @param familyId - The family ID
+   * @param conversationEventId - The conversation event ID
+   * @param options - Enqueue options (priority, processAfter)
    */
   async enqueue(
     familyId: string,
     conversationEventId: string,
+    options: EnqueueOptions = {},
   ): Promise<QueueItem> {
+    const priority = options.priority ?? QueuePriority.NORMAL;
+    const processAfter =
+      options.processAfter?.toISOString() ?? new Date().toISOString();
+
     const { data, error } = await this.client
       .from(this.tableName)
       .insert({
@@ -29,6 +42,8 @@ export class ProcessingQueueRepository {
         conversation_event_id: conversationEventId,
         status: 'queued',
         attempts: 0,
+        priority,
+        process_after: processAfter,
       })
       .select()
       .single();
@@ -75,6 +90,8 @@ export class ProcessingQueueRepository {
   /**
    * Dequeue the next item for processing.
    * Implements locking to prevent duplicate processing.
+   * Orders by priority (ascending, lower = higher priority), then by queued_at.
+   * Only returns items where process_after <= NOW (for debouncing support).
    */
   async dequeue(
     familyId: string,
@@ -82,61 +99,31 @@ export class ProcessingQueueRepository {
     lockTimeoutMs = 300000,
   ): Promise<QueueItem | null> {
     const lockExpiry = new Date(Date.now() - lockTimeoutMs).toISOString();
+    const now = new Date().toISOString();
 
-    // Find and lock the next available item
-    const { data, error } = await this.client
-      .from(this.tableName)
-      .update({
-        status: 'processing',
-        locked_at: new Date().toISOString(),
-        locked_by: workerId,
-      })
-      .or(
-        `status.eq.queued,and(status.eq.processing,locked_at.lt.${lockExpiry})`,
-      )
-      .eq('family_id', familyId)
-      .order('queued_at', { ascending: true })
-      .limit(1)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return null; // No items available
-      }
-      throw new Error(`Failed to dequeue item: ${error.message}`);
-    }
-
-    return mapRowToCamelCase<QueueItem>(data);
-  }
-
-  /**
-   * Dequeue the next item from any family for processing.
-   * Used for multi-family queue processing.
-   */
-  async dequeueAny(
-    workerId: string,
-    lockTimeoutMs = 300000,
-  ): Promise<QueueItem | null> {
-    const lockExpiry = new Date(Date.now() - lockTimeoutMs).toISOString();
-
-    // First, try to find a queued item
+    // Find the next available item (respecting process_after for debouncing)
     const { data: queuedItem, error: selectError } = await this.client
       .from(this.tableName)
       .select('*')
+      .eq('family_id', familyId)
       .eq('status', 'queued')
+      .lte('process_after', now)
+      .order('priority', { ascending: true })
       .order('queued_at', { ascending: true })
       .limit(1)
       .single();
 
-    // If no queued items, try to find a stale processing item
+    // If no queued items ready, try stale processing items
     let itemToLock = queuedItem;
     if (selectError?.code === 'PGRST116') {
       const { data: staleItem } = await this.client
         .from(this.tableName)
         .select('*')
+        .eq('family_id', familyId)
         .eq('status', 'processing')
         .lt('locked_at', lockExpiry)
+        .lte('process_after', now)
+        .order('priority', { ascending: true })
         .order('queued_at', { ascending: true })
         .limit(1)
         .single();
@@ -146,7 +133,7 @@ export class ProcessingQueueRepository {
     }
 
     if (!itemToLock) {
-      return null; // No items available
+      return null;
     }
 
     // Lock the item
@@ -158,13 +145,81 @@ export class ProcessingQueueRepository {
         locked_by: workerId,
       })
       .eq('id', itemToLock.id)
-      .eq('status', itemToLock.status) // Optimistic locking
+      .eq('status', itemToLock.status)
       .select()
       .single();
 
     if (updateError) {
       if (updateError.code === 'PGRST116') {
-        // Item was grabbed by another worker, try again
+        return this.dequeue(familyId, workerId, lockTimeoutMs);
+      }
+      throw new Error(`Failed to lock queue item: ${updateError.message}`);
+    }
+
+    return mapRowToCamelCase<QueueItem>(data);
+  }
+
+  /**
+   * Dequeue the next item from any family for processing.
+   * Used for multi-family queue processing.
+   * Orders by priority (ascending, lower = higher priority), then by queued_at.
+   * Only returns items where process_after <= NOW (for debouncing support).
+   */
+  async dequeueAny(
+    workerId: string,
+    lockTimeoutMs = 300000,
+  ): Promise<QueueItem | null> {
+    const lockExpiry = new Date(Date.now() - lockTimeoutMs).toISOString();
+    const now = new Date().toISOString();
+
+    // Find queued items ready for processing (respecting process_after)
+    const { data: queuedItem, error: selectError } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('status', 'queued')
+      .lte('process_after', now)
+      .order('priority', { ascending: true })
+      .order('queued_at', { ascending: true })
+      .limit(1)
+      .single();
+
+    // If no queued items ready, try stale processing items
+    let itemToLock = queuedItem;
+    if (selectError?.code === 'PGRST116') {
+      const { data: staleItem } = await this.client
+        .from(this.tableName)
+        .select('*')
+        .eq('status', 'processing')
+        .lt('locked_at', lockExpiry)
+        .lte('process_after', now)
+        .order('priority', { ascending: true })
+        .order('queued_at', { ascending: true })
+        .limit(1)
+        .single();
+      itemToLock = staleItem;
+    } else if (selectError) {
+      throw new Error(`Failed to find queue item: ${selectError.message}`);
+    }
+
+    if (!itemToLock) {
+      return null;
+    }
+
+    // Lock the item
+    const { data, error: updateError } = await this.client
+      .from(this.tableName)
+      .update({
+        status: 'processing',
+        locked_at: new Date().toISOString(),
+        locked_by: workerId,
+      })
+      .eq('id', itemToLock.id)
+      .eq('status', itemToLock.status)
+      .select()
+      .single();
+
+    if (updateError) {
+      if (updateError.code === 'PGRST116') {
         return this.dequeueAny(workerId, lockTimeoutMs);
       }
       throw new Error(`Failed to lock queue item: ${updateError.message}`);
@@ -289,5 +344,45 @@ export class ProcessingQueueRepository {
     }
 
     return data?.length || 0;
+  }
+
+  /**
+   * Find all pending queue items for given event IDs.
+   * Useful for consolidating related events (e.g., multiple join events).
+   */
+  async findPendingByEventIds(
+    familyId: string,
+    conversationEventIds: string[],
+  ): Promise<QueueItem[]> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .in('conversation_event_id', conversationEventIds)
+      .eq('status', 'queued')
+      .order('queued_at', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to find pending items: ${error.message}`);
+    }
+
+    return (data || []).map((row) => mapRowToCamelCase<QueueItem>(row));
+  }
+
+  /**
+   * Mark multiple items as completed in a single operation.
+   */
+  async completeMany(familyId: string, ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+
+    const { error } = await this.client
+      .from(this.tableName)
+      .update({ status: 'done' })
+      .eq('family_id', familyId)
+      .in('id', ids);
+
+    if (error) {
+      throw new Error(`Failed to complete queue items: ${error.message}`);
+    }
   }
 }

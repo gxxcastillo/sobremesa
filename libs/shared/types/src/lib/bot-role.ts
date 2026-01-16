@@ -52,9 +52,19 @@ export interface OutgoingMessage {
 }
 
 /**
+ * Options for sending a message.
+ * Re-exported from outgoing-queue for convenience.
+ */
+export type { SendOptions } from './outgoing-queue';
+
+/**
  * Interface for sending messages via a bot.
  * Agents should use this interface to send messages.
  */
 export interface MessageSender {
-  sendMessage(role: BotRole, message: OutgoingMessage): Promise<number>;
+  sendMessage(
+    role: BotRole,
+    message: OutgoingMessage,
+    options?: import('./outgoing-queue').SendOptions,
+  ): Promise<number>;
 }

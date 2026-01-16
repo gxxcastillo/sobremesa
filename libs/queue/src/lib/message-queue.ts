@@ -2,6 +2,7 @@ import type {
   QueueItem,
   QueueOptions,
   ProcessingResult,
+  EnqueueOptions,
 } from '@sobremesa/shared-types';
 import { ProcessingQueueRepository } from '@sobremesa/database';
 import { createLogger, type LoggerOptions } from '@sobremesa/shared-utils';
@@ -60,10 +61,20 @@ export class MessageQueue {
 
   /**
    * Enqueue a message for processing.
+   * @param familyId - The family ID
+   * @param eventId - The conversation event ID
+   * @param options - Enqueue options (priority, processAfter)
    */
-  async enqueue(familyId: string, eventId: string): Promise<QueueItem> {
-    this.logger.debug({ familyId, eventId }, 'Enqueueing message');
-    return this.repository.enqueue(familyId, eventId);
+  async enqueue(
+    familyId: string,
+    eventId: string,
+    options?: EnqueueOptions,
+  ): Promise<QueueItem> {
+    this.logger.debug(
+      { familyId, eventId, priority: options?.priority },
+      'Enqueueing message',
+    );
+    return this.repository.enqueue(familyId, eventId, options);
   }
 
   /**

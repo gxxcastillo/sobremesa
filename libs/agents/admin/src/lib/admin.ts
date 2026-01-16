@@ -2,6 +2,7 @@ import {
   ConversationEventRepository,
   FamilyRepository,
   EventLogRepository,
+  ProcessingQueueRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
@@ -12,9 +13,12 @@ import {
   type MessageSender,
   type SupportedLanguage,
   DEFAULT_LANGUAGE,
+  Priorities,
 } from '@sobremesa/shared-types';
 import {
   formatHelpMessage,
+  formatMemberJoinPluralMessage,
+  formatMemberLeaveMessage,
   formatMentionMessage,
   formatStatusMessage,
 } from './messages';
@@ -33,6 +37,8 @@ export interface AdminAgentOptions {
   familyRepo?: FamilyRepository;
   /** Event log repository */
   eventLog?: EventLogRepository;
+  /** Processing queue repository */
+  queueRepo?: ProcessingQueueRepository;
   /** Logger instance */
   logger?: pino.Logger;
 }
@@ -70,6 +76,7 @@ export class AdminAgent {
   private eventRepo: ConversationEventRepository;
   private familyRepo: FamilyRepository;
   private eventLog: EventLogRepository;
+  private queueRepo: ProcessingQueueRepository;
   private logger: pino.Logger;
 
   constructor(options: AdminAgentOptions) {
@@ -77,6 +84,7 @@ export class AdminAgent {
     this.eventRepo = options.eventRepo || new ConversationEventRepository();
     this.familyRepo = options.familyRepo || new FamilyRepository();
     this.eventLog = options.eventLog || new EventLogRepository();
+    this.queueRepo = options.queueRepo || new ProcessingQueueRepository();
     this.logger = options.logger || createLogger({ name: 'admin' });
   }
 
@@ -150,15 +158,19 @@ export class AdminAgent {
       ? parseInt(event.externalEventId, 10)
       : undefined;
 
-    // Send reply
-    await this.messageSender.sendMessage(BotRole.ADMIN, {
-      chatId: event.conversationId,
-      text: statusMessage,
-      replyToMessageId:
-        externalMessageId && !isNaN(externalMessageId)
-          ? externalMessageId
-          : undefined,
-    });
+    // Send reply (user-triggered, high priority)
+    await this.messageSender.sendMessage(
+      BotRole.ADMIN,
+      {
+        chatId: event.conversationId,
+        text: statusMessage,
+        replyToMessageId:
+          externalMessageId && !isNaN(externalMessageId)
+            ? externalMessageId
+            : undefined,
+      },
+      { priority: Priorities.USER_RESPONSE },
+    );
 
     // Log the action
     await this.eventLog.log({
@@ -191,16 +203,22 @@ export class AdminAgent {
 
     const helpMessage = formatHelpMessage(language);
 
-    await this.messageSender.sendMessage(BotRole.ADMIN, {
-      chatId: event.conversationId,
-      text: helpMessage,
-    });
+    // User-triggered, high priority
+    await this.messageSender.sendMessage(
+      BotRole.ADMIN,
+      {
+        chatId: event.conversationId,
+        text: helpMessage,
+      },
+      { priority: Priorities.USER_RESPONSE },
+    );
 
     return { success: true, action: 'dm', messageSent: true };
   }
 
   /**
-   * Handle member events - welcome new members, etc.
+   * Handle member events - notify when members join or leave.
+   * For join events, consolidates multiple joins into a single message.
    */
   private async handleMemberEvent(
     eventId: string,
@@ -215,11 +233,143 @@ export class AdminAgent {
       };
     }
 
-    // For now, just log member events without sending a message
-    // We could add welcome messages for new members in the future
-    this.logger.info(
+    // Load family info for context and language
+    const family = await this.familyRepo.findById(familyId);
+    const familyName = family?.name || 'the family';
+    const language = this.getLanguageFromConfig(family?.config);
+
+    // Handle join events with consolidation
+    if (event.eventType === 'join') {
+      return this.handleConsolidatedJoin(
+        familyId,
+        event.conversationId,
+        familyName,
+        language,
+      );
+    }
+
+    // Handle leave events individually
+    if (event.eventType === 'leave') {
+      const memberName =
+        event.actorDisplayName || event.actorUsername || 'friend';
+      const notificationMessage = formatMemberLeaveMessage(
+        language,
+        memberName,
+      );
+
+      await this.messageSender.sendMessage(
+        BotRole.ADMIN,
+        {
+          chatId: event.conversationId,
+          text: notificationMessage,
+        },
+        { priority: Priorities.MEMBER_NOTIFICATION },
+      );
+
+      this.logger.info(
+        { eventId, familyId, eventType: 'leave', memberName },
+        'Leave notification sent',
+      );
+
+      await this.eventLog.log({
+        familyId,
+        eventType: 'event_processed',
+        eventCategory: 'bot_action',
+        actor: 'admin',
+        actorType: 'system',
+        eventData: {
+          eventId,
+          originalEventType: 'leave',
+          action: 'member_notification_sent',
+          memberName,
+        },
+      });
+
+      return { success: true, action: 'member_event', messageSent: true };
+    }
+
+    // Unknown member event type
+    this.logger.warn(
       { eventId, familyId, eventType: event.eventType },
-      'Member event processed (no action taken)',
+      'Unknown member event type',
+    );
+    return { success: true, action: 'member_event', messageSent: false };
+  }
+
+  /**
+   * Handle consolidated join events - finds all pending join events
+   * for the conversation and sends a single welcome message.
+   */
+  private async handleConsolidatedJoin(
+    familyId: string,
+    conversationId: string,
+    familyName: string,
+    language: SupportedLanguage,
+  ): Promise<AdminHandleResult> {
+    // Find all unprocessed join events for this conversation
+    const joinEvents = await this.eventRepo.findUnprocessedByType(
+      familyId,
+      conversationId,
+      'join',
+    );
+
+    if (joinEvents.length === 0) {
+      // Event was already processed (possibly by another worker)
+      return { success: true, action: 'member_event', messageSent: false };
+    }
+
+    // Extract member names (deduplicate by external ID)
+    const seenIds = new Set<string>();
+    const memberNames: string[] = [];
+    for (const evt of joinEvents) {
+      const actorId = evt.actorExternalId;
+      if (actorId && !seenIds.has(actorId)) {
+        seenIds.add(actorId);
+        memberNames.push(evt.actorDisplayName || evt.actorUsername || 'friend');
+      }
+    }
+
+    // Format the consolidated message
+    const notificationMessage = formatMemberJoinPluralMessage(
+      language,
+      memberNames,
+      familyName,
+    );
+
+    // Send the notification
+    await this.messageSender.sendMessage(
+      BotRole.ADMIN,
+      {
+        chatId: conversationId,
+        text: notificationMessage,
+      },
+      { priority: Priorities.MEMBER_NOTIFICATION },
+    );
+
+    // Mark all events as processed
+    const eventIds = joinEvents.map((e) => e.id);
+    await this.eventRepo.markManyProcessed(familyId, eventIds);
+
+    // Mark queue items as done
+    const queueItems = await this.queueRepo.findPendingByEventIds(
+      familyId,
+      eventIds,
+    );
+    if (queueItems.length > 0) {
+      await this.queueRepo.completeMany(
+        familyId,
+        queueItems.map((q) => q.id),
+      );
+    }
+
+    this.logger.info(
+      {
+        familyId,
+        conversationId,
+        memberCount: memberNames.length,
+        memberNames,
+      },
+      'Consolidated join notification sent',
     );
 
     await this.eventLog.log({
@@ -229,13 +379,15 @@ export class AdminAgent {
       actor: 'admin',
       actorType: 'system',
       eventData: {
-        eventId,
-        originalEventType: event.eventType,
-        action: 'member_event_processed',
+        eventIds,
+        originalEventType: 'join',
+        action: 'consolidated_join_notification_sent',
+        memberCount: memberNames.length,
+        memberNames,
       },
     });
 
-    return { success: true, action: 'member_event', messageSent: false };
+    return { success: true, action: 'member_event', messageSent: true };
   }
 
   /**
@@ -262,14 +414,19 @@ export class AdminAgent {
       ? parseInt(event.externalEventId, 10)
       : undefined;
 
-    await this.messageSender.sendMessage(BotRole.ADMIN, {
-      chatId: event.conversationId,
-      text: response,
-      replyToMessageId:
-        externalMessageId && !isNaN(externalMessageId)
-          ? externalMessageId
-          : undefined,
-    });
+    // User-triggered, high priority
+    await this.messageSender.sendMessage(
+      BotRole.ADMIN,
+      {
+        chatId: event.conversationId,
+        text: response,
+        replyToMessageId:
+          externalMessageId && !isNaN(externalMessageId)
+            ? externalMessageId
+            : undefined,
+      },
+      { priority: Priorities.USER_RESPONSE },
+    );
 
     await this.eventLog.log({
       familyId,

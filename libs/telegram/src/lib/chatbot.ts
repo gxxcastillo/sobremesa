@@ -10,6 +10,7 @@ import {
   type TextMessageInput,
   type PhotoMessageInput,
   type DocumentMessageInput,
+  type MemberEventInput,
 } from '@sobremesa/ingester';
 
 type TextMessageContext = Context<Update.MessageUpdate<Message.TextMessage>>;
@@ -593,18 +594,75 @@ export class ChatbotHandler implements BotHandler {
       return;
     }
 
-    // For now, just log the event
-    // TODO: Create a conversation event for member changes so Intern can route to Admin
+    const oldMember = ctx.chatMember.old_chat_member;
     const newMember = ctx.chatMember.new_chat_member;
-    this.logger.info(
-      {
-        familyId: family.id,
-        chatId,
-        userId: newMember.user.id,
-        username: newMember.user.username,
-        status: newMember.status,
-      },
-      'Chat member event received',
+
+    // Determine if this is a join or leave event
+    // Join: member was not in the chat (left, kicked, restricted) and now is (member, administrator, creator)
+    // Leave: member was in the chat and now is not
+    const wasInChat = ['member', 'administrator', 'creator'].includes(
+      oldMember.status,
     );
+    const isInChat = ['member', 'administrator', 'creator'].includes(
+      newMember.status,
+    );
+
+    let eventType: 'join' | 'leave' | null = null;
+    if (!wasInChat && isInChat) {
+      eventType = 'join';
+    } else if (wasInChat && !isInChat) {
+      eventType = 'leave';
+    }
+
+    // Skip if this is not a join/leave transition (e.g., status change within members)
+    if (!eventType) {
+      this.logger.debug(
+        {
+          chatId,
+          oldStatus: oldMember.status,
+          newStatus: newMember.status,
+        },
+        'Chat member status change is not a join/leave event, ignoring',
+      );
+      return;
+    }
+
+    // Create a unique event ID for this member change
+    const externalEventId = `member_${eventType}_${newMember.user.id}_${ctx.chatMember.date}`;
+
+    const input: MemberEventInput = {
+      type: eventType,
+      source: 'telegram',
+      conversationId: chatId,
+      externalEventId,
+      actor: {
+        externalId: String(newMember.user.id),
+        displayName: getDisplayName(newMember.user),
+        username: newMember.user.username,
+      },
+      memberStatus: newMember.status,
+      oldMemberStatus: oldMember.status,
+      occurredAt: new Date(ctx.chatMember.date * 1000),
+      metadata: {
+        chatType: ctx.chat?.type,
+      },
+      sourcePayload: ctx.chatMember as unknown as Record<string, unknown>,
+    };
+
+    const eventId = await this.ingester.ingestMemberEvent(family.id, input);
+
+    if (eventId) {
+      this.logger.info(
+        {
+          eventId,
+          familyId: family.id,
+          chatId,
+          userId: newMember.user.id,
+          username: newMember.user.username,
+          eventType,
+        },
+        'Member event ingested and queued',
+      );
+    }
   }
 }

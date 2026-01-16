@@ -6,6 +6,7 @@ export type {
   BotManagerConfig,
   BotHandler,
   OutgoingMessage,
+  MessageSpacingConfig,
 } from './lib/types';
 
 // Re-export from @sobremesa/ingester for convenience

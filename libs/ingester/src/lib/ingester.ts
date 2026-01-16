@@ -1,11 +1,19 @@
 import { createLogger } from '@sobremesa/shared-utils';
-import { detectLanguage, type ChatProvider } from '@sobremesa/shared-types';
+import {
+  detectLanguage,
+  type ChatProvider,
+  type EnqueueOptions,
+  Priorities,
+} from '@sobremesa/shared-types';
 import {
   ConversationEventRepository,
   ProcessingQueueRepository,
   EventLogRepository,
 } from '@sobremesa/database';
 import type pino from 'pino';
+
+/** Delay (ms) before processing member events to allow batching */
+const MEMBER_EVENT_DEBOUNCE_MS = 5000;
 
 /**
  * Actor information from any chat provider.
@@ -94,6 +102,17 @@ export type MediaMessageInput =
   | VideoMessageInput;
 
 /**
+ * Member event input (join/leave).
+ */
+export interface MemberEventInput extends BaseMessageInput {
+  type: 'join' | 'leave';
+  /** The new status of the member (e.g., 'member', 'left', 'kicked') */
+  memberStatus: string;
+  /** The old status of the member before the change */
+  oldMemberStatus?: string;
+}
+
+/**
  * Platform-agnostic message ingester.
  * Handles deduplication, event creation, and queue enqueue.
  */
@@ -108,6 +127,30 @@ export class MessageIngester {
     this.queueRepo = new ProcessingQueueRepository();
     this.eventLog = new EventLogRepository();
     this.logger = logger || createLogger({ name: 'ingester' });
+  }
+
+  /**
+   * Enqueue an event for processing and log the ingestion.
+   */
+  private async enqueueAndLog(
+    familyId: string,
+    eventId: string,
+    actor: ActorInfo,
+    messageType: string,
+    eventData: Record<string, unknown>,
+    options: EnqueueOptions = { priority: Priorities.USER_MESSAGE },
+  ): Promise<void> {
+    await this.queueRepo.enqueue(familyId, eventId, options);
+
+    await this.eventLog.log({
+      familyId,
+      eventType: 'event_ingested',
+      eventCategory: 'user_action',
+      actor: actor.username || actor.externalId,
+      actorType: 'user',
+      sourceEventId: eventId,
+      eventData: { messageType, ...eventData },
+    });
   }
 
   /**
@@ -164,22 +207,9 @@ export class MessageIngester {
       ingestedAt: new Date(),
     });
 
-    // Enqueue for processing
-    await this.queueRepo.enqueue(familyId, event.id);
-
-    // Log the event
-    await this.eventLog.log({
-      familyId,
-      eventType: 'event_ingested',
-      eventCategory: 'user_action',
-      actor: input.actor.username || input.actor.externalId,
-      actorType: 'user',
-      sourceEventId: event.id,
-      eventData: {
-        messageType: 'text',
-        textLength: input.text.length,
-        language: detectLanguage(input.text),
-      },
+    await this.enqueueAndLog(familyId, event.id, input.actor, 'text', {
+      textLength: input.text.length,
+      language: detectLanguage(input.text),
     });
 
     this.logger.info(
@@ -252,22 +282,9 @@ export class MessageIngester {
       ingestedAt: new Date(),
     });
 
-    // Enqueue for processing
-    await this.queueRepo.enqueue(familyId, event.id);
-
-    // Log the event
-    await this.eventLog.log({
-      familyId,
-      eventType: 'event_ingested',
-      eventCategory: 'user_action',
-      actor: input.actor.username || input.actor.externalId,
-      actorType: 'user',
-      sourceEventId: event.id,
-      eventData: {
-        messageType: 'photo',
-        hasCaption: !!input.caption,
-        photoSize: input.fileSize,
-      },
+    await this.enqueueAndLog(familyId, event.id, input.actor, 'photo', {
+      hasCaption: !!input.caption,
+      photoSize: input.fileSize,
     });
 
     this.logger.info(
@@ -340,23 +357,10 @@ export class MessageIngester {
       ingestedAt: new Date(),
     });
 
-    // Enqueue for processing
-    await this.queueRepo.enqueue(familyId, event.id);
-
-    // Log the event
-    await this.eventLog.log({
-      familyId,
-      eventType: 'event_ingested',
-      eventCategory: 'user_action',
-      actor: input.actor.username || input.actor.externalId,
-      actorType: 'user',
-      sourceEventId: event.id,
-      eventData: {
-        messageType: 'document',
-        hasCaption: !!input.caption,
-        mimeType: input.mimeType,
-        fileName: input.fileName,
-      },
+    await this.enqueueAndLog(familyId, event.id, input.actor, 'document', {
+      hasCaption: !!input.caption,
+      mimeType: input.mimeType,
+      fileName: input.fileName,
     });
 
     this.logger.info(
@@ -432,28 +436,95 @@ export class MessageIngester {
       ingestedAt: new Date(),
     });
 
-    // Enqueue for processing
-    await this.queueRepo.enqueue(familyId, event.id);
-
-    // Log the event
-    await this.eventLog.log({
-      familyId,
-      eventType: 'event_ingested',
-      eventCategory: 'user_action',
-      actor: input.actor.username || input.actor.externalId,
-      actorType: 'user',
-      sourceEventId: event.id,
-      eventData: {
-        messageType: 'video',
-        hasCaption: !!input.caption,
-        duration: input.duration,
-        mimeType: input.mimeType,
-      },
+    await this.enqueueAndLog(familyId, event.id, input.actor, 'video', {
+      hasCaption: !!input.caption,
+      duration: input.duration,
+      mimeType: input.mimeType,
     });
 
     this.logger.info(
       { eventId: event.id, externalEventId: input.externalEventId },
       'Video message ingested and queued',
+    );
+
+    return event.id;
+  }
+
+  /**
+   * Ingest a member event (join/leave) from any provider.
+   * Returns the event ID if created, null if duplicate.
+   */
+  async ingestMemberEvent(
+    familyId: string,
+    input: MemberEventInput,
+  ): Promise<string | null> {
+    this.logger.debug(
+      {
+        conversationId: input.conversationId,
+        eventId: input.externalEventId,
+        eventType: input.type,
+        memberStatus: input.memberStatus,
+      },
+      'Ingesting member event',
+    );
+
+    // Check for duplicates
+    const existing = await this.eventRepo.findByExternalId(
+      familyId,
+      input.source,
+      input.conversationId,
+      input.externalEventId,
+    );
+
+    if (existing) {
+      this.logger.debug(
+        { eventId: input.externalEventId },
+        'Member event already exists, skipping',
+      );
+      return null;
+    }
+
+    // Build metadata
+    const metadata: Record<string, unknown> = {
+      ...input.metadata,
+      memberStatus: input.memberStatus,
+      oldMemberStatus: input.oldMemberStatus,
+    };
+
+    // Create conversation event
+    const event = await this.eventRepo.insert({
+      familyId,
+      source: input.source,
+      conversationId: input.conversationId,
+      externalEventId: input.externalEventId,
+      actorExternalId: input.actor.externalId,
+      actorDisplayName: input.actor.displayName,
+      actorUsername: input.actor.username,
+      eventType: input.type,
+      metadata,
+      sourcePayload: input.sourcePayload,
+      processed: false,
+      redacted: false,
+      occurredAt: input.occurredAt,
+      ingestedAt: new Date(),
+    });
+
+    // Enqueue with debounce delay (allows batching multiple joins)
+    await this.enqueueAndLog(
+      familyId,
+      event.id,
+      input.actor,
+      input.type,
+      { memberStatus: input.memberStatus },
+      {
+        priority: Priorities.MEMBER_EVENT,
+        processAfter: new Date(Date.now() + MEMBER_EVENT_DEBOUNCE_MS),
+      },
+    );
+
+    this.logger.info(
+      { eventId: event.id, externalEventId: input.externalEventId },
+      'Member event ingested and queued',
     );
 
     return event.id;

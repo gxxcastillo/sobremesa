@@ -7,4 +7,5 @@ export type {
   DocumentMessageInput,
   VideoMessageInput,
   MediaMessageInput,
+  MemberEventInput,
 } from './lib/ingester';

@@ -202,6 +202,53 @@ CREATE INDEX IF NOT EXISTS idx_processing_queue_global_ready
   WHERE status IN ('queued', 'error');
 
 -- ============================================================================
+-- OUTGOING MESSAGE QUEUE (Priority queue for bot messages)
+-- ============================================================================
+-- Ensures user-triggered responses are sent before bot-initiated messages.
+-- Higher priority (lower number) = sent first.
+CREATE TABLE IF NOT EXISTS outgoing_message_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Target chat
+  chat_id TEXT NOT NULL,
+
+  -- Message content
+  role VARCHAR(50) NOT NULL,
+  text TEXT NOT NULL,
+  parse_mode VARCHAR(20),
+  reply_to_message_id INTEGER,
+
+  -- Priority: 1=highest, 10=lowest, default 5
+  priority INTEGER NOT NULL DEFAULT 5 CHECK (priority >= 1 AND priority <= 10),
+
+  -- Timestamps
+  queued_at TIMESTAMPTZ DEFAULT NOW(),
+  sent_at TIMESTAMPTZ,
+
+  -- Status tracking
+  status VARCHAR(20) NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'sending', 'sent', 'failed')),
+  external_message_id INTEGER,
+  error TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
+
+COMMENT ON TABLE outgoing_message_queue IS
+  'Priority queue for outgoing bot messages. Lower priority number = sent first.';
+COMMENT ON COLUMN outgoing_message_queue.priority IS
+  'Message priority: 2=user responses, 5=member notifications, 7=bot questions';
+
+-- Index for dequeue: get highest priority pending message per chat
+CREATE INDEX IF NOT EXISTS idx_outgoing_queue_ready
+  ON outgoing_message_queue(chat_id, status, priority ASC, queued_at ASC)
+  WHERE status = 'queued';
+
+-- Index for cleanup of old sent messages
+CREATE INDEX IF NOT EXISTS idx_outgoing_queue_cleanup
+  ON outgoing_message_queue(status, sent_at)
+  WHERE status = 'sent';
+
+-- ============================================================================
 -- PEOPLE (Identity + optional derived summaries)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS people (

@@ -1,8 +1,29 @@
 import { Telegraf } from 'telegraf';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
-import type { BotRole, BotManagerConfig, OutgoingMessage } from './types';
+import type {
+  BotRole,
+  BotManagerConfig,
+  OutgoingMessage,
+  MessageSpacingConfig,
+} from './types';
+import type { SendOptions } from '@sobremesa/shared-types';
+import { QueuePriority } from '@sobremesa/shared-types';
 import { ChatbotHandler } from './chatbot';
+
+/** Queued message with priority */
+interface QueuedMessage {
+  role: BotRole;
+  message: OutgoingMessage;
+  priority: number;
+  resolve: (messageId: number) => void;
+  reject: (error: Error) => void;
+}
+
+/** Default message spacing configuration */
+const DEFAULT_SPACING: Required<MessageSpacingConfig> = {
+  minSecondsBetweenMessages: 3,
+};
 
 /**
  * Manages the Sobremesa Telegram bot.
@@ -11,13 +32,26 @@ import { ChatbotHandler } from './chatbot';
  * - One bot handles all messages
  * - ChatbotHandler ingests everything to queue
  * - Agents process from queue
+ *
+ * Outgoing messages:
+ * - In-memory priority queue per chat
+ * - User-triggered responses (priority 2) sent before bot-initiated (priority 7)
+ * - Spacing enforced between messages to same chat
  */
 export class BotManager {
   private bot: Telegraf;
   private logger: pino.Logger;
+  private spacingConfig: Required<MessageSpacingConfig>;
+  private lastSendTimes: Map<string, number> = new Map();
+  private messageQueues: Map<string, QueuedMessage[]> = new Map();
+  private processingChats: Set<string> = new Set();
 
   constructor(config: BotManagerConfig) {
     this.logger = config.logger || createLogger({ name: 'bot-manager' });
+    this.spacingConfig = {
+      ...DEFAULT_SPACING,
+      ...config.messageSpacing,
+    };
 
     this.bot = new Telegraf(config.token);
 
@@ -69,41 +103,130 @@ export class BotManager {
   }
 
   /**
-   * Send a message.
+   * Send a message through the priority queue.
    *
-   * @param role - Ignored in single-bot mode (kept for backwards compat)
+   * Messages are queued and sent in priority order (lower number = higher priority).
+   * User-triggered responses (priority 2) are sent before bot-initiated messages (priority 7).
+   *
+   * @param role - Bot role for the message
    * @param message - The message to send
+   * @param options - Send options including priority
    * @returns The Telegram message_id of the sent message
    */
-  async sendMessage(role: BotRole, message: OutgoingMessage): Promise<number> {
+  async sendMessage(
+    role: BotRole,
+    message: OutgoingMessage,
+    options?: SendOptions,
+  ): Promise<number> {
+    const chatId = String(message.chatId);
+    const priority = options?.priority ?? QueuePriority.NORMAL;
+
+    // Create a promise that will resolve when this message is sent
+    return new Promise((resolve, reject) => {
+      // Add to queue for this chat
+      const queue = this.messageQueues.get(chatId) || [];
+      queue.push({ role, message, priority, resolve, reject });
+
+      // Sort by priority (lower = higher priority)
+      queue.sort((a, b) => a.priority - b.priority);
+      this.messageQueues.set(chatId, queue);
+
+      this.logger.debug(
+        { chatId, priority, queueLength: queue.length },
+        'Message enqueued',
+      );
+
+      // Start processing if not already processing this chat
+      this.processQueue(chatId);
+    });
+  }
+
+  /**
+   * Process the message queue for a chat.
+   * Sends messages in priority order with spacing between sends.
+   */
+  private async processQueue(chatId: string): Promise<void> {
+    // Prevent concurrent processing of the same chat
+    if (this.processingChats.has(chatId)) {
+      return;
+    }
+    this.processingChats.add(chatId);
+
     try {
-      const result = await this.bot.telegram.sendMessage(
-        message.chatId,
-        message.text,
-        {
-          parse_mode: message.parseMode,
-          reply_parameters: message.replyToMessageId
-            ? { message_id: message.replyToMessageId }
-            : undefined,
-        },
-      );
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const queue = this.messageQueues.get(chatId);
+        if (!queue || queue.length === 0) {
+          break;
+        }
 
-      this.logger.info(
-        {
-          chatId: message.chatId,
-          textLength: message.text.length,
-          messageId: result.message_id,
-        },
-        'Message sent',
-      );
+        // Get the highest priority message
+        const item = queue.shift();
 
-      return result.message_id;
-    } catch (error) {
-      this.logger.error(
-        { chatId: message.chatId, error },
-        'Failed to send message',
-      );
-      throw error;
+        // Wait for spacing if needed
+        await this.waitForSpacing(chatId);
+        if (!item) {
+          return;
+        }
+
+        // Send the message
+        try {
+          const result = await this.bot.telegram.sendMessage(
+            item.message.chatId,
+            item.message.text,
+            {
+              parse_mode: item.message.parseMode,
+              reply_parameters: item.message.replyToMessageId
+                ? { message_id: item.message.replyToMessageId }
+                : undefined,
+            },
+          );
+
+          this.lastSendTimes.set(chatId, Date.now());
+
+          this.logger.info(
+            {
+              chatId,
+              priority: item.priority,
+              textLength: item.message.text.length,
+              messageId: result.message_id,
+            },
+            'Message sent',
+          );
+
+          item.resolve(result.message_id);
+        } catch (error) {
+          this.logger.error(
+            { chatId, error: error instanceof Error ? error.message : error },
+            'Failed to send message',
+          );
+          item.reject(
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
+      }
+    } finally {
+      this.processingChats.delete(chatId);
+      this.messageQueues.delete(chatId);
+    }
+  }
+
+  /**
+   * Wait for spacing delay if we sent a message to this chat recently.
+   */
+  private async waitForSpacing(chatId: string): Promise<void> {
+    const lastSend = this.lastSendTimes.get(chatId);
+    if (!lastSend) {
+      return;
+    }
+
+    const minDelayMs = this.spacingConfig.minSecondsBetweenMessages * 1000;
+    const elapsed = Date.now() - lastSend;
+    const remaining = minDelayMs - elapsed;
+
+    if (remaining > 0) {
+      this.logger.debug({ chatId, waitMs: remaining }, 'Waiting for spacing');
+      await new Promise((resolve) => setTimeout(resolve, remaining));
     }
   }
 
