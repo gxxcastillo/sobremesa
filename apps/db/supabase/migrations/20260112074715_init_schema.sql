@@ -32,7 +32,8 @@ BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+SET search_path = '';  -- Prevent search path manipulation attacks
 
 -- ============================================================================
 -- FAMILIES (Family Spaces / Tenants)
@@ -1106,12 +1107,6 @@ BEFORE UPDATE ON telegram_chat_admins
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================================
--- Enable RLS so client roles cannot write without explicit policies.
--- ============================================================================
-ALTER TABLE conversation_events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE event_log ENABLE ROW LEVEL SECURITY;
-
--- ============================================================================
 -- INTEGRITY CHECKPOINTS (Hash anchoring ready)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS integrity_checkpoints (
@@ -1140,7 +1135,11 @@ CREATE INDEX IF NOT EXISTS idx_integrity_checkpoints_family_time
 -- ============================================================================
 -- HELPER VIEWS
 -- ============================================================================
-CREATE OR REPLACE VIEW active_conversation_events AS
+-- Important: All views use security_invoker=true to respect RLS policies
+-- instead of using SECURITY DEFINER which bypasses RLS
+
+CREATE OR REPLACE VIEW active_conversation_events 
+WITH (security_invoker=true) AS
 SELECT *
 FROM conversation_events
 WHERE redacted = FALSE
@@ -1148,7 +1147,8 @@ ORDER BY occurred_at DESC;
 
 COMMENT ON VIEW active_conversation_events IS 'Non-redacted conversation events (raw input).';
 
-CREATE OR REPLACE VIEW pending_questions AS
+CREATE OR REPLACE VIEW pending_questions 
+WITH (security_invoker=true) AS
 SELECT *
 FROM questions
 WHERE status = 'proposed'
@@ -1156,7 +1156,8 @@ ORDER BY priority DESC, created_at ASC;
 
 COMMENT ON VIEW pending_questions IS 'Questions awaiting action (proposed but not yet asked).';
 
-CREATE OR REPLACE VIEW active_claims AS
+CREATE OR REPLACE VIEW active_claims 
+WITH (security_invoker=true) AS
 SELECT *
 FROM claims
 WHERE redacted = FALSE
@@ -1165,7 +1166,8 @@ ORDER BY claimed_at DESC;
 
 COMMENT ON VIEW active_claims IS 'Non-redacted active claims (canonical provenance layer).';
 
-CREATE OR REPLACE VIEW conflicting_claims AS
+CREATE OR REPLACE VIEW conflicting_claims 
+WITH (security_invoker=true) AS
 SELECT
   c.id AS claim_id,
   c.subject,
@@ -1292,7 +1294,8 @@ EXCEPTION
   WHEN OTHERS THEN
     RETURN NULL;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = '';
 
 COMMENT ON FUNCTION get_identity_id IS 'Get identity_id from JWT claims for RLS policies';
 
@@ -1303,13 +1306,14 @@ DECLARE
   user_role TEXT;
 BEGIN
   SELECT u.role INTO user_role
-  FROM users u
-  JOIN identities i ON i.user_id = u.id
-  WHERE i.id = get_identity_id();
+  FROM public.users u
+  JOIN public.identities i ON i.user_id = u.id
+  WHERE i.id = public.get_identity_id();
 
   RETURN COALESCE(user_role = 'super_admin', FALSE);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = '';
 
 COMMENT ON FUNCTION is_super_admin IS 'Check if current user has super_admin role (from users table)';
 
@@ -1318,18 +1322,19 @@ CREATE OR REPLACE FUNCTION get_user_family_ids()
 RETURNS SETOF UUID AS $$
 BEGIN
   -- Super admins can access all families
-  IF is_super_admin() THEN
-    RETURN QUERY SELECT id FROM families;
+  IF public.is_super_admin() THEN
+    RETURN QUERY SELECT id FROM public.families;
   ELSE
     -- Regular users only see families they have active access to
     RETURN QUERY
     SELECT family_id
-    FROM family_access
-    WHERE identity_id = get_identity_id()
+    FROM public.family_access
+    WHERE identity_id = public.get_identity_id()
       AND status = 'active';
   END IF;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = '';
 
 COMMENT ON FUNCTION get_user_family_ids IS 'Get family IDs the current user has active access to';
 
@@ -1340,19 +1345,20 @@ DECLARE
   access_role VARCHAR(20);
 BEGIN
   -- Super admins have admin access to all families
-  IF is_super_admin() THEN
+  IF public.is_super_admin() THEN
     RETURN 'admin';
   END IF;
 
   SELECT role INTO access_role
-  FROM family_access
-  WHERE identity_id = get_identity_id()
+  FROM public.family_access
+  WHERE identity_id = public.get_identity_id()
     AND family_id = target_family_id
     AND status = 'active';
 
   RETURN access_role; -- Returns NULL if no active access
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = '';
 
 COMMENT ON FUNCTION get_family_role IS 'Get user role for a specific family (admin, member, viewer, or NULL if no active access)';
 
@@ -1360,9 +1366,10 @@ COMMENT ON FUNCTION get_family_role IS 'Get user role for a specific family (adm
 CREATE OR REPLACE FUNCTION is_family_admin(target_family_id UUID)
 RETURNS BOOLEAN AS $$
 BEGIN
-  RETURN get_family_role(target_family_id) = 'admin';
+  RETURN public.get_family_role(target_family_id) = 'admin';
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = '';
 
 COMMENT ON FUNCTION is_family_admin IS 'Check if user is admin of a specific family';
 
@@ -1370,9 +1377,10 @@ COMMENT ON FUNCTION is_family_admin IS 'Check if user is admin of a specific fam
 CREATE OR REPLACE FUNCTION is_family_member(target_family_id UUID)
 RETURNS BOOLEAN AS $$
 BEGIN
-  RETURN get_family_role(target_family_id) IS NOT NULL;
+  RETURN public.get_family_role(target_family_id) IS NOT NULL;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+SET search_path = '';
 
 COMMENT ON FUNCTION is_family_member IS 'Check if user has any access to a specific family';
 
@@ -1389,14 +1397,24 @@ ALTER TABLE telegram_chat_admins ENABLE ROW LEVEL SECURITY;
 
 -- Enable RLS on existing tables that need it
 ALTER TABLE families ENABLE ROW LEVEL SECURITY;
+ALTER TABLE family_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE conversation_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE processing_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE people ENABLE ROW LEVEL SECURITY;
 ALTER TABLE places ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE relationships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE claims ENABLE ROW LEVEL SECURITY;
+ALTER TABLE claim_conflicts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE images ENABLE ROW LEVEL SECURITY;
+ALTER TABLE facilitator_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE real_time_levers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE facilitator_performance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE allowed_chats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE integrity_checkpoints ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_log ENABLE ROW LEVEL SECURITY;
 
 -- --------------------------------------------------------------------------
 -- USERS policies
@@ -1418,7 +1436,7 @@ CREATE POLICY "users_update_own" ON users
   )
   WITH CHECK (
     id IN (SELECT user_id FROM identities WHERE id = get_identity_id())
-    AND role = 'user' -- Can't self-promote to super_admin
+    AND role = (SELECT role FROM users WHERE id IN (SELECT user_id FROM identities WHERE id = get_identity_id()))
   );
 
 -- --------------------------------------------------------------------------
@@ -1569,16 +1587,107 @@ CREATE POLICY "images_select" ON images
   FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
 
 -- --------------------------------------------------------------------------
--- CONVERSATION_EVENTS policies (admin only - sensitive data)
+-- FAMILY_CONFIG policies
 -- --------------------------------------------------------------------------
-CREATE POLICY "conversation_events_select" ON conversation_events
-  FOR SELECT USING (is_family_admin(family_id));
+CREATE POLICY "family_config_select" ON family_config
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+CREATE POLICY "family_config_insert" ON family_config
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "family_config_update" ON family_config
+  FOR UPDATE USING (is_family_admin(family_id))
+  WITH CHECK (is_family_admin(family_id));
 
 -- --------------------------------------------------------------------------
--- EVENT_LOG policies (admin only - audit trail)
+-- PROCESSING_QUEUE policies
+-- --------------------------------------------------------------------------
+-- Backend service role manages queue (users can only view their family's queue)
+CREATE POLICY "processing_queue_select" ON processing_queue
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+-- --------------------------------------------------------------------------
+-- CLAIM_CONFLICTS policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "claim_conflicts_select" ON claim_conflicts
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+-- --------------------------------------------------------------------------
+-- FACILITATOR_RULES policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "facilitator_rules_select" ON facilitator_rules
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+CREATE POLICY "facilitator_rules_insert" ON facilitator_rules
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "facilitator_rules_update" ON facilitator_rules
+  FOR UPDATE USING (is_family_admin(family_id))
+  WITH CHECK (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- REAL_TIME_LEVERS policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "real_time_levers_select" ON real_time_levers
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+CREATE POLICY "real_time_levers_insert" ON real_time_levers
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "real_time_levers_update" ON real_time_levers
+  FOR UPDATE USING (is_family_admin(family_id))
+  WITH CHECK (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- FACILITATOR_PERFORMANCE policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "facilitator_performance_select" ON facilitator_performance
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+CREATE POLICY "facilitator_performance_insert" ON facilitator_performance
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "facilitator_performance_update" ON facilitator_performance
+  FOR UPDATE USING (is_family_admin(family_id))
+  WITH CHECK (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- ALLOWED_CHATS policies
+-- --------------------------------------------------------------------------
+-- Global table (no family_id) - only super admins can manage
+CREATE POLICY "allowed_chats_select" ON allowed_chats
+  FOR SELECT USING (is_super_admin());
+
+CREATE POLICY "allowed_chats_insert" ON allowed_chats
+  FOR INSERT WITH CHECK (is_super_admin());
+
+CREATE POLICY "allowed_chats_update" ON allowed_chats
+  FOR UPDATE USING (is_super_admin())
+  WITH CHECK (is_super_admin());
+
+CREATE POLICY "allowed_chats_delete" ON allowed_chats
+  FOR DELETE USING (is_super_admin());
+
+-- --------------------------------------------------------------------------
+-- INTEGRITY_CHECKPOINTS policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "integrity_checkpoints_select" ON integrity_checkpoints
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+CREATE POLICY "integrity_checkpoints_insert" ON integrity_checkpoints
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- CONVERSATION_EVENTS policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "conversation_events_select" ON conversation_events
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+-- --------------------------------------------------------------------------
+-- EVENT_LOG policies
 -- --------------------------------------------------------------------------
 CREATE POLICY "event_log_select" ON event_log
-  FOR SELECT USING (is_family_admin(family_id));
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
 
 -- ============================================================================
 -- END OF SCHEMA
