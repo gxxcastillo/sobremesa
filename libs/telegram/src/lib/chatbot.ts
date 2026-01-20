@@ -2,7 +2,16 @@ import type { Telegraf, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import type { Message, Update, User } from 'telegraf/types';
 import { createLogger } from '@sobremesa/shared-utils';
-import { FamilyRepository, AllowedChatRepository } from '@sobremesa/database';
+import {
+  FamilyRepository,
+  AllowedChatRepository,
+  IdentityRepository,
+} from '@sobremesa/database';
+import {
+  createAccessPass,
+  buildAccessPassUrl,
+  determineRoleFromAdminStatus,
+} from '@sobremesa/auth';
 import type pino from 'pino';
 import { BotRole, type BotHandler } from './types';
 import {
@@ -12,6 +21,7 @@ import {
   type DocumentMessageInput,
   type MemberEventInput,
 } from '@sobremesa/ingester';
+import { AdminSyncHandler } from './handlers/admin-sync';
 
 type TextMessageContext = Context<Update.MessageUpdate<Message.TextMessage>>;
 type PhotoMessageContext = Context<Update.MessageUpdate<Message.PhotoMessage>>;
@@ -153,13 +163,18 @@ export class ChatbotHandler implements BotHandler {
   private familyRepo: FamilyRepository;
   private allowedChatRepo: AllowedChatRepository;
   private ingester: MessageIngester;
+  private adminSyncHandler: AdminSyncHandler;
   private logger: pino.Logger;
+  private studioBaseUrl: string;
 
   constructor(logger?: pino.Logger) {
     this.familyRepo = new FamilyRepository();
     this.allowedChatRepo = new AllowedChatRepository();
     this.logger = logger || createLogger({ name: 'chatbot' });
     this.ingester = new MessageIngester(this.logger);
+    this.adminSyncHandler = new AdminSyncHandler(this.logger);
+    this.studioBaseUrl =
+      process.env.STUDIO_URL || 'https://studio.sobremesa.app';
   }
 
   /**
@@ -185,7 +200,7 @@ export class ChatbotHandler implements BotHandler {
     // Handle /sobremesa command - bootstrap registration (can't queue without familyId)
     bot.command('sobremesa', async (ctx) => {
       try {
-        await this.handleSobremesaCommand(ctx);
+        await this.handleSobremesaCommand(ctx, bot);
       } catch (error) {
         this.logger.error({ error }, 'Failed to handle /sobremesa command');
       }
@@ -231,8 +246,19 @@ export class ChatbotHandler implements BotHandler {
     bot.on('chat_member', async (ctx) => {
       try {
         await this.handleChatMemberEvent(ctx);
+        // Also update admin status cache
+        await this.adminSyncHandler.handleChatMemberUpdate(ctx);
       } catch (error) {
         this.logger.error({ error }, 'Failed to handle chat_member event');
+      }
+    });
+
+    // Handle bot being added/removed from chats (sync admins when added)
+    bot.on('my_chat_member', async (ctx) => {
+      try {
+        await this.adminSyncHandler.handleMyChatMemberUpdate(bot, ctx);
+      } catch (error) {
+        this.logger.error({ error }, 'Failed to handle my_chat_member event');
       }
     });
 
@@ -243,7 +269,10 @@ export class ChatbotHandler implements BotHandler {
    * Handle /sobremesa command - family registration bootstrap.
    * This is handled directly because we need to create the family before we can queue.
    */
-  private async handleSobremesaCommand(ctx: Context): Promise<void> {
+  private async handleSobremesaCommand(
+    ctx: Context,
+    bot: Telegraf,
+  ): Promise<void> {
     const chatId = String(ctx.chat?.id);
     const chatType = ctx.chat?.type;
 
@@ -407,6 +436,7 @@ export class ChatbotHandler implements BotHandler {
         await ctx.reply(
           `📖 *Sobremesa Commands*\n\n` +
             `*/sobremesa status* - Show current status\n` +
+            `*/sobremesa studio-link* - Get a link to access Studio\n` +
             `*/sobremesa pause* - Pause message processing\n` +
             `*/sobremesa resume* - Resume message processing\n` +
             `*/sobremesa en* - Set language to English\n` +
@@ -417,6 +447,12 @@ export class ChatbotHandler implements BotHandler {
             `*/sobremesa help* - Show this help message`,
           { parse_mode: 'Markdown' },
         );
+        return;
+      }
+
+      // Handle studio-link command - generate access pass for Studio web app
+      if (args === 'studio-link' || args === 'studio') {
+        await this.handleStudioLinkCommand(ctx, bot, existingFamily.id, chatId);
         return;
       }
 
@@ -467,6 +503,9 @@ export class ChatbotHandler implements BotHandler {
         { familyId: family.id, familyName: family.name, chatId },
         'Family registered',
       );
+
+      // Sync admins and create identities for all chat admins
+      await this.adminSyncHandler.syncChatAdmins(bot, chatId, family.id);
 
       await ctx.reply(
         `Welcome to Sobremesa! I've set up "${family.name}" as your family archive.\n\n` +
@@ -663,6 +702,121 @@ export class ChatbotHandler implements BotHandler {
         },
         'Member event ingested and queued',
       );
+    }
+  }
+
+  /**
+   * Handle /sobremesa studio-link command - generate access pass for Studio web app.
+   */
+  private async handleStudioLinkCommand(
+    ctx: Context,
+    bot: Telegraf,
+    familyId: string,
+    chatId: string,
+  ): Promise<void> {
+    const user = ctx.from;
+    if (!user) {
+      await ctx.reply('Could not identify user. Please try again.');
+      return;
+    }
+
+    try {
+      // Check if user is admin in this chat
+      const isAdmin = await this.adminSyncHandler.isUserAdmin(
+        bot,
+        chatId,
+        familyId,
+        user.id,
+      );
+
+      // Determine role based on admin status
+      const role = determineRoleFromAdminStatus(isAdmin);
+
+      // Look up global identity for this user (may not exist if they've never messaged)
+      const identityRepo = new IdentityRepository();
+      const identity = await identityRepo.findByProviderUserId(
+        'telegram',
+        String(user.id),
+      );
+
+      // Create access pass (no profile data stored - only lookup fields)
+      const result = await createAccessPass({
+        familyId,
+        role,
+        provider: 'telegram',
+        providerUserId: String(user.id),
+        identityId: identity?.id,
+        chatId,
+        expiresInHours: 24,
+      });
+
+      if (!result.success || !result.token) {
+        this.logger.error(
+          { userId: user.id, error: result.error },
+          'Failed to create access pass',
+        );
+        await ctx.reply(
+          "Sorry, I couldn't create an access pass. Please try again later.",
+        );
+        return;
+      }
+
+      // Build the access URL
+      const accessUrl = buildAccessPassUrl(result.token, this.studioBaseUrl);
+
+      // Send the link via DM
+      try {
+        const roleText = role === 'admin' ? 'admin' : 'member';
+        const expiresText = result.expiresAt
+          ? `This link expires in 24 hours.`
+          : '';
+
+        await bot.telegram.sendMessage(
+          user.id,
+          `🔑 *Sobremesa Studio Access Pass*\n\n` +
+            `Click the link below to access your family's Studio dashboard:\n\n` +
+            `${accessUrl}\n\n` +
+            `You'll have *${roleText}* access to the family data.\n` +
+            `${expiresText}`,
+          { parse_mode: 'Markdown' },
+        );
+
+        // Confirm in the group
+        await ctx.reply(
+          `I've sent your Studio access link via DM, ${user.first_name}! ` +
+            `Check your private messages from me.`,
+        );
+
+        this.logger.info(
+          {
+            userId: user.id,
+            familyId,
+            role,
+            username: user.username,
+          },
+          'Studio access pass sent via DM',
+        );
+      } catch (dmError) {
+        // User probably hasn't started a chat with the bot
+        this.logger.warn(
+          { userId: user.id, error: dmError },
+          'Could not send DM - user may not have started chat with bot',
+        );
+
+        await ctx.reply(
+          `${user.first_name}, I couldn't send you a DM. ` +
+            `Please start a chat with me first:\n\n` +
+            `1. Click on my name to open a chat\n` +
+            `2. Press "Start"\n` +
+            `3. Then come back here and run /sobremesa studio-link again`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        { error, userId: user.id, familyId, chatId },
+        'Error handling studio-link command',
+      );
+      await ctx.reply('Sorry, something went wrong. Please try again later.');
     }
   }
 }

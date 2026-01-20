@@ -11,9 +11,13 @@ From each message, identify:
 **People:**
 
 - Full names and all aliases/nicknames
-- Relationships (parent, child, spouse, sibling)
 - Biographical details (birth year, death year, occupation)
 - Confidence level for each detail
+
+**CRITICAL - Aliases Rules:**
+- NEVER include pronouns as aliases (he, she, they, him, her, etc.)
+- ONLY include actual names, nicknames, or titles (e.g., "Abe", "Grandpa Abe", "Dr. Smith")
+- Descriptive references like "Dexter's ex-wife" ARE valid as names until a real name is known
 
 **Places:**
 
@@ -37,7 +41,41 @@ From each message, identify:
 - People, places, events involved
 - Completeness (partial, complete, fragmentary)
 
-### 2. Create Claims (NOT Facts)
+### 2. Resolve References to Same Person
+
+**CRITICAL:** When the same person is mentioned multiple ways in a conversation, recognize they are the SAME person:
+
+**Example conversation:**
+```
+"Dexter had an ex-wife who always resented telling stories"
+"Her niece married Tim Flanagan"
+"Dexter's ex-wife was Judy Dor"
+```
+
+**Correct extraction:**
+- "Dexter's ex-wife" and "Judy Dor" → SAME PERSON (create identity claim)
+- "her niece" refers to "Dexter's ex-wife's niece" → ONE person, not two
+
+**How to handle this:**
+
+1. **Track pronoun references:** When you see "her niece", determine WHO "her" refers to from context. Don't create a separate "unnamed niece" - use the contextual description "ex-wife's niece".
+
+2. **Create identity claims:** When someone reveals a name for a previously unnamed person:
+   - If "Dexter's ex-wife" was mentioned, then "Dexter's ex-wife was Judy Dor" reveals her name
+   - Create an identity claim linking the two
+
+**Identity claim example:**
+```json
+{
+  "claim_type": "identity",
+  "subject": "Dexter's ex-wife",
+  "claim_value": { "real_name": "Judy Dor" },
+  "confidence": "high",
+  "certainty_language": "was"
+}
+```
+
+### 3. Create Claims (NOT Facts)
 
 CRITICAL: Every piece of information is a CLAIM with:
 
@@ -73,7 +111,7 @@ Claims:
 ]
 ```
 
-### 3. Detect Conflicts (NEVER Resolve)
+### 4. Detect Conflicts (NEVER Resolve)
 
 When multiple people make different claims about the same thing:
 
@@ -101,7 +139,7 @@ Output:
 }
 ```
 
-### 4. Generate Questions About Gaps
+### 5. Generate Questions About Gaps
 
 When you notice missing information that would enrich the story:
 
@@ -124,7 +162,7 @@ Assign priority (0-100):
 - Medium priority (40-69): Enriching details, context
 - Low priority (0-39): Nice-to-have details
 
-### 5. Detect Answers to Pending Questions
+### 6. Detect Answers to Pending Questions
 
 Check each message against pending questions. If it answers one:
 
@@ -138,7 +176,7 @@ Check each message against pending questions. If it answers one:
 }
 ```
 
-### 6. Language Detection and Translation
+### 7. Language Detection and Translation
 
 For each piece of text, detect:
 
@@ -190,13 +228,13 @@ Return a structured JSON object (domain model, NOT database schema):
     {
       "name": "Abraham Goldstein",
       "aliases": ["Abe", "Grandpa Abe"],
-      "relationships": [{ "type": "spouse", "to": "Rose Goldstein" }],
       "birth_year": 1865,
-      "birth_year_confidence": "low",
-      "notes_original": "...",
-      "language_original": "en",
-      "notes_es": "...",
-      "notes_en": "..."
+      "confidence": "low"
+    },
+    {
+      "name": "Dexter's ex-wife",
+      "aliases": [],
+      "confidence": "medium"
     }
   ],
 
@@ -206,10 +244,7 @@ Return a structured JSON object (domain model, NOT database schema):
       "type": "address",
       "city": "Warsaw",
       "country": "Poland",
-      "context_original": "location of family shop",
-      "language_original": "en",
-      "context_es": "ubicación de la tienda familiar",
-      "context_en": "location of family shop"
+      "confidence": "high"
     }
   ],
 
@@ -217,32 +252,35 @@ Return a structured JSON object (domain model, NOT database schema):
     {
       "title": "Immigration to America",
       "event_type": "immigration",
-      "description_original": "Family left Warsaw for New York",
-      "language_original": "en",
-      "description_es": "La familia salió de Varsovia hacia Nueva York",
-      "description_en": "Family left Warsaw for New York",
       "date_year": 1889,
       "date_approximate": "late 1880s",
-      "date_confidence": "medium",
       "people_involved": ["Abraham Goldstein", "Rose Goldstein"],
-      "place": "Warsaw"
+      "place": "Warsaw",
+      "confidence": "medium"
+    }
+  ],
+
+  "relationships": [
+    {
+      "person_a": "Abraham Goldstein",
+      "person_b": "Rose Goldstein",
+      "relationship_type": "spouse",
+      "confidence": "high"
+    },
+    {
+      "person_a": "Dexter",
+      "person_b": "Dexter's ex-wife",
+      "relationship_type": "ex-spouse",
+      "confidence": "high"
     }
   ],
 
   "stories": [
     {
       "title": "The Shop on Nalewki Street",
-      "content_original": "...",
-      "language_original": "es",
-      "content_es": "...",
-      "content_en": "...",
+      "content": "Abraham ran a shop on Nalewki Street in Warsaw before immigrating...",
       "themes": ["business", "Warsaw", "immigration"],
-      "timeframe": "1870s-1889",
-      "completeness": "partial",
-      "confidence": "high",
-      "people": ["Abraham Goldstein"],
-      "places": ["Nalewki Street", "Warsaw"],
-      "source_message_ids": ["msg_123"]
+      "timeframe": "1870s-1889"
     }
   ],
 
@@ -253,11 +291,14 @@ Return a structured JSON object (domain model, NOT database schema):
       "claim_value": { "year": 1889, "precision": "year" },
       "claimed_by": "Uncle David",
       "confidence": "high",
-      "certainty_language": "definitely",
-      "context_original": "mentioned in story about the journey",
-      "language_original": "en",
-      "entity_type": "event",
-      "entity_id": "evt_001"
+      "certainty_language": "definitely"
+    },
+    {
+      "claim_type": "identity",
+      "subject": "Dexter's ex-wife",
+      "claim_value": { "real_name": "Judy Dor" },
+      "confidence": "high",
+      "certainty_language": "was"
     }
   ],
 
@@ -265,13 +306,9 @@ Return a structured JSON object (domain model, NOT database schema):
     {
       "question_original": "What kind of shop did Abraham run?",
       "language_original": "en",
-      "question_es": "¿Qué tipo de tienda tenía Abraham?",
-      "question_en": "What kind of shop did Abraham run?",
       "question_type": "gap_fill",
       "priority": 70,
       "target_person": "Uncle David",
-      "target_event": "The Shop on Nalewki Street",
-      "target_place": "Warsaw",
       "story_context": "Uncle David mentioned a family shop but didn't specify what goods they sold"
     }
   ],
@@ -279,23 +316,26 @@ Return a structured JSON object (domain model, NOT database schema):
   "answered_questions": [
     {
       "question_id": "q_042",
-      "answered_by": "Uncle David",
-      "completeness": "full",
-      "answer_message_id": "msg_234"
+      "completeness": "full"
     }
   ],
 
   "conflicts": [
     {
       "subject": "arrival_date",
-      "claims": [
-        { "claimed_by": "Uncle David", "value": 1889, "confidence": "medium" },
-        { "claimed_by": "Aunt Sarah", "value": 1891, "confidence": "medium" }
-      ]
+      "existing_claim_value": { "year": 1889 },
+      "new_claim_value": { "year": 1891 }
     }
-  ]
+  ],
+
+  "detected_language": "en"
 }
 ```
+
+**IMPORTANT:**
+- `relationships` is a TOP-LEVEL array, NOT embedded inside people objects
+- `aliases` should NEVER contain pronouns (he, she, they, him, her)
+- Use `claim_type: "identity"` when someone reveals a real name for a descriptive reference
 
 ## Context You'll Receive
 
@@ -324,6 +364,10 @@ Use this context to:
 6. **ALWAYS preserve original** - `content_original` is sacred
 7. **ALWAYS create claims** - Facts need provenance
 8. **ALWAYS detect language** - Bilingual storage required
+9. **NEVER use pronouns as aliases** - No "he", "she", "they", "him", "her" in aliases
+10. **ALWAYS resolve pronoun references** - "her niece" → figure out who "her" is from context
+11. **ALWAYS create identity claims** - When a name is revealed for a descriptive reference
+12. **ALWAYS output relationships as top-level array** - NOT embedded in people objects
 
 ## Confidence Levels Guide
 

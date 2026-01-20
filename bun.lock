@@ -55,6 +55,7 @@
       "dependencies": {
         "@elysiajs/cors": "^1.1.9",
         "@elysiajs/swagger": "^1.1.9",
+        "@sobremesa/auth": "workspace:*",
         "@sobremesa/database": "workspace:*",
         "@sobremesa/shared-types": "workspace:*",
         "@sobremesa/shared-utils": "workspace:*",
@@ -93,6 +94,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@sobremesa/api-client": "workspace:*",
+        "@solidjs/router": "^0.15.0",
         "solid-js": "^1.8.0",
       },
       "devDependencies": {
@@ -179,6 +181,22 @@
       "name": "@sobremesa/api-client",
       "version": "0.0.1",
     },
+    "libs/auth": {
+      "name": "@sobremesa/auth",
+      "version": "0.0.1",
+      "dependencies": {
+        "@sobremesa/database": "workspace:*",
+        "@sobremesa/shared-types": "workspace:*",
+        "@supabase/supabase-js": "^2.90.1",
+        "elysia": "^1.1.9",
+        "jose": "^6.0.10",
+        "tslib": "^2.3.0",
+      },
+      "devDependencies": {
+        "@types/node": "20.19.9",
+        "vitest": "4.0.9",
+      },
+    },
     "libs/database": {
       "name": "@sobremesa/database",
       "version": "0.0.1",
@@ -237,6 +255,7 @@
       "name": "@sobremesa/telegram",
       "version": "0.0.1",
       "dependencies": {
+        "@sobremesa/auth": "workspace:*",
         "@sobremesa/database": "workspace:*",
         "@sobremesa/ingester": "workspace:*",
         "@sobremesa/queue": "workspace:*",
@@ -776,6 +795,8 @@
 
     "@sobremesa/api-client": ["@sobremesa/api-client@workspace:libs/api-client"],
 
+    "@sobremesa/auth": ["@sobremesa/auth@workspace:libs/auth"],
+
     "@sobremesa/chatbots": ["@sobremesa/chatbots@workspace:apps/chatbots"],
 
     "@sobremesa/database": ["@sobremesa/database@workspace:libs/database"],
@@ -795,6 +816,8 @@
     "@sobremesa/studio": ["@sobremesa/studio@workspace:apps/studio"],
 
     "@sobremesa/telegram": ["@sobremesa/telegram@workspace:libs/telegram"],
+
+    "@solidjs/router": ["@solidjs/router@0.15.4", "", { "peerDependencies": { "solid-js": "^1.8.6" } }, "sha512-WOpgg9a9T638cR+5FGbFi/IV4l2FpmBs1GpIMSPa0Ce9vyJN7Wts+X2PqMf9IYn0zUj2MlSJtm1gp7/HI/n5TQ=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
@@ -1757,6 +1780,8 @@
     "jiti": ["jiti@2.4.2", "", { "bin": { "jiti": "lib/jiti-cli.mjs" } }, "sha512-rg9zJN+G4n2nfJl5MW3BMygZX56zKPNVEYYqq7adpmMh4Jn2QNEwhvQlFy6jPVdcod7txZtKHWnyZiA3a0zP7A=="],
 
     "jju": ["jju@1.4.0", "", {}, "sha512-8wb9Yw966OSxApiCt0K3yNJL8pnNeIv+OEq2YMidz4FKP6nonSRoOXc80iXY4JaN2FC11B9qsNmDsm+ZOfMROA=="],
+
+    "jose": ["jose@6.1.3", "", {}, "sha512-0TpaTfihd4QMNwrz/ob2Bp7X04yuxJkjRGi4aKmOqwhov54i6u79oCv7T+C7lo70MKH6BesI3vscD1yb/yzKXQ=="],
 
     "joycon": ["joycon@3.1.1", "", {}, "sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw=="],
 

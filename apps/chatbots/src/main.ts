@@ -165,12 +165,35 @@ async function main() {
 
     process.once('SIGINT', () => shutdown('SIGINT'));
     process.once('SIGTERM', () => shutdown('SIGTERM'));
+    process.once('SIGHUP', () => shutdown('SIGHUP'));
 
     // Start the bot
     await botManager.start();
     logger.info('Bot is running. Press Ctrl+C to stop.');
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
+
+    // Check for Telegram 409 conflict (another bot instance is polling)
+    if (err.message.includes('409') && err.message.includes('Conflict')) {
+      logger.error(
+        'Another bot instance is already running and polling Telegram.',
+      );
+      console.error('\n❌ Bot Conflict Error\n');
+      console.error(
+        'Another instance of this bot is already polling Telegram.',
+      );
+      console.error('Only one instance can use long-polling at a time.\n');
+      console.error('Possible causes:');
+      console.error('  1. A deployed instance (cloud/production) is running');
+      console.error('  2. Another local process is still running');
+      console.error('  3. A zombie process from a previous session\n');
+      console.error('To find local processes:');
+      console.error(
+        '  ps aux | grep -E "(chatbots|telegraf)" | grep -v grep\n',
+      );
+      process.exit(1);
+    }
+
     logger.error({ err: err.message, stack: err.stack }, 'Failed to start');
     console.error('Startup error:', err);
     process.exit(1);

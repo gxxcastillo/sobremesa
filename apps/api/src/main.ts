@@ -6,6 +6,8 @@ import {
   AllowedChatRepository,
   getServiceClient,
 } from '@sobremesa/database';
+import { authPlugin, hasAccessToFamily } from '@sobremesa/auth';
+import { authRoutes } from './routes/auth';
 
 const port = parseInt(process.env.PORT || '3001', 10);
 const hostname = process.env.HOST || '0.0.0.0';
@@ -19,6 +21,8 @@ const tlsConfig =
 const app = new Elysia()
   .use(swagger())
   .use(cors())
+  .use(authPlugin)
+  .use(authRoutes)
   .get(
     '/health',
     () => ({
@@ -33,12 +37,62 @@ const app = new Elysia()
     },
   )
   /**
+   * GET /api/public/stats
+   * Public aggregate stats (no auth required)
+   */
+  .get(
+    '/api/public/stats',
+    async () => {
+      const client = getServiceClient();
+
+      // Get aggregate stats across all families
+      const [familiesCount, peopleCount, storiesCount, eventsCount] =
+        await Promise.all([
+          client
+            .from('families')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_active', true),
+          client
+            .from('people')
+            .select('*', { count: 'exact', head: true })
+            .eq('redacted', false),
+          client
+            .from('stories')
+            .select('*', { count: 'exact', head: true })
+            .eq('redacted', false),
+          client
+            .from('events')
+            .select('*', { count: 'exact', head: true })
+            .eq('redacted', false),
+        ]);
+
+      return {
+        totalFamilies: familiesCount.count || 0,
+        totalPeople: peopleCount.count || 0,
+        totalStories: storiesCount.count || 0,
+        totalEvents: eventsCount.count || 0,
+      };
+    },
+    {
+      detail: {
+        tags: ['Public'],
+        description: 'Get public aggregate statistics',
+      },
+    },
+  )
+  /**
    * GET /api/family/summary
    * Get the summary for the active family (first family with chatId)
+   * Requires authentication
    */
   .get(
     '/api/family/summary',
-    async () => {
+    async ({ auth, set }) => {
+      if (!auth.isAuthenticated || !auth.identity) {
+        set.status = 401;
+        return { error: 'Authentication required' };
+      }
+
       const client = getServiceClient();
       const familyRepo = new FamilyRepository();
 
@@ -47,7 +101,14 @@ const app = new Elysia()
       const family = families.find((f) => f.chatId);
 
       if (!family) {
-        throw new Error('No family with chat ID found');
+        set.status = 404;
+        return { error: 'No family with chat ID found' };
+      }
+
+      // Check access
+      if (!hasAccessToFamily(auth, family.id)) {
+        set.status = 403;
+        return { error: 'Access denied to this family' };
       }
 
       // Fetch all data in parallel
@@ -119,6 +180,7 @@ const app = new Elysia()
       ).length;
 
       return {
+        familyId: family.id,
         familyName: family.name,
         people,
         relationships,
@@ -139,10 +201,22 @@ const app = new Elysia()
   /**
    * GET /api/family/:familyId/summary
    * Get the summary for a specific family
+   * Requires authentication and family membership
    */
   .get(
     '/api/family/:familyId/summary',
-    async ({ params: { familyId } }) => {
+    async ({ params: { familyId }, auth, set }) => {
+      if (!auth.isAuthenticated || !auth.identity) {
+        set.status = 401;
+        return { error: 'Authentication required' };
+      }
+
+      // Check access
+      if (!hasAccessToFamily(auth, familyId)) {
+        set.status = 403;
+        return { error: 'Access denied to this family' };
+      }
+
       const client = getServiceClient();
 
       // Fetch all data in parallel
@@ -202,7 +276,8 @@ const app = new Elysia()
       ]);
 
       if (!familyRes.data) {
-        throw new Error('Family not found');
+        set.status = 404;
+        return { error: 'Family not found' };
       }
 
       const people = peopleRes.data || [];
@@ -221,6 +296,7 @@ const app = new Elysia()
       ).length;
 
       return {
+        familyId,
         familyName: familyRes.data.name,
         people,
         relationships,
@@ -241,11 +317,23 @@ const app = new Elysia()
   /**
    * POST /api/narrative/generate
    * Generate a narrative for a family
+   * Requires authentication and family membership
    */
   .post(
     '/api/narrative/generate',
-    async ({ body }) => {
+    async ({ body, auth, set }) => {
+      if (!auth.isAuthenticated || !auth.identity) {
+        set.status = 401;
+        return { error: 'Authentication required' };
+      }
+
       const { familyId, audience = 'general' } = body;
+
+      // Check access
+      if (!hasAccessToFamily(auth, familyId)) {
+        set.status = 403;
+        return { error: 'Access denied to this family' };
+      }
 
       // TODO: Implement narrative generation logic
       // For now, return a stub response
@@ -269,11 +357,23 @@ const app = new Elysia()
   /**
    * POST /api/book/generate
    * Generate a book for a family
+   * Requires authentication and family membership
    */
   .post(
     '/api/book/generate',
-    async ({ body }) => {
+    async ({ body, auth, set }) => {
+      if (!auth.isAuthenticated || !auth.identity) {
+        set.status = 401;
+        return { error: 'Authentication required' };
+      }
+
       const { familyId, audience = 'general' } = body;
+
+      // Check access
+      if (!hasAccessToFamily(auth, familyId)) {
+        set.status = 403;
+        return { error: 'Access denied to this family' };
+      }
 
       // TODO: Implement book generation logic
       // For now, return a stub response
@@ -298,27 +398,49 @@ const app = new Elysia()
   /**
    * GET /api/admin/chats
    * List all allowed chats
+   * Requires super admin
    */
   .get(
     '/api/admin/chats',
-    async () => {
+    async ({ auth, set }) => {
+      if (!auth.isAuthenticated || !auth.identity) {
+        set.status = 401;
+        return { error: 'Authentication required' };
+      }
+
+      if (!auth.isSuperAdmin) {
+        set.status = 403;
+        return { error: 'Super admin access required' };
+      }
+
       const allowedChatRepo = new AllowedChatRepository();
       return allowedChatRepo.list();
     },
     {
       detail: {
         tags: ['Admin'],
-        description: 'List all allowed chat IDs',
+        description: 'List all allowed chat IDs (super admin only)',
       },
     },
   )
   /**
    * POST /api/admin/chats
    * Authorize a chat ID
+   * Requires super admin
    */
   .post(
     '/api/admin/chats',
-    async ({ body }) => {
+    async ({ body, auth, set }) => {
+      if (!auth.isAuthenticated || !auth.identity) {
+        set.status = 401;
+        return { error: 'Authentication required' };
+      }
+
+      if (!auth.isSuperAdmin) {
+        set.status = 403;
+        return { error: 'Super admin access required' };
+      }
+
       const { chatId, note } = body;
       const allowedChatRepo = new AllowedChatRepository();
       await allowedChatRepo.add(chatId, note);
@@ -331,17 +453,28 @@ const app = new Elysia()
       }),
       detail: {
         tags: ['Admin'],
-        description: 'Authorize a chat ID',
+        description: 'Authorize a chat ID (super admin only)',
       },
     },
   )
   /**
    * DELETE /api/admin/chats/:chatId
    * Remove a chat ID from the allowlist
+   * Requires super admin
    */
   .delete(
     '/api/admin/chats/:chatId',
-    async ({ params: { chatId } }) => {
+    async ({ params: { chatId }, auth, set }) => {
+      if (!auth.isAuthenticated || !auth.identity) {
+        set.status = 401;
+        return { error: 'Authentication required' };
+      }
+
+      if (!auth.isSuperAdmin) {
+        set.status = 403;
+        return { error: 'Super admin access required' };
+      }
+
       const allowedChatRepo = new AllowedChatRepository();
       await allowedChatRepo.remove(chatId);
       return { success: true };
@@ -350,7 +483,7 @@ const app = new Elysia()
       params: t.Object({ chatId: t.String() }),
       detail: {
         tags: ['Admin'],
-        description: 'Remove a chat ID from the allowlist',
+        description: 'Remove a chat ID from the allowlist (super admin only)',
       },
     },
   )

@@ -1,0 +1,24 @@
+{
+  "name": "auth",
+  "tags": ["scope:infra"],
+  "targets": {
+    "types": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --noEmit -p libs/auth/tsconfig.lib.json"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint libs/auth"
+      }
+    },
+    "test": {
+      "executor": "@nx/vitest:test",
+      "options": {
+        "config": "libs/auth/vite.config.ts"
+      }
+    }
+  }
+}

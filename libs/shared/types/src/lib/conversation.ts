@@ -66,16 +66,28 @@ export interface ConversationEvent {
 }
 
 /**
- * An identity from a chat provider.
+ * A global identity from a chat provider.
+ *
+ * Identities are global - one per provider account (e.g., Telegram user 12345).
+ * They optionally link to a users table for cross-provider account linking.
+ * Per-family relationships (including person claims) are in family_access.
  */
 export interface Identity {
   id: string;
-  familyId: string;
-  source: ChatProvider;
+  /** Link to global user account (for cross-provider linking and web auth) */
+  userId?: string;
+  /** Chat provider: telegram, discord, whatsapp, etc. */
+  provider: ChatProvider;
+  /** User ID from the chat provider */
   providerUserId: string;
+  /** Username from provider (@handle) */
+  providerUsername?: string;
+  /** Display name (latest known from provider) */
   displayName?: string;
-  username?: string;
-  personId?: string;
+  /** Avatar URL (latest known from provider) */
+  avatarUrl?: string;
+  /** Last login timestamp */
+  lastLoginAt?: Date;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

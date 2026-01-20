@@ -9,6 +9,8 @@ import {
   ConversationEventRepository,
   ProcessingQueueRepository,
   EventLogRepository,
+  IdentityRepository,
+  getServiceClient,
 } from '@sobremesa/database';
 import type pino from 'pino';
 
@@ -120,13 +122,58 @@ export class MessageIngester {
   private eventRepo: ConversationEventRepository;
   private queueRepo: ProcessingQueueRepository;
   private eventLog: EventLogRepository;
+  private identityRepo: IdentityRepository;
   private logger: pino.Logger;
 
   constructor(logger?: pino.Logger) {
     this.eventRepo = new ConversationEventRepository();
     this.queueRepo = new ProcessingQueueRepository();
     this.eventLog = new EventLogRepository();
+    this.identityRepo = new IdentityRepository();
     this.logger = logger || createLogger({ name: 'ingester' });
+  }
+
+  /**
+   * Ensure a global identity exists for the actor and family_access record exists.
+   *
+   * The unified identity model:
+   * - identities: Global provider accounts (e.g., Telegram user 12345)
+   * - family_access: Per-family permissions with status='pending' for chat participants
+   */
+  private async ensureIdentity(
+    familyId: string,
+    source: ChatProvider,
+    actor: ActorInfo,
+  ): Promise<void> {
+    try {
+      // Find or create global identity (no familyId needed)
+      const { identity } = await this.identityRepo.findOrCreate(
+        source,
+        actor.externalId,
+        actor.username,
+        actor.displayName,
+      );
+
+      // Ensure family_access record exists with status='pending'
+      // This marks the user as a chat participant (not yet web-authenticated)
+      const client = getServiceClient();
+      await client.from('family_access').upsert(
+        {
+          identity_id: identity.id,
+          family_id: familyId,
+          role: 'member',
+          status: 'pending',
+          granted_by: 'chat_join',
+        },
+        { onConflict: 'identity_id,family_id' },
+      );
+    } catch (err) {
+      // Non-fatal: log but don't fail message ingestion
+      this.logger.warn(
+        { err, actor: actor.externalId },
+        'Failed to create/update identity',
+      );
+    }
   }
 
   /**
@@ -169,6 +216,9 @@ export class MessageIngester {
       },
       'Ingesting text message',
     );
+
+    // Ensure identity exists for the actor
+    await this.ensureIdentity(familyId, input.source, input.actor);
 
     // Check for duplicates
     const existing = await this.eventRepo.findByExternalId(
@@ -232,6 +282,9 @@ export class MessageIngester {
       { conversationId: input.conversationId, eventId: input.externalEventId },
       'Ingesting photo message',
     );
+
+    // Ensure identity exists for the actor
+    await this.ensureIdentity(familyId, input.source, input.actor);
 
     // Check for duplicates
     const existing = await this.eventRepo.findByExternalId(
@@ -308,6 +361,9 @@ export class MessageIngester {
       'Ingesting document message',
     );
 
+    // Ensure identity exists for the actor
+    await this.ensureIdentity(familyId, input.source, input.actor);
+
     // Check for duplicates
     const existing = await this.eventRepo.findByExternalId(
       familyId,
@@ -383,6 +439,9 @@ export class MessageIngester {
       { conversationId: input.conversationId, eventId: input.externalEventId },
       'Ingesting video message',
     );
+
+    // Ensure identity exists for the actor
+    await this.ensureIdentity(familyId, input.source, input.actor);
 
     // Check for duplicates
     const existing = await this.eventRepo.findByExternalId(
@@ -467,6 +526,9 @@ export class MessageIngester {
       },
       'Ingesting member event',
     );
+
+    // Ensure identity exists for the actor
+    await this.ensureIdentity(familyId, input.source, input.actor);
 
     // Check for duplicates
     const existing = await this.eventRepo.findByExternalId(

@@ -76,7 +76,6 @@ export interface QueueOptions {
   maxRetries: number;
   retryDelayMs: number;
   lockTimeoutMs: number;
-  batchSize: number;
 }
 
 /**
@@ -86,7 +85,6 @@ export const DEFAULT_QUEUE_OPTIONS: QueueOptions = {
   maxRetries: 3,
   retryDelayMs: 5000,
   lockTimeoutMs: 300000, // 5 minutes
-  batchSize: 10,
 };
 
 /**

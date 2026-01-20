@@ -257,6 +257,46 @@ export class PersonRepository extends BaseRepository<Person> {
   }
 
   /**
+   * Update a person's name and optionally add the old name as an alias.
+   * Used when an identity claim reveals the real name for a descriptive reference.
+   */
+  async updateName(
+    familyId: string,
+    id: string,
+    newName: string,
+    addOldNameAsAlias = true,
+  ): Promise<Person> {
+    // First get the current person to preserve their old name
+    const current = await this.findById(familyId, id);
+    if (!current) {
+      throw new Error(`Person not found: ${id}`);
+    }
+
+    const updates: Record<string, unknown> = { name: newName };
+
+    if (addOldNameAsAlias && current.name !== newName) {
+      const newAliases = [
+        ...new Set([...(current.aliases || []), current.name]),
+      ];
+      updates.aliases = newAliases;
+    }
+
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .update(updates)
+      .eq('family_id', familyId)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update person name: ${error.message}`);
+    }
+
+    return this.mapFromDb(data);
+  }
+
+  /**
    * Find all people for a family.
    */
   async findAllActive(familyId: string): Promise<Person[]> {

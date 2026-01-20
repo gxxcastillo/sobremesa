@@ -102,7 +102,7 @@ export class ProcessingQueueRepository {
     const now = new Date().toISOString();
 
     // Find the next available item (respecting process_after for debouncing)
-    const { data: queuedItem, error: selectError } = await this.client
+    const { data: queuedItems, error: selectError } = await this.client
       .from(this.tableName)
       .select('*')
       .eq('family_id', familyId)
@@ -110,13 +110,16 @@ export class ProcessingQueueRepository {
       .lte('process_after', now)
       .order('priority', { ascending: true })
       .order('queued_at', { ascending: true })
-      .limit(1)
-      .single();
+      .limit(1);
+
+    if (selectError) {
+      throw new Error(`Failed to find queue item: ${selectError.message}`);
+    }
 
     // If no queued items ready, try stale processing items
-    let itemToLock = queuedItem;
-    if (selectError?.code === 'PGRST116') {
-      const { data: staleItem } = await this.client
+    let itemToLock = queuedItems?.[0];
+    if (!itemToLock) {
+      const { data: staleItems, error: staleError } = await this.client
         .from(this.tableName)
         .select('*')
         .eq('family_id', familyId)
@@ -125,11 +128,14 @@ export class ProcessingQueueRepository {
         .lte('process_after', now)
         .order('priority', { ascending: true })
         .order('queued_at', { ascending: true })
-        .limit(1)
-        .single();
-      itemToLock = staleItem;
-    } else if (selectError) {
-      throw new Error(`Failed to find queue item: ${selectError.message}`);
+        .limit(1);
+
+      if (staleError) {
+        throw new Error(
+          `Failed to find stale queue item: ${staleError.message}`,
+        );
+      }
+      itemToLock = staleItems?.[0];
     }
 
     if (!itemToLock) {
@@ -137,7 +143,7 @@ export class ProcessingQueueRepository {
     }
 
     // Lock the item
-    const { data, error: updateError } = await this.client
+    const { data: lockedItems, error: updateError } = await this.client
       .from(this.tableName)
       .update({
         status: 'processing',
@@ -146,17 +152,18 @@ export class ProcessingQueueRepository {
       })
       .eq('id', itemToLock.id)
       .eq('status', itemToLock.status)
-      .select()
-      .single();
+      .select();
 
     if (updateError) {
-      if (updateError.code === 'PGRST116') {
-        return this.dequeue(familyId, workerId, lockTimeoutMs);
-      }
       throw new Error(`Failed to lock queue item: ${updateError.message}`);
     }
 
-    return mapRowToCamelCase<QueueItem>(data);
+    // If another worker grabbed it first, retry
+    if (!lockedItems?.[0]) {
+      return this.dequeue(familyId, workerId, lockTimeoutMs);
+    }
+
+    return mapRowToCamelCase<QueueItem>(lockedItems[0]);
   }
 
   /**
@@ -173,20 +180,23 @@ export class ProcessingQueueRepository {
     const now = new Date().toISOString();
 
     // Find queued items ready for processing (respecting process_after)
-    const { data: queuedItem, error: selectError } = await this.client
+    const { data: queuedItems, error: selectError } = await this.client
       .from(this.tableName)
       .select('*')
       .eq('status', 'queued')
       .lte('process_after', now)
       .order('priority', { ascending: true })
       .order('queued_at', { ascending: true })
-      .limit(1)
-      .single();
+      .limit(1);
+
+    if (selectError) {
+      throw new Error(`Failed to find queue item: ${selectError.message}`);
+    }
 
     // If no queued items ready, try stale processing items
-    let itemToLock = queuedItem;
-    if (selectError?.code === 'PGRST116') {
-      const { data: staleItem } = await this.client
+    let itemToLock = queuedItems?.[0];
+    if (!itemToLock) {
+      const { data: staleItems, error: staleError } = await this.client
         .from(this.tableName)
         .select('*')
         .eq('status', 'processing')
@@ -194,11 +204,14 @@ export class ProcessingQueueRepository {
         .lte('process_after', now)
         .order('priority', { ascending: true })
         .order('queued_at', { ascending: true })
-        .limit(1)
-        .single();
-      itemToLock = staleItem;
-    } else if (selectError) {
-      throw new Error(`Failed to find queue item: ${selectError.message}`);
+        .limit(1);
+
+      if (staleError) {
+        throw new Error(
+          `Failed to find stale queue item: ${staleError.message}`,
+        );
+      }
+      itemToLock = staleItems?.[0];
     }
 
     if (!itemToLock) {
@@ -206,7 +219,7 @@ export class ProcessingQueueRepository {
     }
 
     // Lock the item
-    const { data, error: updateError } = await this.client
+    const { data: lockedItems, error: updateError } = await this.client
       .from(this.tableName)
       .update({
         status: 'processing',
@@ -215,17 +228,18 @@ export class ProcessingQueueRepository {
       })
       .eq('id', itemToLock.id)
       .eq('status', itemToLock.status)
-      .select()
-      .single();
+      .select();
 
     if (updateError) {
-      if (updateError.code === 'PGRST116') {
-        return this.dequeueAny(workerId, lockTimeoutMs);
-      }
       throw new Error(`Failed to lock queue item: ${updateError.message}`);
     }
 
-    return mapRowToCamelCase<QueueItem>(data);
+    // If another worker grabbed it first, retry
+    if (!lockedItems?.[0]) {
+      return this.dequeueAny(workerId, lockTimeoutMs);
+    }
+
+    return mapRowToCamelCase<QueueItem>(lockedItems[0]);
   }
 
   /**

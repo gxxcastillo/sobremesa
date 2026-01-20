@@ -45,7 +45,6 @@ export class MessageQueue {
       maxRetries: 3,
       retryDelayMs: 5000,
       lockTimeoutMs: 300000,
-      batchSize: 10,
       ...options?.queueOptions,
     };
     this.pollIntervalMs = options?.pollIntervalMs || 1000;

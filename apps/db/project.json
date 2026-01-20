@@ -1,10 +1,11 @@
 {
   "name": "db",
+  "sourceRoot": "{projectRoot}/src",
   "targets": {
     "start": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "supabase start"
+        "command": "{projectRoot}/scripts/ensure-docker.sh supabase start"
       }
     },
     "stop": {

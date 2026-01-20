@@ -7,8 +7,6 @@ import internFilterPrompt from '../agents/intern-filter.txt?raw';
 import internImageLinkPrompt from '../agents/intern-image-link.txt?raw';
 import scribePrompt from '../agents/scribe.txt?raw';
 
-console.log('!!!!!! facilitatorResponsePrompt', facilitatorResponsePrompt);
-
 export type PromptName = keyof typeof prompts;
 
 const prompts = {

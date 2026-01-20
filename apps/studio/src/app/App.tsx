@@ -1,12 +1,18 @@
-import { createSignal } from 'solid-js';
+import { createSignal, Show, onMount, createEffect } from 'solid-js';
+import { useParams, useNavigate } from '@solidjs/router';
 import {
   StudioApiClient,
   FamilySummary,
   AllowedChat,
 } from '@sobremesa/api-client';
+import { useAuth } from '../context/AuthContext';
 import './App.css';
 
 export default function App() {
+  const auth = useAuth();
+  const params = useParams<{ familyId: string }>();
+  const navigate = useNavigate();
+
   const [summary, setSummary] = createSignal<FamilySummary | null>(null);
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -21,11 +27,34 @@ export default function App() {
 
   const client = new StudioApiClient();
 
-  const generateSummary = async () => {
+  const isSuperAdmin = () => auth.state.user?.role === 'super_admin';
+
+  // Sync auth token with client
+  createEffect(() => {
+    const token = auth.getToken();
+    if (token) {
+      client.setAuthToken(token);
+    }
+  });
+
+  // Sync family selection with URL
+  createEffect(() => {
+    if (
+      params.familyId &&
+      params.familyId !== auth.state.currentFamily?.familyId
+    ) {
+      auth.selectFamily(params.familyId);
+    }
+  });
+
+  const loadFamilySummary = async () => {
+    const familyId = params.familyId || auth.state.currentFamily?.familyId;
+    if (!familyId) return;
+
     setIsLoading(true);
     setError(null);
     try {
-      const familySummary = await client.getFamilySummary();
+      const familySummary = await client.getFamilySummaryById(familyId);
       setSummary(familySummary);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -36,6 +65,7 @@ export default function App() {
   };
 
   const loadAllowedChats = async () => {
+    if (!isSuperAdmin()) return;
     try {
       const chats = await client.getAllowedChats();
       setAllowedChats(chats);
@@ -83,94 +113,138 @@ export default function App() {
     }
   };
 
-  // Load allowed chats on mount
-  loadAllowedChats();
+  const handleLogout = () => {
+    auth.logout();
+    navigate('/login');
+  };
+
+  const handleSwitchFamily = () => {
+    navigate('/select-family');
+  };
+
+  // Load data on mount
+  onMount(() => {
+    loadFamilySummary();
+    if (isSuperAdmin()) {
+      loadAllowedChats();
+    }
+  });
 
   return (
     <div class="app-container">
       <header class="app-header">
-        <h1>Studio</h1>
-        <p>Manage family data and narratives</p>
+        <div class="header-left">
+          <h1>Studio</h1>
+          <Show when={auth.state.currentFamily}>
+            <span class="family-name">
+              {auth.state.currentFamily?.familyName}
+            </span>
+            <span class="role-badge">{auth.state.currentFamily?.role}</span>
+          </Show>
+        </div>
+        <div class="header-right">
+          <Show when={auth.state.user}>
+            <span class="user-name">
+              {auth.state.user?.displayName ||
+                auth.state.user?.providerUsername}
+            </span>
+          </Show>
+          <Show when={auth.state.families.length > 1}>
+            <button
+              class="btn-secondary btn-small"
+              onClick={handleSwitchFamily}
+            >
+              Switch Family
+            </button>
+          </Show>
+          <button class="btn-secondary btn-small" onClick={handleLogout}>
+            Sign Out
+          </button>
+        </div>
       </header>
 
       <main class="app-main">
-        {/* Admin Section */}
-        <section class="admin-section">
-          <h2>Admin</h2>
+        {/* Super Admin Section - only for super admins */}
+        <Show when={isSuperAdmin()}>
+          <section class="admin-section">
+            <h2>Super Admin</h2>
 
-          <div class="admin-form-container">
-            <h3>Authorize Chat ID</h3>
-            <form class="admin-form" onSubmit={authorizeChat}>
-              <div class="form-group">
-                <label for="chatId">Chat ID</label>
-                <input
-                  id="chatId"
-                  type="text"
-                  value={chatId()}
-                  onInput={(e) => setChatId(e.currentTarget.value)}
-                  placeholder="Enter Telegram chat ID"
-                  disabled={adminLoading()}
-                />
-              </div>
-              <div class="form-group">
-                <label for="chatNote">Note (optional)</label>
-                <textarea
-                  id="chatNote"
-                  value={chatNote()}
-                  onInput={(e) => setChatNote(e.currentTarget.value)}
-                  placeholder="e.g., Family name or description"
-                  disabled={adminLoading()}
-                  rows={3}
-                />
-              </div>
-              <button
-                type="submit"
-                class="admin-btn"
-                disabled={adminLoading() || !chatId().trim()}
-              >
-                {adminLoading() ? 'Authorizing...' : 'Authorize'}
-              </button>
-            </form>
+            <div class="admin-form-container">
+              <h3>Authorize Chat ID</h3>
+              <form class="admin-form" onSubmit={authorizeChat}>
+                <div class="form-group">
+                  <label for="chatId">Chat ID</label>
+                  <input
+                    id="chatId"
+                    type="text"
+                    value={chatId()}
+                    onInput={(e) => setChatId(e.currentTarget.value)}
+                    placeholder="Enter Telegram chat ID"
+                    disabled={adminLoading()}
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="chatNote">Note (optional)</label>
+                  <textarea
+                    id="chatNote"
+                    value={chatNote()}
+                    onInput={(e) => setChatNote(e.currentTarget.value)}
+                    placeholder="e.g., Family name or description"
+                    disabled={adminLoading()}
+                    rows={3}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  class="admin-btn"
+                  disabled={adminLoading() || !chatId().trim()}
+                >
+                  {adminLoading() ? 'Authorizing...' : 'Authorize'}
+                </button>
+              </form>
 
-            {adminError() && <div class="error-message">{adminError()}</div>}
-            {adminSuccess() && (
-              <div class="success-message">{adminSuccess()}</div>
-            )}
-          </div>
-
-          {allowedChats().length > 0 && (
-            <div class="allowed-chats">
-              <h3>Allowed Chats ({allowedChats().length})</h3>
-              <ul>
-                {allowedChats().map((chat) => (
-                  <li>
-                    <span class="chat-id">{chat.chatId}</span>
-                    {chat.note && <span class="chat-note"> - {chat.note}</span>}
-                    <button
-                      class="remove-btn"
-                      onClick={() => removeChat(chat.chatId)}
-                      title="Remove"
-                    >
-                      x
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {adminError() && <div class="error-message">{adminError()}</div>}
+              {adminSuccess() && (
+                <div class="success-message">{adminSuccess()}</div>
+              )}
             </div>
-          )}
-        </section>
 
-        <hr class="section-divider" />
+            {allowedChats().length > 0 && (
+              <div class="allowed-chats">
+                <h3>Allowed Chats ({allowedChats().length})</h3>
+                <ul>
+                  {allowedChats().map((chat) => (
+                    <li>
+                      <span class="chat-id">{chat.chatId}</span>
+                      {chat.note && (
+                        <span class="chat-note"> - {chat.note}</span>
+                      )}
+                      <button
+                        class="remove-btn"
+                        onClick={() => removeChat(chat.chatId)}
+                        title="Remove"
+                      >
+                        x
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <hr class="section-divider" />
+          </section>
+        </Show>
 
         {/* Data Preview Section */}
         <section class="preview-section">
-          <h2>Data Preview</h2>
+          <h2>Family Data</h2>
           <button
             class="generate-btn"
-            onClick={generateSummary}
+            onClick={loadFamilySummary}
             disabled={isLoading()}
           >
-            {isLoading() ? 'Loading...' : 'Load Family Data'}
+            {isLoading() ? 'Loading...' : 'Refresh Data'}
           </button>
 
           {error() && <div class="error-message">{error()}</div>}

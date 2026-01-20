@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS conversation_events (
   ingested_at TIMESTAMPTZ DEFAULT NOW(),
 
   UNIQUE(family_id, source, conversation_id, external_event_id),
-  CONSTRAINT uq_conversation_events_family_id UNIQUE (family_id, id)  
+  CONSTRAINT uq_conversation_events_family_id UNIQUE (family_id, id)
 );
 
 COMMENT ON TABLE conversation_events IS 'Ingestion ledger. RLS enabled: no direct client access; read via backend/admin only.';
@@ -266,48 +266,160 @@ BEFORE UPDATE ON people
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================================
--- IDENTITIES (Provider accounts mapped to internal UUIDs)
+-- USERS (Global User Accounts)
 -- ============================================================================
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Optional email for account recovery/linking
+  email VARCHAR(255) UNIQUE,
+
+  -- Canonical display name and avatar
+  display_name VARCHAR(255),
+  avatar_url TEXT,
+
+  -- Global role (most users will be 'user', only manual DB changes for 'super_admin')
+  role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'super_admin')),
+
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE users IS 'Global user accounts enabling cross-provider identity linking. Owns the global role.';
+COMMENT ON COLUMN users.email IS 'Optional email for account recovery or linking multiple providers';
+COMMENT ON COLUMN users.role IS 'Global role: user (default) or super_admin (manual DB setup only)';
+COMMENT ON COLUMN users.display_name IS 'Canonical display name (may be synced from identities)';
+COMMENT ON COLUMN users.avatar_url IS 'Canonical avatar URL (may be synced from identities)';
+
+CREATE INDEX IF NOT EXISTS idx_users_email
+  ON users(email)
+  WHERE email IS NOT NULL;
+
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+CREATE TRIGGER update_users_updated_at
+BEFORE UPDATE ON users
+FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================================
+-- IDENTITIES (Global Provider Credentials)
+-- ============================================================================
+-- Unified identity table - global provider accounts, not family-scoped.
+-- Each identity represents a provider account (e.g., Telegram user 12345).
+-- Links to users table for cross-provider account linking.
 CREATE TABLE IF NOT EXISTS identities (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
 
-  -- Provider identity
-  source VARCHAR(50) NOT NULL,                 -- 'telegram', 'whatsapp', etc.
-  provider_user_id VARCHAR(255) NOT NULL,      -- e.g. Telegram from.id (string)
+  -- Link to global user account (for cross-provider linking)
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 
-  -- Latest known profile snapshot (optional; may change on provider)
+  -- Provider credentials
+  provider VARCHAR(50) NOT NULL,               -- 'telegram', 'discord', 'whatsapp', etc.
+  provider_user_id VARCHAR(255) NOT NULL,      -- ID from provider (e.g., Telegram from.id)
+  provider_username VARCHAR(255),              -- Username from provider (@handle)
+
+  -- Profile (latest known from provider)
   display_name VARCHAR(255),
-  username VARCHAR(255),
+  avatar_url TEXT,
 
-  -- Optional link to a canonical "person" (real-world entity)
-  person_id UUID NULL,
+  -- Auth tracking
+  last_login_at TIMESTAMPTZ,
 
   is_active BOOLEAN DEFAULT TRUE,
 
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  UNIQUE (family_id, source, provider_user_id),
-  CONSTRAINT fk_identities_person_family
-    FOREIGN KEY (family_id, person_id)
-    REFERENCES people(family_id, id)
-    ON DELETE SET NULL  
+  -- One identity per provider account globally
+  UNIQUE (provider, provider_user_id)
 );
 
 COMMENT ON TABLE identities IS
-'Provider-level user accounts (e.g., Telegram user id) mapped to internal UUIDs; optionally linked to canonical people.';
+'Global provider accounts (e.g., Telegram user id). One identity per provider account, linked to users for cross-provider support.';
+COMMENT ON COLUMN identities.user_id IS 'Reference to the global user account (for web auth and cross-provider linking)';
+COMMENT ON COLUMN identities.provider IS 'Chat provider: telegram, discord, whatsapp, etc.';
+COMMENT ON COLUMN identities.provider_user_id IS 'User ID from the chat provider';
 
-CREATE INDEX IF NOT EXISTS idx_identities_family_source_user
-  ON identities(family_id, source, provider_user_id);
+CREATE INDEX IF NOT EXISTS idx_identities_provider_user
+  ON identities(provider, provider_user_id);
 
-CREATE INDEX IF NOT EXISTS idx_identities_family_person
-  ON identities(family_id, person_id)
-  WHERE person_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_identities_user_id
+  ON identities(user_id)
+  WHERE user_id IS NOT NULL;
 
 DROP TRIGGER IF EXISTS update_identities_updated_at ON identities;
 CREATE TRIGGER update_identities_updated_at
 BEFORE UPDATE ON identities
+FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================================
+-- FAMILY ACCESS (Per-Family Permissions + Person Claim)
+-- ============================================================================
+-- Controls who can access a family via the web/Studio app.
+-- Also stores the user's claimed person_id in each family's genealogy.
+CREATE TABLE IF NOT EXISTS family_access (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  identity_id UUID NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+
+  -- Permissions
+  role VARCHAR(20) NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member', 'viewer')),
+
+  -- Access status
+  status VARCHAR(20) NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'active', 'revoked', 'suspended')),
+    -- 'pending'   = chat participant, not yet authenticated for web
+    -- 'active'    = authenticated, can access Studio
+    -- 'revoked'   = access removed
+    -- 'suspended' = temporarily disabled
+
+  -- Person claim - who this user is in this family's genealogy (user-claimed)
+  person_id UUID REFERENCES people(id) ON DELETE SET NULL,
+
+  -- How this access was granted
+  granted_by VARCHAR(50) NOT NULL DEFAULT 'system',
+    -- 'chat_join' | 'studio_link' | 'admin' | 'system' | 'telegram_login' | 'access_pass'
+  granted_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Revocation tracking
+  revoked_at TIMESTAMPTZ,
+  revoked_by UUID REFERENCES identities(id),
+  revoke_reason TEXT,
+
+  -- Optional notes (e.g., "Original group admin", "Invited by Maria")
+  notes TEXT,
+
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  UNIQUE(identity_id, family_id)
+);
+
+COMMENT ON TABLE family_access IS 'Per-family permissions and person claims. Replaces auth_identities as the per-family relationship.';
+COMMENT ON COLUMN family_access.role IS 'Family-scoped role: admin (full access), member (view data), viewer (read-only)';
+COMMENT ON COLUMN family_access.status IS 'Access status: pending (chat user), active (web authenticated), revoked, suspended';
+COMMENT ON COLUMN family_access.person_id IS 'User-claimed identity: who this user is in this family genealogy';
+COMMENT ON COLUMN family_access.granted_by IS 'How access was granted: chat_join, studio_link, admin, system, telegram_login, access_pass';
+
+CREATE INDEX IF NOT EXISTS idx_family_access_identity
+  ON family_access(identity_id);
+
+CREATE INDEX IF NOT EXISTS idx_family_access_family
+  ON family_access(family_id);
+
+CREATE INDEX IF NOT EXISTS idx_family_access_family_role
+  ON family_access(family_id, role)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_family_access_family_status
+  ON family_access(family_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_family_access_person
+  ON family_access(family_id, person_id)
+  WHERE person_id IS NOT NULL;
+
+DROP TRIGGER IF EXISTS update_family_access_updated_at ON family_access;
+CREATE TRIGGER update_family_access_updated_at
+BEFORE UPDATE ON family_access
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================================
@@ -470,7 +582,7 @@ CREATE TABLE IF NOT EXISTS events (
   CONSTRAINT fk_events_place_family
     FOREIGN KEY (family_id, place_id)
     REFERENCES places(family_id, id)
-    ON DELETE SET NULL  
+    ON DELETE SET NULL
 );
 
 COMMENT ON TABLE events IS 'Timeline events derived from claims (with optional summary fields).';
@@ -819,7 +931,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_real_time_levers_one_active
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_family_config_one_active
   ON family_config(family_id)
-  WHERE is_active = TRUE;  
+  WHERE is_active = TRUE;
 
 DROP TRIGGER IF EXISTS update_real_time_levers_updated_at ON real_time_levers;
 CREATE TRIGGER update_real_time_levers_updated_at
@@ -902,21 +1014,99 @@ CREATE TABLE IF NOT EXISTS allowed_chats (
 COMMENT ON TABLE allowed_chats IS 'Global allowlist of chat IDs allowed to use the bot. Checked before any processing.';
 
 -- ============================================================================
+-- ACCESS PASSES (One-Time Tokens for Chat → Studio)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS access_passes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Token stored as hash for security (original token sent to user, only hash stored)
+  token_hash TEXT NOT NULL UNIQUE,
+
+  -- What access this pass grants
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+  role VARCHAR(20) NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member', 'viewer')),
+
+  -- Who requested this pass (chat provider identity - for lookup only, no profile data)
+  provider VARCHAR(50) NOT NULL DEFAULT 'telegram',
+  provider_user_id VARCHAR(255) NOT NULL,
+
+  -- Optional link to existing identity
+  identity_id UUID REFERENCES identities(id) ON DELETE SET NULL,
+
+  -- Chat context (which chat the pass was requested from)
+  chat_id TEXT NOT NULL,
+
+  -- Expiration and usage
+  expires_at TIMESTAMPTZ NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'redeemed', 'expired', 'revoked')),
+  redeemed_at TIMESTAMPTZ,
+  redeemed_by_identity_id UUID REFERENCES identities(id) ON DELETE SET NULL,
+
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE access_passes IS 'One-time tokens generated via chat commands (e.g., /sobremesa studio-link) for chat → Studio access.';
+COMMENT ON COLUMN access_passes.token_hash IS 'SHA-256 hash of the access token (original token sent via DM)';
+COMMENT ON COLUMN access_passes.role IS 'Role granted when pass is redeemed (based on chat admin status)';
+COMMENT ON COLUMN access_passes.provider IS 'Chat provider: telegram, discord, slack, etc.';
+
+CREATE INDEX IF NOT EXISTS idx_access_passes_token_hash
+  ON access_passes(token_hash);
+
+CREATE INDEX IF NOT EXISTS idx_access_passes_provider_user
+  ON access_passes(provider, provider_user_id);
+
+CREATE INDEX IF NOT EXISTS idx_access_passes_family
+  ON access_passes(family_id);
+
+CREATE INDEX IF NOT EXISTS idx_access_passes_pending
+  ON access_passes(status, expires_at)
+  WHERE status = 'pending';
+
+-- ============================================================================
+-- TELEGRAM CHAT ADMINS (Cached Admin Status)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS telegram_chat_admins (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+  chat_id TEXT NOT NULL,
+  telegram_user_id BIGINT NOT NULL,
+
+  -- Admin status from Telegram API
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  admin_title VARCHAR(255), -- Custom admin title if set
+  can_manage_chat BOOLEAN DEFAULT FALSE,
+  can_delete_messages BOOLEAN DEFAULT FALSE,
+
+  -- Sync tracking
+  last_synced_at TIMESTAMPTZ DEFAULT NOW(),
+
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  UNIQUE(family_id, chat_id, telegram_user_id)
+);
+
+COMMENT ON TABLE telegram_chat_admins IS 'Cached Telegram chat admin status for role determination.';
+COMMENT ON COLUMN telegram_chat_admins.is_admin IS 'Whether user is admin/creator of the chat';
+
+CREATE INDEX IF NOT EXISTS idx_telegram_chat_admins_family_chat
+  ON telegram_chat_admins(family_id, chat_id);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_chat_admins_telegram_user
+  ON telegram_chat_admins(telegram_user_id);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_chat_admins_family_user
+  ON telegram_chat_admins(family_id, telegram_user_id);
+
+DROP TRIGGER IF EXISTS update_telegram_chat_admins_updated_at ON telegram_chat_admins;
+CREATE TRIGGER update_telegram_chat_admins_updated_at
+BEFORE UPDATE ON telegram_chat_admins
+FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================================
 -- Enable RLS so client roles cannot write without explicit policies.
---
--- SECURITY NOTE (Supabase):
--- Writes to event_log and conversation_events must come only from backend code using the service_role key.
--- Client roles (anon/authenticated) should not have insert/update/delete access to these tables.
---
--- RLS POLICIES (Backend Responsibility):
--- After enabling RLS, backend MUST create policies:
---   1. family_isolation_select: Allow reading only user's family_id
---   2. family_isolation_insert: Allow writing only to user's family_id (for authenticated users)
---   3. service_role_bypass: Service role bypasses RLS for backend operations
--- 
--- Example (adjust based on auth structure):
--- CREATE POLICY "family_isolation_select" ON conversation_events
---   FOR SELECT USING (family_id IN (SELECT family_id FROM user_families WHERE user_id = auth.uid()));
 -- ============================================================================
 ALTER TABLE conversation_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_log ENABLE ROW LEVEL SECURITY;
@@ -1088,6 +1278,307 @@ BEGIN
     );
   END IF;
 END $$;
+
+-- ============================================================================
+-- RLS HELPER FUNCTIONS
+-- ============================================================================
+
+-- Get current user's identity_id from JWT claim
+CREATE OR REPLACE FUNCTION get_identity_id()
+RETURNS UUID AS $$
+BEGIN
+  RETURN (current_setting('request.jwt.claims', true)::json->>'identity_id')::UUID;
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+COMMENT ON FUNCTION get_identity_id IS 'Get identity_id from JWT claims for RLS policies';
+
+-- Check if current user is super admin
+CREATE OR REPLACE FUNCTION is_super_admin()
+RETURNS BOOLEAN AS $$
+DECLARE
+  user_role TEXT;
+BEGIN
+  SELECT u.role INTO user_role
+  FROM users u
+  JOIN identities i ON i.user_id = u.id
+  WHERE i.id = get_identity_id();
+
+  RETURN COALESCE(user_role = 'super_admin', FALSE);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+COMMENT ON FUNCTION is_super_admin IS 'Check if current user has super_admin role (from users table)';
+
+-- Get family IDs the current user has active access to
+CREATE OR REPLACE FUNCTION get_user_family_ids()
+RETURNS SETOF UUID AS $$
+BEGIN
+  -- Super admins can access all families
+  IF is_super_admin() THEN
+    RETURN QUERY SELECT id FROM families;
+  ELSE
+    -- Regular users only see families they have active access to
+    RETURN QUERY
+    SELECT family_id
+    FROM family_access
+    WHERE identity_id = get_identity_id()
+      AND status = 'active';
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+COMMENT ON FUNCTION get_user_family_ids IS 'Get family IDs the current user has active access to';
+
+-- Get user's role in a specific family (only if access is active)
+CREATE OR REPLACE FUNCTION get_family_role(target_family_id UUID)
+RETURNS VARCHAR(20) AS $$
+DECLARE
+  access_role VARCHAR(20);
+BEGIN
+  -- Super admins have admin access to all families
+  IF is_super_admin() THEN
+    RETURN 'admin';
+  END IF;
+
+  SELECT role INTO access_role
+  FROM family_access
+  WHERE identity_id = get_identity_id()
+    AND family_id = target_family_id
+    AND status = 'active';
+
+  RETURN access_role; -- Returns NULL if no active access
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+COMMENT ON FUNCTION get_family_role IS 'Get user role for a specific family (admin, member, viewer, or NULL if no active access)';
+
+-- Check if user is admin of a specific family
+CREATE OR REPLACE FUNCTION is_family_admin(target_family_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN get_family_role(target_family_id) = 'admin';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+COMMENT ON FUNCTION is_family_admin IS 'Check if user is admin of a specific family';
+
+-- Check if user is member (or higher) of a specific family
+CREATE OR REPLACE FUNCTION is_family_member(target_family_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN get_family_role(target_family_id) IS NOT NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+
+COMMENT ON FUNCTION is_family_member IS 'Check if user has any access to a specific family';
+
+-- ============================================================================
+-- RLS POLICIES
+-- ============================================================================
+
+-- Enable RLS on new tables
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE identities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE family_access ENABLE ROW LEVEL SECURITY;
+ALTER TABLE access_passes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE telegram_chat_admins ENABLE ROW LEVEL SECURITY;
+
+-- Enable RLS on existing tables that need it
+ALTER TABLE families ENABLE ROW LEVEL SECURITY;
+ALTER TABLE people ENABLE ROW LEVEL SECURITY;
+ALTER TABLE places ENABLE ROW LEVEL SECURITY;
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE relationships ENABLE ROW LEVEL SECURITY;
+ALTER TABLE claims ENABLE ROW LEVEL SECURITY;
+ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE images ENABLE ROW LEVEL SECURITY;
+
+-- --------------------------------------------------------------------------
+-- USERS policies
+-- --------------------------------------------------------------------------
+-- Users can read their own record (via identity)
+CREATE POLICY "users_select_own" ON users
+  FOR SELECT USING (
+    id IN (SELECT user_id FROM identities WHERE id = get_identity_id())
+  );
+
+-- Super admins can read all users
+CREATE POLICY "users_select_super_admin" ON users
+  FOR SELECT USING (is_super_admin());
+
+-- Users can update their own profile (but not role)
+CREATE POLICY "users_update_own" ON users
+  FOR UPDATE USING (
+    id IN (SELECT user_id FROM identities WHERE id = get_identity_id())
+  )
+  WITH CHECK (
+    id IN (SELECT user_id FROM identities WHERE id = get_identity_id())
+    AND role = 'user' -- Can't self-promote to super_admin
+  );
+
+-- --------------------------------------------------------------------------
+-- IDENTITIES policies
+-- --------------------------------------------------------------------------
+-- Users can read their own record
+CREATE POLICY "identities_select_own" ON identities
+  FOR SELECT USING (id = get_identity_id());
+
+-- Super admins can read all identities
+CREATE POLICY "identities_select_super_admin" ON identities
+  FOR SELECT USING (is_super_admin());
+
+-- Users can update their own identity profile
+CREATE POLICY "identities_update_own" ON identities
+  FOR UPDATE USING (id = get_identity_id())
+  WITH CHECK (id = get_identity_id());
+
+-- --------------------------------------------------------------------------
+-- FAMILY_ACCESS policies
+-- --------------------------------------------------------------------------
+-- Users can see access records for families they belong to
+CREATE POLICY "family_access_select" ON family_access
+  FOR SELECT USING (
+    family_id IN (SELECT get_user_family_ids())
+  );
+
+-- Family admins can manage access for their family
+CREATE POLICY "family_access_insert" ON family_access
+  FOR INSERT WITH CHECK (
+    is_family_admin(family_id)
+  );
+
+CREATE POLICY "family_access_update" ON family_access
+  FOR UPDATE USING (is_family_admin(family_id))
+  WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "family_access_delete" ON family_access
+  FOR DELETE USING (
+    is_family_admin(family_id)
+    OR identity_id = get_identity_id() -- Users can revoke their own access
+  );
+
+-- --------------------------------------------------------------------------
+-- ACCESS_PASSES policies (admin only via service role for security)
+-- --------------------------------------------------------------------------
+-- Family admins can see passes for their family
+CREATE POLICY "access_passes_select" ON access_passes
+  FOR SELECT USING (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- TELEGRAM_CHAT_ADMINS policies
+-- --------------------------------------------------------------------------
+-- Family members can see chat admins for their family
+CREATE POLICY "telegram_chat_admins_select" ON telegram_chat_admins
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+-- --------------------------------------------------------------------------
+-- FAMILIES policies
+-- --------------------------------------------------------------------------
+-- Users can see families they belong to
+CREATE POLICY "families_select" ON families
+  FOR SELECT USING (id IN (SELECT get_user_family_ids()));
+
+-- --------------------------------------------------------------------------
+-- PEOPLE policies
+-- --------------------------------------------------------------------------
+-- Family members can view people
+CREATE POLICY "people_select" ON people
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+-- Family admins can insert/update people
+CREATE POLICY "people_insert" ON people
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "people_update" ON people
+  FOR UPDATE USING (is_family_admin(family_id))
+  WITH CHECK (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- PLACES policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "places_select" ON places
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+CREATE POLICY "places_insert" ON places
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "places_update" ON places
+  FOR UPDATE USING (is_family_admin(family_id))
+  WITH CHECK (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- EVENTS policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "events_select" ON events
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+CREATE POLICY "events_insert" ON events
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "events_update" ON events
+  FOR UPDATE USING (is_family_admin(family_id))
+  WITH CHECK (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- STORIES policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "stories_select" ON stories
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+CREATE POLICY "stories_insert" ON stories
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "stories_update" ON stories
+  FOR UPDATE USING (is_family_admin(family_id))
+  WITH CHECK (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- RELATIONSHIPS policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "relationships_select" ON relationships
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+CREATE POLICY "relationships_insert" ON relationships
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "relationships_update" ON relationships
+  FOR UPDATE USING (is_family_admin(family_id))
+  WITH CHECK (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- CLAIMS policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "claims_select" ON claims
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+-- --------------------------------------------------------------------------
+-- QUESTIONS policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "questions_select" ON questions
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+-- --------------------------------------------------------------------------
+-- IMAGES policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "images_select" ON images
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+-- --------------------------------------------------------------------------
+-- CONVERSATION_EVENTS policies (admin only - sensitive data)
+-- --------------------------------------------------------------------------
+CREATE POLICY "conversation_events_select" ON conversation_events
+  FOR SELECT USING (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- EVENT_LOG policies (admin only - audit trail)
+-- --------------------------------------------------------------------------
+CREATE POLICY "event_log_select" ON event_log
+  FOR SELECT USING (is_family_admin(family_id));
 
 -- ============================================================================
 -- END OF SCHEMA

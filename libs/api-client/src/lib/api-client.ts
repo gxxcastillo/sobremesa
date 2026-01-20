@@ -1,4 +1,9 @@
+// ============================================================================
+// Types
+// ============================================================================
+
 export interface FamilySummary {
+  familyId?: string;
   familyName: string;
   people: Person[];
   relationships: Relationship[];
@@ -58,12 +63,78 @@ export interface AllowedChat {
   note: string | null;
 }
 
+// ============================================================================
+// Auth Types
+// ============================================================================
+
+/**
+ * User profile from the API
+ * Note: `id` is the user ID (from users table), not the identity ID
+ */
+export interface AuthUser {
+  id: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  provider: string;
+  providerUsername: string | null;
+  role: 'user' | 'super_admin';
+}
+
+export interface FamilyWithRole {
+  familyId: string;
+  familyName: string;
+  role: 'admin' | 'member' | 'viewer';
+  grantedAt: string;
+}
+
+export interface TelegramLoginData {
+  id: number;
+  first_name: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+  auth_date: number;
+  hash: string;
+}
+
+export interface TelegramLoginResponse {
+  token: string;
+  user: AuthUser;
+  families: FamilyWithRole[];
+  isNewUser: boolean;
+}
+
+export interface AccessPassRedemptionResponse {
+  token: string;
+  user: AuthUser;
+  families: FamilyWithRole[];
+  grantedFamilyId: string;
+  grantedRole: string;
+}
+
+export interface MeResponse {
+  user: AuthUser;
+  families: FamilyWithRole[];
+}
+
+export interface PublicStats {
+  totalFamilies: number;
+  totalPeople: number;
+  totalStories: number;
+  totalEvents: number;
+}
+
+// ============================================================================
+// API Client
+// ============================================================================
+
 /**
  * API Client for Studio app
  * Communicates with the backend API to fetch family summaries and manage admin actions
  */
 export class StudioApiClient {
   private baseUrl: string;
+  private authToken: string | null = null;
 
   constructor(baseUrl = '') {
     // Prefer explicit env override, then passed-in value, then current origin (no explicit port), then fallback
@@ -77,16 +148,45 @@ export class StudioApiClient {
       envBase || baseUrl || originFallback || 'https://sobremesa.x:3000';
   }
 
+  /**
+   * Set the auth token for authenticated requests
+   */
+  setAuthToken(token: string | null): void {
+    this.authToken = token;
+  }
+
+  /**
+   * Clear the auth token
+   */
+  clearAuthToken(): void {
+    this.authToken = null;
+  }
+
+  /**
+   * Logout - clear token
+   */
+  logout(): void {
+    this.clearAuthToken();
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
   ): Promise<T> {
     const url = `${this.baseUrl}/api${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+
+    // Add auth header if token is set
+    if (this.authToken) {
+      headers['Authorization'] = `Bearer ${this.authToken}`;
+    }
+
     const response = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
       ...options,
     });
 
@@ -99,6 +199,66 @@ export class StudioApiClient {
 
     return response.json();
   }
+
+  // ============================================================================
+  // Auth Methods
+  // ============================================================================
+
+  /**
+   * Login with Telegram Login Widget data
+   */
+  async loginWithTelegram(
+    data: TelegramLoginData,
+  ): Promise<TelegramLoginResponse> {
+    const response = await this.request<TelegramLoginResponse>(
+      '/auth/telegram',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+    );
+
+    // Auto-set token on successful login
+    this.setAuthToken(response.token);
+
+    return response;
+  }
+
+  /**
+   * Redeem an access pass token
+   */
+  async redeemAccessPass(token: string): Promise<AccessPassRedemptionResponse> {
+    const response = await this.request<AccessPassRedemptionResponse>(
+      `/auth/pass/${encodeURIComponent(token)}`,
+    );
+
+    // Auto-set token on successful redemption
+    this.setAuthToken(response.token);
+
+    return response;
+  }
+
+  /**
+   * Get current user info
+   */
+  async getMe(): Promise<MeResponse> {
+    return this.request<MeResponse>('/auth/me');
+  }
+
+  // ============================================================================
+  // Public Methods
+  // ============================================================================
+
+  /**
+   * Get public aggregate stats
+   */
+  async getPublicStats(): Promise<PublicStats> {
+    return this.request<PublicStats>('/public/stats');
+  }
+
+  // ============================================================================
+  // Family Methods
+  // ============================================================================
 
   /**
    * Fetch the family summary from the API
@@ -144,11 +304,17 @@ export class StudioApiClient {
    * @returns Promise<Blob> The generated book (PDF or similar)
    */
   async generateBook(familyId: string, audience = 'general'): Promise<Blob> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.authToken) {
+      headers['Authorization'] = `Bearer ${this.authToken}`;
+    }
+
     const response = await fetch(`${this.baseUrl}/api/book/generate`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({ familyId, audience }),
     });
 
@@ -159,7 +325,9 @@ export class StudioApiClient {
     return response.blob();
   }
 
-  // Admin methods
+  // ============================================================================
+  // Admin Methods (Super Admin only)
+  // ============================================================================
 
   /**
    * Get list of allowed chats

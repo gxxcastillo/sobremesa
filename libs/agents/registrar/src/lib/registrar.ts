@@ -298,7 +298,7 @@ export class RegistrarAgent {
         result.storiesCreated++;
       }
 
-      // 6. Process Claims (with conflict detection)
+      // 6. Process Claims (with conflict detection and identity resolution)
       for (const claim of domainModel.claims) {
         // Find entity ID if we can resolve it
         let entityId: string | undefined;
@@ -309,6 +309,103 @@ export class RegistrarAgent {
         if (subjectPersonId) {
           entityId = subjectPersonId;
           entityType = 'person';
+        }
+
+        // Handle identity claims - merge descriptive name with real name
+        if (claim.claimType === 'identity' && claim.claimValue) {
+          const realName = (claim.claimValue as Record<string, unknown>)
+            .real_name as string | undefined;
+          if (realName && claim.subject) {
+            // Find the person with the descriptive name (e.g., "Dexter's ex-wife")
+            const descriptivePerson = await this.personRepo.findByFuzzyMatch(
+              familyId,
+              claim.subject,
+              [],
+            );
+
+            if (descriptivePerson) {
+              // Check if someone with the real name already exists
+              const realNamePerson = await this.personRepo.findByFuzzyMatch(
+                familyId,
+                realName,
+                [],
+              );
+
+              if (
+                realNamePerson &&
+                realNamePerson.id !== descriptivePerson.id
+              ) {
+                // Both exist - merge the descriptive one into the real one
+                // Add the descriptive name as an alias to the real person
+                const newAliases = [
+                  ...(realNamePerson.aliases || []),
+                  claim.subject,
+                  ...(descriptivePerson.aliases || []).filter(
+                    (a) => !a.startsWith('related-to:'),
+                  ),
+                ];
+                await this.personRepo.updateAliases(
+                  familyId,
+                  realNamePerson.id,
+                  [...new Set(newAliases)],
+                );
+
+                // Update the personIdMap to point to the real person
+                personIdMap.set(claim.subject, realNamePerson.id);
+                for (const alias of descriptivePerson.aliases || []) {
+                  personIdMap.set(alias, realNamePerson.id);
+                }
+
+                // Mark the descriptive person as merged (if it's a placeholder)
+                if (descriptivePerson.isPlaceholder) {
+                  await this.personRepo.mergePlaceholderIntoPerson(
+                    familyId,
+                    descriptivePerson.id,
+                    realNamePerson.id,
+                  );
+                }
+
+                this.logger.info(
+                  {
+                    familyId,
+                    descriptiveName: claim.subject,
+                    realName,
+                    mergedIntoId: realNamePerson.id,
+                  },
+                  'Merged descriptive person into real person via identity claim',
+                );
+              } else if (!realNamePerson) {
+                // Only descriptive person exists - update their name
+                try {
+                  await this.personRepo.updateName(
+                    familyId,
+                    descriptivePerson.id,
+                    realName,
+                    true, // Add old name as alias
+                  );
+
+                  // Update personIdMap
+                  personIdMap.set(realName, descriptivePerson.id);
+                  personIdMap.set(claim.subject, descriptivePerson.id);
+
+                  this.logger.info(
+                    {
+                      familyId,
+                      descriptiveName: claim.subject,
+                      realName,
+                      personId: descriptivePerson.id,
+                    },
+                    'Updated person name from identity claim',
+                  );
+                } catch (error) {
+                  this.logger.warn(
+                    { error, personId: descriptivePerson.id },
+                    'Failed to update person name from identity claim',
+                  );
+                }
+              }
+            }
+          }
         }
 
         // Check for conflicts with existing claims
