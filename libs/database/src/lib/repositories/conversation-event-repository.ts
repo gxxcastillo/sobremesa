@@ -16,6 +16,10 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
 
   /**
    * Find unprocessed events for a family.
+   * Uses processing_queue for processing status and excludes redacted events.
+   * Events are considered unprocessed if:
+   * - They have no queue entry yet, OR
+   * - They have a queue entry with status='queued'
    */
   async findUnprocessed(
     familyId: string,
@@ -23,10 +27,18 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   ): Promise<ConversationEvent[]> {
     const { data, error } = await this.client
       .from(this.tableName)
-      .select('*')
+      .select(
+        `
+        *,
+        queue:processing_queue(status),
+        redacted:conversation_redactions(id)
+      `,
+      )
       .eq('family_id', familyId)
-      .eq('processed', false)
-      .eq('redacted', false)
+      .or('queue.status.is.null,queue.status.eq.queued', {
+        foreignTable: 'processing_queue',
+      })
+      .is('redacted.id', null)
       .order('occurred_at', { ascending: true })
       .limit(limit);
 
@@ -34,11 +46,12 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       throw new Error(`Failed to find unprocessed events: ${error.message}`);
     }
 
-    return (data || []).map((row) => this.mapFromDb(row));
+    return (data || []).map((row) => this.filterJoinedFields(row));
   }
 
   /**
    * Find recent events for context.
+   * Excludes redacted events using LEFT JOIN.
    */
   async findRecent(
     familyId: string,
@@ -47,10 +60,15 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   ): Promise<ConversationEvent[]> {
     const { data, error } = await this.client
       .from(this.tableName)
-      .select('*')
+      .select(
+        `
+        *,
+        redacted:conversation_redactions(id)
+      `,
+      )
       .eq('family_id', familyId)
       .eq('conversation_id', conversationId)
-      .eq('redacted', false)
+      .is('redacted.id', null)
       .order('occurred_at', { ascending: false })
       .limit(limit);
 
@@ -58,35 +76,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       throw new Error(`Failed to find recent events: ${error.message}`);
     }
 
-    return (data || []).map((row) => this.mapFromDb(row));
-  }
-
-  /**
-   * Mark an event as processed.
-   */
-  async markProcessed(
-    familyId: string,
-    id: string,
-    error?: string,
-  ): Promise<void> {
-    const updates: Record<string, unknown> = {
-      processed: true,
-      processed_at: new Date().toISOString(),
-    };
-
-    if (error) {
-      updates['processing_error'] = error;
-    }
-
-    const { error: dbError } = await this.client
-      .from(this.tableName)
-      .update(updates)
-      .eq('family_id', familyId)
-      .eq('id', id);
-
-    if (dbError) {
-      throw new Error(`Failed to mark event as processed: ${dbError.message}`);
-    }
+    return (data || []).map((row) => this.filterJoinedFields(row));
   }
 
   /**
@@ -120,6 +110,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   /**
    * Find unprocessed events of a specific type for a conversation.
    * Useful for consolidating events (e.g., multiple join events).
+   * Uses processing_queue for processing status and excludes redacted events.
    */
   async findUnprocessedByType(
     familyId: string,
@@ -128,12 +119,20 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   ): Promise<ConversationEvent[]> {
     const { data, error } = await this.client
       .from(this.tableName)
-      .select('*')
+      .select(
+        `
+        *,
+        queue:processing_queue(status),
+        redacted:conversation_redactions(id)
+      `,
+      )
       .eq('family_id', familyId)
       .eq('conversation_id', conversationId)
       .eq('event_type', eventType)
-      .eq('processed', false)
-      .eq('redacted', false)
+      .or('queue.status.is.null,queue.status.eq.queued', {
+        foreignTable: 'processing_queue',
+      })
+      .is('redacted.id', null)
       .order('occurred_at', { ascending: true });
 
     if (error) {
@@ -142,27 +141,17 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       );
     }
 
-    return (data || []).map((row) => this.mapFromDb(row));
+    return (data || []).map((row) => this.filterJoinedFields(row));
   }
 
   /**
-   * Mark multiple events as processed in a single operation.
+   * Filter out joined fields that are not part of ConversationEvent schema.
+   * These fields (queue, redacted) are used for filtering but should not be returned.
    */
-  async markManyProcessed(familyId: string, ids: string[]): Promise<void> {
-    if (ids.length === 0) return;
-
-    const { error } = await this.client
-      .from(this.tableName)
-      .update({
-        processed: true,
-        processed_at: new Date().toISOString(),
-      })
-      .eq('family_id', familyId)
-      .in('id', ids);
-
-    if (error) {
-      throw new Error(`Failed to mark events as processed: ${error.message}`);
-    }
+  private filterJoinedFields(row: Record<string, unknown>): ConversationEvent {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { queue, redacted, ...eventData } = row;
+    return mapRowToCamelCase<ConversationEvent>(eventData);
   }
 
   protected mapFromDb(row: Record<string, unknown>): ConversationEvent {

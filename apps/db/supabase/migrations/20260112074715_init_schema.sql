@@ -121,17 +121,6 @@ CREATE TABLE IF NOT EXISTS conversation_events (
   -- Raw provider payload (optional; useful for debugging/replay)
   source_payload JSONB,
 
-  -- Processing state
-  processed BOOLEAN DEFAULT FALSE,
-  processed_at TIMESTAMPTZ,
-  processing_error TEXT,
-
-  -- Privacy / redaction
-  redacted BOOLEAN DEFAULT FALSE,
-  redacted_at TIMESTAMPTZ,
-  redacted_by VARCHAR(255),
-  redaction_reason TEXT,
-
   -- Integrity primitive (recommended: HMAC, not raw hash)
   content_hmac TEXT,
 
@@ -143,15 +132,11 @@ CREATE TABLE IF NOT EXISTS conversation_events (
   CONSTRAINT uq_conversation_events_family_id UNIQUE (family_id, id)
 );
 
-COMMENT ON TABLE conversation_events IS 'Ingestion ledger. RLS enabled: no direct client access; read via backend/admin only.';
+COMMENT ON TABLE conversation_events IS 'Immutable ingestion ledger. State in processing_queue, redaction in conversation_redactions. RLS enabled: no direct client access; read via backend/admin only.';
 COMMENT ON COLUMN conversation_events.metadata IS 'Provider-specific metadata (e.g., Telegram: message_id, chat_id, edit_date; WhatsApp: status_id, timestamp_ms).';
 
 CREATE INDEX IF NOT EXISTS idx_conv_events_family_time
   ON conversation_events(family_id, occurred_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_conv_events_unprocessed
-  ON conversation_events(family_id, processed)
-  WHERE processed = FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_conv_events_family_conversation
   ON conversation_events(family_id, source, conversation_id);
@@ -1003,6 +988,42 @@ CREATE INDEX IF NOT EXISTS idx_event_log_family_actor
   ON event_log(family_id, actor);
 
 -- ============================================================================
+-- CONVERSATION REDACTIONS (Non-destructive privacy controls)
+-- ============================================================================
+-- Tracks redaction separately to keep conversation_events immutable
+CREATE TABLE IF NOT EXISTS conversation_redactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  family_id UUID NOT NULL REFERENCES families(id),
+  conversation_event_id UUID NOT NULL
+    REFERENCES conversation_events(id) ON DELETE RESTRICT,
+
+  -- Redaction metadata
+  redacted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  redacted_by_identity_id UUID REFERENCES identities(id),
+  redaction_reason TEXT NOT NULL,
+
+  -- Audit trail link
+  event_log_id UUID REFERENCES event_log(id),
+
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+
+  UNIQUE(family_id, conversation_event_id)
+);
+
+COMMENT ON TABLE conversation_redactions IS
+  'Non-destructive redaction log. conversation_events remains immutable.';
+
+CREATE INDEX IF NOT EXISTS idx_conv_redactions_family_event
+  ON conversation_redactions(family_id, conversation_event_id);
+
+CREATE INDEX IF NOT EXISTS idx_conv_redactions_redacted_at
+  ON conversation_redactions(family_id, redacted_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_conv_redactions_redacted_by
+  ON conversation_redactions(family_id, redacted_by_identity_id)
+  WHERE redacted_by_identity_id IS NOT NULL;
+
+-- ============================================================================
 -- ALLOWED CHATS (Global allowlist - checked before any processing)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS allowed_chats (
@@ -1138,14 +1159,17 @@ CREATE INDEX IF NOT EXISTS idx_integrity_checkpoints_family_time
 -- Important: All views use security_invoker=true to respect RLS policies
 -- instead of using SECURITY DEFINER which bypasses RLS
 
-CREATE OR REPLACE VIEW active_conversation_events 
+CREATE OR REPLACE VIEW active_conversation_events
 WITH (security_invoker=true) AS
-SELECT *
-FROM conversation_events
-WHERE redacted = FALSE
-ORDER BY occurred_at DESC;
+SELECT ce.*
+FROM conversation_events ce
+LEFT JOIN conversation_redactions cr
+  ON cr.family_id = ce.family_id
+  AND cr.conversation_event_id = ce.id
+WHERE cr.id IS NULL
+ORDER BY ce.occurred_at DESC;
 
-COMMENT ON VIEW active_conversation_events IS 'Non-redacted conversation events (raw input).';
+COMMENT ON VIEW active_conversation_events IS 'Non-redacted conversation events (immutable raw input).';
 
 CREATE OR REPLACE VIEW pending_questions 
 WITH (security_invoker=true) AS
@@ -1385,6 +1409,44 @@ SET search_path = '';
 COMMENT ON FUNCTION is_family_member IS 'Check if user has any access to a specific family';
 
 -- ============================================================================
+-- IMMUTABILITY ENFORCEMENT
+-- ============================================================================
+
+-- Prevent ALL updates to conversation_events
+CREATE OR REPLACE FUNCTION prevent_conversation_event_updates()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'conversation_events is immutable - updates are not allowed'
+    USING HINT = 'Use processing_queue for state management, conversation_redactions for privacy';
+END;
+$$ LANGUAGE plpgsql
+SET search_path = '';
+
+COMMENT ON FUNCTION prevent_conversation_event_updates IS 'Enforce immutability of conversation_events table';
+
+CREATE TRIGGER enforce_conversation_events_immutable
+  BEFORE UPDATE ON conversation_events
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_conversation_event_updates();
+
+-- Prevent DELETEs (use redactions instead)
+CREATE OR REPLACE FUNCTION prevent_conversation_event_deletes()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'conversation_events is immutable - deletes are not allowed'
+    USING HINT = 'Use conversation_redactions for privacy controls';
+END;
+$$ LANGUAGE plpgsql
+SET search_path = '';
+
+COMMENT ON FUNCTION prevent_conversation_event_deletes IS 'Enforce immutability of conversation_events table';
+
+CREATE TRIGGER enforce_conversation_events_no_delete
+  BEFORE DELETE ON conversation_events
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_conversation_event_deletes();
+
+-- ============================================================================
 -- RLS POLICIES
 -- ============================================================================
 
@@ -1399,6 +1461,7 @@ ALTER TABLE telegram_chat_admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE families ENABLE ROW LEVEL SECURITY;
 ALTER TABLE family_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversation_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE conversation_redactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE processing_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE people ENABLE ROW LEVEL SECURITY;
 ALTER TABLE places ENABLE ROW LEVEL SECURITY;
@@ -1682,6 +1745,18 @@ CREATE POLICY "integrity_checkpoints_insert" ON integrity_checkpoints
 -- --------------------------------------------------------------------------
 CREATE POLICY "conversation_events_select" ON conversation_events
   FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+-- --------------------------------------------------------------------------
+-- CONVERSATION_REDACTIONS policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "conversation_redactions_select" ON conversation_redactions
+  FOR SELECT USING (family_id IN (SELECT get_user_family_ids()));
+
+CREATE POLICY "conversation_redactions_insert" ON conversation_redactions
+  FOR INSERT WITH CHECK (is_family_admin(family_id));
+
+CREATE POLICY "conversation_redactions_delete" ON conversation_redactions
+  FOR DELETE USING (is_family_admin(family_id));
 
 -- --------------------------------------------------------------------------
 -- EVENT_LOG policies

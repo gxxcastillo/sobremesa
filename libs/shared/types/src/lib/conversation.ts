@@ -46,23 +46,32 @@ export interface ConversationEvent {
   metadata?: Record<string, unknown>;
   sourcePayload?: Record<string, unknown>;
 
-  // Processing state
-  processed: boolean;
-  processedAt?: Date;
-  processingError?: string;
-
-  // Privacy
-  redacted: boolean;
-  redactedAt?: Date;
-  redactedBy?: string;
-  redactionReason?: string;
-
   // Integrity
   contentHmac?: string;
 
   // Timestamps
   occurredAt: Date;
   ingestedAt: Date;
+}
+
+/**
+ * A redaction record for a conversation event (non-destructive privacy control).
+ * conversation_events remains immutable; redaction is tracked separately.
+ */
+export interface ConversationRedaction {
+  id: string;
+  familyId: string;
+  conversationEventId: string;
+
+  // Redaction metadata
+  redactedAt: Date;
+  redactedByIdentityId?: string;
+  redactionReason: string;
+
+  // Audit trail link
+  eventLogId?: string;
+
+  createdAt: Date;
 }
 
 /**

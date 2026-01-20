@@ -251,8 +251,6 @@ export class MessageIngester {
       languageOriginal: detectLanguage(input.text),
       metadata: input.metadata,
       sourcePayload: input.sourcePayload,
-      processed: false,
-      redacted: false,
       occurredAt: input.occurredAt,
       ingestedAt: new Date(),
     });
@@ -329,8 +327,6 @@ export class MessageIngester {
         : undefined,
       metadata,
       sourcePayload: input.sourcePayload,
-      processed: false,
-      redacted: false,
       occurredAt: input.occurredAt,
       ingestedAt: new Date(),
     });
@@ -407,8 +403,6 @@ export class MessageIngester {
         : undefined,
       metadata,
       sourcePayload: input.sourcePayload,
-      processed: false,
-      redacted: false,
       occurredAt: input.occurredAt,
       ingestedAt: new Date(),
     });
@@ -489,8 +483,6 @@ export class MessageIngester {
         : undefined,
       metadata,
       sourcePayload: input.sourcePayload,
-      processed: false,
-      redacted: false,
       occurredAt: input.occurredAt,
       ingestedAt: new Date(),
     });
@@ -565,8 +557,6 @@ export class MessageIngester {
       eventType: input.type,
       metadata,
       sourcePayload: input.sourcePayload,
-      processed: false,
-      redacted: false,
       occurredAt: input.occurredAt,
       ingestedAt: new Date(),
     });

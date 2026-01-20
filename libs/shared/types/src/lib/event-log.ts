@@ -5,6 +5,8 @@
  * - event_ingested: Raw message received from chat provider
  * - event_processed: Message processed by Scribe/Curator
  * - event_filtered: Message filtered out by Intern (spam, off-topic, etc.)
+ * - event_redacted: Event redacted for privacy
+ * - event_unredacted: Event redaction reversed
  * - image_linked: Image linked to a conversation event
  *
  * Question lifecycle:
@@ -31,6 +33,8 @@ export type EventLogType =
   | 'event_ingested'
   | 'event_processed'
   | 'event_filtered'
+  | 'event_redacted'
+  | 'event_unredacted'
   | 'image_linked'
   | 'question_proposed'
   | 'question_asked'

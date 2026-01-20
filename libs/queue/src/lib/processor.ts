@@ -8,6 +8,7 @@ import {
   EventLogRepository,
   QuestionRepository,
   ImageRepository,
+  ProcessingQueueRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
@@ -167,6 +168,7 @@ export class MessageProcessor {
   private eventLog: EventLogRepository;
   private questionRepo: QuestionRepository;
   private imageRepo: ImageRepository;
+  private queueRepo: ProcessingQueueRepository;
   private router?: RouterProcessor;
   private adminProcessor?: AdminProcessor;
   private historianProcessor?: HistorianProcessor;
@@ -182,11 +184,13 @@ export class MessageProcessor {
     eventLog?: EventLogRepository;
     questionRepo?: QuestionRepository;
     imageRepo?: ImageRepository;
+    queueRepo?: ProcessingQueueRepository;
   }) {
     this.eventRepo = options?.eventRepo || new ConversationEventRepository();
     this.eventLog = options?.eventLog || new EventLogRepository();
     this.questionRepo = options?.questionRepo || new QuestionRepository();
     this.imageRepo = options?.imageRepo || new ImageRepository();
+    this.queueRepo = options?.queueRepo || new ProcessingQueueRepository();
     this.logger = createLogger({ name: 'processor' });
   }
 
@@ -276,21 +280,13 @@ export class MessageProcessor {
         };
       }
 
-      // Skip already processed events
-      if (event.processed) {
-        this.logger.debug({ eventId }, 'Event already processed, skipping');
+      // Get the queue item for this event
+      const queueItem = await this.queueRepo.findByEventId(familyId, eventId);
+      if (!queueItem) {
+        this.logger.warn({ eventId }, 'Queue item not found for event');
         return {
-          success: true,
-          duration: Date.now() - startTime,
-        };
-      }
-
-      // Skip redacted events
-      if (event.redacted) {
-        this.logger.debug({ eventId }, 'Event is redacted, skipping');
-        await this.eventRepo.markProcessed(familyId, eventId);
-        return {
-          success: true,
+          success: false,
+          error: `Queue item not found for event: ${eventId}`,
           duration: Date.now() - startTime,
         };
       }
@@ -363,7 +359,7 @@ export class MessageProcessor {
       if (routingAction === 'ignore') {
         // Message should be ignored - mark as processed and return
         this.logger.info({ eventId }, 'Message ignored by router');
-        await this.eventRepo.markProcessed(familyId, eventId);
+        await this.queueRepo.complete(familyId, queueItem.id);
         return {
           success: true,
           duration: Date.now() - startTime,
@@ -391,7 +387,7 @@ export class MessageProcessor {
           );
         }
         // Mark as processed after admin handling
-        await this.eventRepo.markProcessed(familyId, eventId);
+        await this.queueRepo.complete(familyId, queueItem.id);
         return {
           success: true,
           duration: Date.now() - startTime,
@@ -424,7 +420,7 @@ export class MessageProcessor {
       }
 
       // Mark event as processed
-      await this.eventRepo.markProcessed(familyId, eventId);
+      await this.queueRepo.complete(familyId, queueItem.id);
 
       // Log processing complete
       await this.eventLog.log({

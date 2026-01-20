@@ -346,11 +346,8 @@ export class AdminAgent {
       { priority: Priorities.MEMBER_NOTIFICATION },
     );
 
-    // Mark all events as processed
-    const eventIds = joinEvents.map((e) => e.id);
-    await this.eventRepo.markManyProcessed(familyId, eventIds);
-
     // Mark queue items as done
+    const eventIds = joinEvents.map((e) => e.id);
     const queueItems = await this.queueRepo.findPendingByEventIds(
       familyId,
       eventIds,
