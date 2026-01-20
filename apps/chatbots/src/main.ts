@@ -21,6 +21,7 @@ function validateEnv(): { token: string; anthropicApiKey?: string } {
   if (!process.env['SUPABASE_ANON_KEY']) missing.push('SUPABASE_ANON_KEY');
   if (!process.env['SUPABASE_SERVICE_ROLE_KEY'])
     missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (!process.env['ACCESS_PASS_SECRET']) missing.push('ACCESS_PASS_SECRET');
 
   if (missing.length > 0) {
     logger.error({ missing }, 'Missing required environment variables');

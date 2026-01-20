@@ -9,6 +9,31 @@ import {
 import { authPlugin, hasAccessToFamily } from '@sobremesa/auth';
 import { authRoutes } from './routes/auth';
 
+/**
+ * Validate required environment variables on startup
+ */
+function validateEnv(): void {
+  const missing: string[] = [];
+
+  if (!process.env['SUPABASE_URL']) missing.push('SUPABASE_URL');
+  if (!process.env['SUPABASE_ANON_KEY']) missing.push('SUPABASE_ANON_KEY');
+  if (!process.env['SUPABASE_SERVICE_ROLE_KEY'])
+    missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (!process.env['ACCESS_PASS_SECRET']) missing.push('ACCESS_PASS_SECRET');
+  if (!process.env['TELEGRAM_BOT_TOKEN']) missing.push('TELEGRAM_BOT_TOKEN');
+
+  if (missing.length > 0) {
+    console.error(
+      '❌ Missing required environment variables:',
+      missing.join(', '),
+    );
+    process.exit(1);
+  }
+}
+
+// Validate environment variables before starting
+validateEnv();
+
 const port = parseInt(process.env.PORT || '3001', 10);
 const hostname = process.env.HOST || '0.0.0.0';
 const tlsCertPath = process.env.TLS_CERT;
