@@ -1,5 +1,7 @@
 # Data Architecture Redesign Plan: Robust Ingestion & Entity Resolution
 
+> **Part of**: [Data Architecture Overview](./2026-01-21-data-architecture-overview.md) - Start here for the big picture
+
 ## Executive Summary
 
 This plan addresses three key objectives:
@@ -8,9 +10,9 @@ This plan addresses three key objectives:
 2. **Extensible entity ingestion** - Improve entity resolution with full provenance, auditability, and reversibility
 3. **Knowledge graph readiness** - Prepare the architecture for future KG integration
 
-## Key Design Decisions (Revised 2026-01-21)
+## Key Design Decisions
 
-This plan has been updated to resolve inconsistencies and clarify design decisions:
+Summary of key architectural choices:
 
 1. **Per-family sequence numbers** - Uses atomic counter table (`family_sequence_counters`) to avoid race conditions in concurrent inserts
 2. **claim_entities replaces entity_evidence** - Many-to-many join table for claim-entity relationships, supporting multi-entity claims
@@ -22,8 +24,6 @@ This plan has been updated to resolve inconsistencies and clarify design decisio
 8. **Circular merge prevention** - Database trigger traverses **`entity_merges` table directly** (not denormalized columns) to prevent A→B→C→A merge cycles
 9. **Claim cascade queries** - `get_entity_merge_chain()` helper finds claims across merged entity predecessors
 10. **LLM evaluation via flag polling with locking** - No separate queue table; uses `needs_llm_evaluation` + `llm_evaluated_at` columns. **Includes lock/lease mechanism** (`llm_eval_locked_at`, `llm_eval_locked_by`) to prevent duplicate processing by concurrent workers.
-
-These changes ensure consistency throughout the schema and eliminate redundant tables.
 
 ## Current State Analysis
 
@@ -71,22 +71,41 @@ These changes ensure consistency throughout the schema and eliminate redundant t
 **Changes**:
 
 ```sql
--- Add sequence_number column (per-family, not global)
--- DEFAULT 0 is temporary for migration; consider dropping after backfill to ensure
--- all inserts go through the trigger (prevents accidental 0 values if trigger is bypassed)
-ALTER TABLE conversation_events
-  ADD COLUMN sequence_number BIGINT NOT NULL DEFAULT 0;
+-- ============================================
+-- SAFE MIGRATION ORDER FOR EXISTING DATA
+-- ============================================
 
--- Counter table for atomic sequence assignment (avoids race conditions)
+-- Step 1: Add column as NULLABLE (no default yet)
+ALTER TABLE conversation_events
+  ADD COLUMN sequence_number BIGINT;
+
+-- Step 2: Counter table for atomic sequence assignment
 CREATE TABLE family_sequence_counters (
   family_id UUID PRIMARY KEY REFERENCES families(id),
   next_sequence BIGINT NOT NULL DEFAULT 1
 );
 
--- Initialize counters for existing families
+-- Step 3: Backfill existing events deterministically (by occurred_at, then created_at, then id)
+WITH numbered_events AS (
+  SELECT id, family_id,
+         ROW_NUMBER() OVER (PARTITION BY family_id ORDER BY occurred_at, created_at, id) as seq
+  FROM conversation_events
+)
+UPDATE conversation_events ce
+SET sequence_number = ne.seq
+FROM numbered_events ne
+WHERE ce.id = ne.id;
+
+-- Step 4: Initialize counters to MAX+1 per family (AFTER backfill)
 INSERT INTO family_sequence_counters (family_id, next_sequence)
-SELECT id, 1 FROM families
-ON CONFLICT (family_id) DO NOTHING;
+SELECT family_id, COALESCE(MAX(sequence_number), 0) + 1
+FROM conversation_events
+GROUP BY family_id
+ON CONFLICT (family_id) DO UPDATE SET next_sequence = EXCLUDED.next_sequence;
+
+-- Step 5: Now make column NOT NULL
+ALTER TABLE conversation_events
+  ALTER COLUMN sequence_number SET NOT NULL;
 
 -- Trigger to atomically assign per-family sequence numbers
 -- Uses UPDATE ... RETURNING for atomic increment (no race conditions)
@@ -182,10 +201,11 @@ CREATE TABLE ingestion_batches (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id UUID NOT NULL REFERENCES families(id),
   source VARCHAR(50) NOT NULL,
-  batch_start_time TIMESTAMPTZ NOT NULL,
-  batch_end_time TIMESTAMPTZ NOT NULL,
-  event_count INTEGER NOT NULL,
-  status VARCHAR(20) DEFAULT 'completed', -- 'completed', 'partial', 'failed'
+  -- Wall-clock time when ingestion job started/ended (NOT event timestamps)
+  ingestion_started_at TIMESTAMPTZ NOT NULL,
+  ingestion_ended_at TIMESTAMPTZ,      -- NULL until batch completes
+  event_count INTEGER,                 -- NULL until batch completes
+  status VARCHAR(20) DEFAULT 'in_progress', -- 'in_progress', 'completed', 'partial', 'failed'
   metadata JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -212,44 +232,61 @@ ALTER TABLE conversation_events
 
 **Entity tables are just materialized views** for query performance. The canonical truth lives in claims.
 
-> **ARCHITECTURAL INVARIANT: Entity Tables as Materialized Views**
+> **ARCHITECTURAL INVARIANT: Merge Source of Truth**
 >
-> Entity tables (`people`, `places`, `events`) are **derived data** - they exist for query performance, not as sources of truth:
+> **`entity_merges` is THE single source of truth for all merge decisions.**
 >
 > - **Source of truth for facts**: `claims` table (with `source_event_id` provenance)
 > - **Source of truth for merges**: `entity_merges` table
-> - **Derived/cached data**: Entity table fields (name, aliases, etc.) and `superseded_by` columns
+> - **Derived cache**: `superseded_by` and `superseded_at` columns on entity tables
 >
-> **Implication**: Entity tables can be fully reconstructed by replaying claims. If an entity table is corrupted or inconsistent, re-process the relevant `conversation_events` through Scribe→Registrar pipeline.
+> **Sync contract:**
 >
-> **Sync guarantee**: Registrar writes to `entity_merges` AND updates `superseded_by` in the same transaction. No other component should write to `superseded_by` directly.
-
-**Source of Truth Hierarchy**:
-
-1. `conversation_events` → immutable event ledger (append-only)
-2. `claims` → facts extracted from events (append-only, immutable core)
-3. `entity_merges` → merge decisions (canonical)
-4. `superseded_by` columns → denormalized from #3 for fast `WHERE superseded_by IS NULL` queries
+> - Registrar writes to `entity_merges` AND updates `superseded_by` in the same transaction
+> - If `entity_merges` says A→B is `accepted`, then `A.superseded_by = B`
+> - If they ever diverge, `entity_merges` wins (rebuild cache from it)
+> - No other component may write to `superseded_by` directly
+>
+> **Implication**: Entity tables can be fully reconstructed by replaying claims + applying merges from `entity_merges`. If an entity table is corrupted or inconsistent, re-process the relevant `conversation_events` through Scribe→Registrar pipeline.
+>
+> **Note**: `merge_reason` lives on `entity_merges`, NOT on entity tables. This avoids duplicating data and ensures single source of truth.
 
 **Changes**:
 
 ```sql
+-- First, add composite unique constraints to enable tenant-safe FKs
+-- (These may already exist from other migrations)
+ALTER TABLE people ADD CONSTRAINT uq_people_family_id UNIQUE (family_id, id);
+ALTER TABLE places ADD CONSTRAINT uq_places_family_id UNIQUE (family_id, id);
+ALTER TABLE events ADD CONSTRAINT uq_events_family_id UNIQUE (family_id, id);
+ALTER TABLE stories ADD CONSTRAINT uq_stories_family_id UNIQUE (family_id, id);
+
 -- Add merge tracking to core entity tables (denormalized from entity_merges for query performance)
 -- These columns are populated by Registrar when creating entity_merge records
+-- Note: merge_reason is NOT stored here (it's on entity_merges - the source of truth)
 ALTER TABLE people
-  ADD COLUMN superseded_by UUID REFERENCES people(id),
+  ADD COLUMN superseded_by UUID,
   ADD COLUMN superseded_at TIMESTAMPTZ,
-  ADD COLUMN merge_reason TEXT; -- 'identity_claim', 'fuzzy_match', 'manual_merge'
+  ADD CONSTRAINT fk_people_superseded_by
+    FOREIGN KEY (family_id, superseded_by) REFERENCES people(family_id, id);
 
 ALTER TABLE places
-  ADD COLUMN superseded_by UUID REFERENCES places(id),
+  ADD COLUMN superseded_by UUID,
   ADD COLUMN superseded_at TIMESTAMPTZ,
-  ADD COLUMN merge_reason TEXT;
+  ADD CONSTRAINT fk_places_superseded_by
+    FOREIGN KEY (family_id, superseded_by) REFERENCES places(family_id, id);
 
 ALTER TABLE events
-  ADD COLUMN superseded_by UUID REFERENCES events(id),
+  ADD COLUMN superseded_by UUID,
   ADD COLUMN superseded_at TIMESTAMPTZ,
-  ADD COLUMN merge_reason TEXT;
+  ADD CONSTRAINT fk_events_superseded_by
+    FOREIGN KEY (family_id, superseded_by) REFERENCES events(family_id, id);
+
+ALTER TABLE stories
+  ADD COLUMN superseded_by UUID,
+  ADD COLUMN superseded_at TIMESTAMPTZ,
+  ADD CONSTRAINT fk_stories_superseded_by
+    FOREIGN KEY (family_id, superseded_by) REFERENCES stories(family_id, id);
 
 -- Index for querying current (non-superseded) entities
 CREATE INDEX idx_people_current
@@ -262,6 +299,10 @@ CREATE INDEX idx_places_current
 
 CREATE INDEX idx_events_current
   ON events(family_id)
+  WHERE superseded_by IS NULL;
+
+CREATE INDEX idx_stories_current
+  ON stories(family_id)
   WHERE superseded_by IS NULL;
 ```
 
@@ -306,11 +347,8 @@ CREATE TABLE entity_merges (
   -- Merge metadata
   merge_strategy VARCHAR(50), -- 'fuzzy_match', 'identity_claim', 'manual', 'llm_resolved'
   confidence DECIMAL(3,2), -- 0.00 to 1.00
-  -- Note: trigger_event_id uses simple FK (not composite) because:
-  -- 1. UUIDs are globally unique, so cross-tenant collision is impossible
-  -- 2. The merge's family_id already establishes tenant context
-  -- 3. Adding composite FK would require UNIQUE(family_id, id) on conversation_events
-  --    which adds overhead to the high-volume event table
+  -- trigger_event_id uses simple FK to avoid overhead on high-volume conversation_events table
+  -- Tenant safety is enforced by trigger below (not composite FK)
   trigger_event_id UUID REFERENCES conversation_events(id),
 
   -- Workflow status (replaces reversed BOOLEAN to avoid NULL-boolean issues)
@@ -335,8 +373,16 @@ CREATE TABLE entity_merges (
     source_entity_type IN ('person', 'place', 'event', 'story') AND
     target_entity_type IN ('person', 'place', 'event', 'story')
   ),
-  CONSTRAINT same_entity_type CHECK (source_entity_type = target_entity_type)
+  CONSTRAINT same_entity_type CHECK (source_entity_type = target_entity_type),
+  -- Prevent self-merges
+  CONSTRAINT no_self_merge CHECK (source_entity_id <> target_entity_id)
 );
+
+-- Only one accepted outgoing merge per source entity
+-- Prevents ambiguous state where A→B and A→C are both accepted
+CREATE UNIQUE INDEX idx_entity_merges_unique_accepted_source
+  ON entity_merges(family_id, source_entity_type, source_entity_id)
+  WHERE status = 'accepted';
 
 CREATE INDEX idx_entity_merges_source
   ON entity_merges(family_id, source_entity_type, source_entity_id);
@@ -344,52 +390,80 @@ CREATE INDEX idx_entity_merges_source
 CREATE INDEX idx_entity_merges_target
   ON entity_merges(family_id, target_entity_type, target_entity_id);
 
--- Index for querying active merges
+-- Index for querying active merges (status column omitted - all rows in this index have status='accepted')
 CREATE INDEX idx_entity_merges_accepted
-  ON entity_merges(family_id, status)
+  ON entity_merges(family_id)
   WHERE status = 'accepted';
 
--- Index for pending approvals
+-- Index for pending approvals (status column omitted - all rows in this index have status='proposed')
 CREATE INDEX idx_entity_merges_proposed
-  ON entity_merges(family_id, status)
+  ON entity_merges(family_id)
   WHERE status = 'proposed';
 
 -- Prevent circular merges (A→B→C→A)
 -- IMPORTANT: Traverses entity_merges (source of truth) NOT denormalized superseded_by columns
 -- This ensures cycle detection is consistent even if superseded_by is temporarily out of sync
+-- Fires on INSERT and UPDATE (when status changes to 'accepted')
 CREATE OR REPLACE FUNCTION prevent_circular_merges()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Check if target entity is already in the merge chain leading to source
-  -- This prevents cycles like A→B→C→A
-  -- Uses entity_merges table directly (the source of truth) rather than denormalized columns
-  IF EXISTS (
-    WITH RECURSIVE merge_chain AS (
-      -- Start from the target entity
-      SELECT NEW.target_entity_id as entity_id, 1 as depth
-      UNION ALL
-      -- Follow the merge chain: find where this entity was merged TO
-      SELECT em.target_entity_id, mc.depth + 1
-      FROM entity_merges em
-      JOIN merge_chain mc ON em.source_entity_id = mc.entity_id
-      WHERE em.family_id = NEW.family_id  -- CRITICAL: scope to same tenant
-        AND em.source_entity_type = NEW.source_entity_type
-        AND em.status = 'accepted'  -- Only follow accepted merges
-        AND mc.depth < 100  -- Depth limit for safety
-    )
-    SELECT 1 FROM merge_chain WHERE entity_id = NEW.source_entity_id
-  ) THEN
-    RAISE EXCEPTION 'Circular merge detected: would create cycle in % merge chain', NEW.source_entity_type;
+  -- Only check for cycles when merge is being accepted
+  -- (INSERT with status='accepted' OR UPDATE changing status to 'accepted')
+  IF NEW.status = 'accepted' AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'accepted') THEN
+    -- Check if target entity is already in the merge chain leading to source
+    -- This prevents cycles like A→B→C→A
+    -- Uses entity_merges table directly (the source of truth) rather than denormalized columns
+    IF EXISTS (
+      WITH RECURSIVE merge_chain AS (
+        -- Start from the target entity
+        SELECT NEW.target_entity_id as entity_id, 1 as depth
+        UNION ALL
+        -- Follow the merge chain: find where this entity was merged TO
+        SELECT em.target_entity_id, mc.depth + 1
+        FROM entity_merges em
+        JOIN merge_chain mc ON em.source_entity_id = mc.entity_id
+        WHERE em.family_id = NEW.family_id  -- CRITICAL: scope to same tenant
+          AND em.source_entity_type = NEW.source_entity_type
+          AND em.status = 'accepted'  -- Only follow accepted merges
+          AND mc.depth < 100  -- Depth limit for safety
+      )
+      SELECT 1 FROM merge_chain WHERE entity_id = NEW.source_entity_id
+    ) THEN
+      RAISE EXCEPTION 'Circular merge detected: would create cycle in % merge chain', NEW.source_entity_type;
+    END IF;
   END IF;
 
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
+-- Trigger fires on both INSERT and UPDATE to catch proposed→accepted transitions
 CREATE TRIGGER check_circular_merges
-  BEFORE INSERT ON entity_merges
+  BEFORE INSERT OR UPDATE ON entity_merges
   FOR EACH ROW
   EXECUTE FUNCTION prevent_circular_merges();
+
+-- Enforce tenant integrity for trigger_event_id without composite FK overhead
+-- (Avoids adding UNIQUE(family_id, id) to high-volume conversation_events table)
+CREATE OR REPLACE FUNCTION validate_entity_merge_trigger_event()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.trigger_event_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM conversation_events
+      WHERE id = NEW.trigger_event_id AND family_id = NEW.family_id
+    ) THEN
+      RAISE EXCEPTION 'trigger_event_id must reference an event in the same family';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER check_entity_merge_trigger_event
+  BEFORE INSERT OR UPDATE ON entity_merges
+  FOR EACH ROW
+  EXECUTE FUNCTION validate_entity_merge_trigger_event();
 ```
 
 **Source of Truth**: This table is the **canonical record** of all merge decisions. The `superseded_by` columns on entity tables are denormalized copies for query performance.
@@ -442,6 +516,7 @@ BEGIN
     JOIN merge_chain mc ON em.target_entity_id = mc.id
     WHERE em.family_id = p_family_id
       AND em.source_entity_type = p_entity_type
+      AND em.target_entity_type = p_entity_type  -- Defensive: both types must match
       AND em.status = 'accepted'  -- Only follow accepted merges
       AND mc.depth < 100  -- Depth limit for safety (matches cycle prevention)
   )
@@ -452,8 +527,9 @@ $$ LANGUAGE plpgsql STABLE;
 -- Usage: Find all claims about a person (including claims about merged predecessors)
 SELECT DISTINCT c.*
 FROM claims c
-JOIN claim_entities ce ON c.id = ce.claim_id
-WHERE ce.entity_type = 'person'
+JOIN claim_entities ce ON c.family_id = ce.family_id AND c.id = ce.claim_id
+WHERE c.family_id = 'family-uuid-here'
+  AND ce.entity_type = 'person'
   AND ce.entity_id IN (
     SELECT entity_id FROM get_entity_merge_chain('person-uuid-here', 'person', 'family-uuid-here')
   );
@@ -468,12 +544,22 @@ async findClaimsForEntityIncludingMerged(
   entityId: string,
   entityType: string
 ): Promise<Claim[]> {
-  const { data } = await this.supabase.rpc('get_claims_for_entity_chain', {
-    p_family_id: familyId,
+  // Get all entity IDs in the merge chain (predecessors that were merged into this entity)
+  const { data: entityIds } = await this.supabase.rpc('get_entity_merge_chain', {
     p_entity_id: entityId,
     p_entity_type: entityType,
+    p_family_id: familyId,
   });
-  return data;
+
+  // Query claims linked to any entity in the chain
+  const { data: claims } = await this.supabase
+    .from('claim_entities')
+    .select('claims(*)')
+    .eq('family_id', familyId)
+    .eq('entity_type', entityType)
+    .in('entity_id', entityIds);
+
+  return claims?.map(ce => ce.claims) ?? [];
 }
 ```
 
@@ -557,6 +643,8 @@ INSERT INTO claim_entities (family_id, claim_id, entity_id, entity_type, role, s
   (family_uuid, X, relationship_id, 'relationship', 'subject', 'primary');
 ```
 
+**Data Migration**: After creating `claim_entities`, migrate existing `claims.entity_id`/`claims.entity_type` data. See the migration script in "Phase 5: Convert Arrays to Join Tables" section.
+
 **Benefits**:
 
 - Clean many-to-many relationship between claims and entities
@@ -584,12 +672,12 @@ CREATE TABLE identity_claims (
 
   -- Descriptive reference (e.g., "Dexter's ex-wife")
   descriptive_name VARCHAR(255) NOT NULL,
-  descriptive_person_id UUID REFERENCES people(id), -- If entity exists with this name
+  descriptive_person_id UUID,  -- If entity exists with this name
 
   -- Real identity (e.g., "Judy Dor")
   -- Nullable: may not be known initially (e.g., "Dexter's ex-wife" with no canonical name yet)
   canonical_name VARCHAR(255),
-  canonical_person_id UUID REFERENCES people(id), -- If entity exists with this name
+  canonical_person_id UUID,  -- If entity exists with this name
 
   -- Resolution status
   resolved BOOLEAN DEFAULT FALSE,
@@ -604,6 +692,13 @@ CREATE TABLE identity_claims (
   -- Composite FK enforces tenant integrity (claim must belong to same family)
   CONSTRAINT fk_identity_claims_claim
     FOREIGN KEY (family_id, claim_id) REFERENCES claims(family_id, id),
+
+  -- Composite FKs enforce tenant integrity for person references
+  -- (Uses UNIQUE (family_id, id) from people table added in migration)
+  CONSTRAINT fk_identity_claims_descriptive_person
+    FOREIGN KEY (family_id, descriptive_person_id) REFERENCES people(family_id, id),
+  CONSTRAINT fk_identity_claims_canonical_person
+    FOREIGN KEY (family_id, canonical_person_id) REFERENCES people(family_id, id),
 
   CONSTRAINT uq_identity_claim_per_claim UNIQUE (family_id, claim_id)
 );
@@ -813,7 +908,8 @@ CREATE TABLE claim_relationships (
   family_id UUID NOT NULL REFERENCES families(id),
   claim_id UUID NOT NULL,
   related_claim_id UUID NOT NULL,
-  relationship_type VARCHAR(50) NOT NULL, -- 'supports', 'contradicts', 'refines', 'supersedes'
+  -- 'supports', 'contradicts', 'refines', 'supersedes', 'derived_from'
+  relationship_type VARCHAR(50) NOT NULL,
 
   created_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -830,6 +926,10 @@ CREATE TABLE claim_relationships (
 
 CREATE INDEX idx_claim_relationships_claim
   ON claim_relationships(family_id, claim_id);
+
+-- Reverse lookup: "find claims that support/contradict this claim"
+CREATE INDEX idx_claim_relationships_related
+  ON claim_relationships(family_id, related_claim_id);
 ```
 
 **Benefits**:
@@ -843,20 +943,26 @@ CREATE INDEX idx_claim_relationships_claim
 **Goal**: Track when claims are inferred vs directly stated
 
 ```sql
+-- Derivations are modeled as claim_relationships with type='derived_from'
+-- (consistent with supports/contradicts/refines/supersedes pattern)
+-- See claim_relationships table above
+
 ALTER TABLE claims
-  ADD COLUMN derived_from_claim_ids UUID[], -- If this claim was inferred from others
   ADD COLUMN inference_method VARCHAR(50); -- 'direct', 'logical_inference', 'llm_inference'
 ```
 
 **Example**:
 
 - Direct claim: "Maria married José in 1920"
-- Inferred claim: "Maria's last name changed to José's last name" (derived_from_claim_ids = [marriage_claim_id], inference_method='logical_inference')
+- Inferred claim: "Maria's last name changed to José's last name"
+  - `inference_method = 'logical_inference'`
+  - Plus: `INSERT INTO claim_relationships (family_id, claim_id, related_claim_id, relationship_type) VALUES (family_uuid, inferred_claim_id, marriage_claim_id, 'derived_from')`
 
 **Benefits**:
 
-- Distinguish facts from inferences
-- Can show inference chains
+- Consistent pattern: all claim-to-claim links go through claim_relationships
+- Distinguish facts from inferences via inference_method column
+- Can show inference chains via claim_relationships
 - Enables explainable AI reasoning
 
 #### 3. Add Claim Strength/Weight
@@ -974,6 +1080,10 @@ Trigger LLM evaluation when:
 **Queue Query with Locking** (prevents duplicate processing):
 
 ```sql
+-- Note: claims.status is an existing column with values:
+--   'active' (default), 'superseded', 'disputed', 'redacted'
+-- Only evaluate active claims (not superseded/redacted)
+
 -- Atomically claim and lock records for LLM evaluation
 -- Worker ID is passed as parameter $1 - same ID for entire batch
 -- Uses FOR UPDATE SKIP LOCKED to prevent concurrent workers from grabbing same rows
@@ -986,7 +1096,7 @@ WHERE id IN (
   FROM claims c
   WHERE c.needs_llm_evaluation = TRUE
     AND c.llm_evaluated_at IS NULL
-    AND c.status = 'active'
+    AND c.status = 'active'  -- Only evaluate active claims
     -- Not locked, or lock expired (stale lock after 15 min)
     AND (c.llm_eval_locked_at IS NULL
          OR c.llm_eval_locked_at < NOW() - INTERVAL '15 minutes')
@@ -1073,18 +1183,18 @@ async function processLLMEvaluationQueue() {
 
 1. **Person**
    - Current fields ✓
-   - \+ superseded_by, superseded_at, merge_reason (for entity merge tracking)
+   - \+ superseded_by, superseded_at (merge tracking; merge_reason on entity_merges)
    - \+ graph_labels, graph_properties (for future Neo4j export)
    - \+ neo4j_synced_at (for future Neo4j sync)
 
 2. **Place**
    - Current fields ✓
-   - \+ superseded_by, superseded_at, merge_reason
+   - \+ superseded_by, superseded_at (merge tracking; merge_reason on entity_merges)
    - \+ graph_labels, graph_properties
 
 3. **TimelineEvent** (events table)
    - Current fields ✓
-   - \+ superseded_by, superseded_at, merge_reason
+   - \+ superseded_by, superseded_at (merge tracking; merge_reason on entity_merges)
    - \+ event_participants table (explicit, not array)
 
 4. **Relationship**
@@ -1098,7 +1208,7 @@ async function processLLMEvaluationQueue() {
 
 6. **Claim** (enhanced)
    - Current fields ✓
-   - \+ derived_from_claim_ids, inference_method (track inferred claims)
+   - \+ inference_method (track inferred claims; derivations via claim_relationships)
    - \+ claim_strength, strength_factors, needs_llm_evaluation, llm_evaluated_at (hybrid scoring)
    - Make entity_id, entity_type nullable (legacy fields, use claim_entities join table instead)
 
@@ -1150,57 +1260,71 @@ async function processLLMEvaluationQueue() {
 
 ## Implementation Workflow
 
-### Scribe (No changes required)
+> **Note**: For detailed application-layer implementation (services, dependency injection, code structure), see [Chatbots App Changes](./2026-01-21-chatbots-app-data-architecture-changes.md).
+
+### Scribe (Minor changes)
 
 - Continues extracting to domain model
 - Outputs identity claims as before
+- **Minor additions**: `inferenceMethod`, `referencedPeople`, `referencedPlaces` on ExtractedClaim
 
-### Registrar (Major enhancements)
+### Registrar (Major enhancements - Service-Based Architecture)
 
-**Current**:
+Registrar becomes an **orchestrator** with extracted services. Business logic moves to testable services that use a shared DataRetrieverService.
 
-```
-1. Process people
-2. Process places
-3. Process events
-4. Process claims
-5. Process relationships
-```
-
-**Enhanced**:
+**Architecture**:
 
 ```
-1. Process people
-   a. Fuzzy match against existing
-   b. If match found AND confidence >= threshold (>0.9):
-      - Create entity_merge record (source, target, confidence, strategy, status='accepted')
+Registrar (orchestrator)
+    │
+    ├── EntityMatcherService      # Entity matching logic
+    ├── ConflictDetectorService   # Claim conflict detection
+    ├── StrengthCalculatorService # Claim strength scoring
+    └── MergeHandlerService       # Entity merge operations
+              │
+              ▼
+       DataRetrieverService       # Shared retrieval (also used by Historian)
+              │
+              ▼
+         Repositories             # CRUD operations
+```
+
+**Processing Flow**:
+
+```
+1. Process people (via EntityMatcherService)
+   a. Get existing people context via DataRetrieverService
+   b. Match via exact name, alias, fuzzy, or optional LLM verification
+   c. If match found AND confidence >= threshold (>0.9):
+      - Create entity_merge record via MergeHandlerService
       - Update target person (add source name to aliases)
-      - Mark source person as superseded (superseded_by = target_id, merge_reason)
-   c. If confidence requires review (0.7-0.9):
+      - Mark source person as superseded (superseded_by = target_id)
+   d. If confidence requires review (0.7-0.9):
       - Create entity_merge with status='proposed' (pending approval)
       - Add to review queue
 
 2. Process identity_claims
    a. Create claim record (in claims table)
    b. Create identity_claims record (descriptive name, canonical name)
-   c. Resolve identity → create entity_merge
+   c. Resolve identity → create entity_merge via MergeHandlerService
    d. Mark identity_claim as resolved (resolved = TRUE, entity_merge_id)
 
-3. Process places
+3. Process places (via EntityMatcherService)
    a. Similar fuzzy matching and merge logic as people
    b. Match on name, city, country hierarchy
 
-4. Process events
+4. Process events (via EntityMatcherService)
    a. Similar fuzzy matching and merge logic
    b. Match on title, date, place, participants
 
-5. Process claims
+5. Process claims (via ConflictDetectorService + StrengthCalculatorService)
    a. Create claim record
-   b. Calculate algorithmic claim_strength (base_score * modifiers)
-   c. Check if needs_llm_evaluation (conflicts, hearsay, low confidence)
-   d. If needs LLM: queue for async evaluation
-   e. Link claim to entities via claim_entities table (insert records for all referenced entities)
-   f. Detect conflicts → create claim_relationship entries
+   b. Detect conflicts via ConflictDetectorService (uses DataRetrieverService)
+   c. Calculate algorithmic claim_strength via StrengthCalculatorService
+   d. Check if needs_llm_evaluation (conflicts, hearsay, low confidence)
+   e. If needs LLM: queue for async evaluation
+   f. Link claim to entities via claim_entities table
+   g. Create claim_relationship entries for detected conflicts
 
 6. Process relationships
    a. Create relationship record
@@ -1256,30 +1380,37 @@ async function processLLMEvaluationQueue() {
 | `apps/db/supabase/migrations/20260121000_enhance_conversation_events.sql`   | NEW    | Add sequence_number column, create family_sequence_counters table with atomic trigger, payload_version, metadata_version                                                              |
 | `apps/db/supabase/migrations/20260121001_add_ingestion_batches.sql`         | NEW    | Create ingestion_batches table, add ingestion_batch_id FK to conversation_events                                                                                                      |
 | `apps/db/supabase/migrations/20260121002_convert_arrays_to_join_tables.sql` | NEW    | Create story_entities, event_participants join tables; migrate data from arrays; validation queries                                                                                   |
-| `apps/db/supabase/migrations/20260121003_add_entity_merge_tracking.sql`     | NEW    | Add superseded_by, superseded_at, merge_reason to people/places/events/stories                                                                                                        |
+| `apps/db/supabase/migrations/20260121003_add_entity_merge_tracking.sql`     | NEW    | Add superseded_by, superseded_at to people/places/events/stories (merge_reason on entity_merges only)                                                                                 |
 | `apps/db/supabase/migrations/20260121004_add_entity_merges.sql`             | NEW    | Create entity_merges table with circular merge prevention trigger                                                                                                                     |
 | `apps/db/supabase/migrations/20260121005_add_identity_claims.sql`           | NEW    | Create identity_claims table (people only, no entity_type field)                                                                                                                      |
 | `apps/db/supabase/migrations/20260121006_add_claim_entities.sql`            | NEW    | Create claim_entities join table with entity_type constraint                                                                                                                          |
-| `apps/db/supabase/migrations/20260121007_enhance_claims.sql`                | NEW    | Add derived_from_claim_ids, inference_method, claim_strength, strength_factors, needs_llm_evaluation; make entity_id/entity_type nullable                                             |
+| `apps/db/supabase/migrations/20260121007_enhance_claims.sql`                | NEW    | Add inference_method, claim_strength, strength_factors, needs_llm_evaluation; make entity_id/entity_type nullable (derivations via claim_relationships)                               |
 | `apps/db/supabase/migrations/20260121008_make_claims_immutable.sql`         | NEW    | Add immutability triggers for core claim data, prevent deletes                                                                                                                        |
-| `apps/db/supabase/migrations/20260121009_add_claim_relationships.sql`       | NEW    | Create claim_relationships table (supports, contradicts, refines, supersedes)                                                                                                         |
+| `apps/db/supabase/migrations/20260121009_add_claim_relationships.sql`       | NEW    | Create claim_relationships table (supports, contradicts, refines, supersedes, derived_from)                                                                                           |
 | `apps/db/supabase/migrations/20260121010_add_graph_metadata.sql`            | NEW    | Add graph_labels, temporal bounds, entity_clusters + entity_cluster_members tables                                                                                                    |
 | `apps/db/supabase/migrations/20260121011_add_merge_chain_helper.sql`        | NEW    | Create get_entity_merge_chain() function for querying claims across merged entities                                                                                                   |
 | `libs/database/src/lib/repositories/entity-merge-repository.ts`             | NEW    | CRUD for entity_merges, merge/unmerge operations                                                                                                                                      |
 | `libs/database/src/lib/repositories/identity-claim-repository.ts`           | NEW    | CRUD for identity_claims, resolution workflow                                                                                                                                         |
 | `libs/database/src/lib/repositories/story-entity-repository.ts`             | NEW    | CRUD for story_entities join table                                                                                                                                                    |
 | `libs/database/src/lib/repositories/event-participant-repository.ts`        | NEW    | CRUD for event_participants join table                                                                                                                                                |
-| `libs/database/src/lib/repositories/claim-entity-repository.ts`             | NEW    | CRUD for claim_entities join table, bidirectional queries, findClaimsForEntityIncludingMerged()                                                                                       |
+| `libs/database/src/lib/repositories/claim-entity-repository.ts`             | NEW    | CRUD for claim_entities join table, bidirectional queries                                                                                                                             |
+| `libs/database/src/lib/repositories/claim-relationship-repository.ts`       | NEW    | CRUD for claim_relationships                                                                                                                                                          |
 | `libs/database/src/lib/repositories/ingestion-batch-repository.ts`          | NEW    | CRUD for ingestion_batches                                                                                                                                                            |
 | `libs/database/src/lib/repositories/entity-cluster-repository.ts`           | NEW    | CRUD for entity_clusters and entity_cluster_members                                                                                                                                   |
-| `libs/database/src/lib/repositories/claim-repository.ts`                    | MODIFY | Add calculateClaimStrength(), detectConflicts(), createClaimRelationship(), linkEntities()                                                                                            |
-| `libs/database/src/lib/repositories/person-repository.ts`                   | MODIFY | Add fuzzyMatch(), markSuperseded(), getMergeChain()                                                                                                                                   |
+| `libs/database/src/lib/services/data-retriever.ts`                          | NEW    | Shared retrieval layer used by Registrar services and Historian (see chatbots app plan)                                                                                               |
+| `libs/database/src/lib/repositories/claim-repository.ts`                    | MODIFY | Add linkEntities(); remove calculateClaimStrength/detectConflicts (moved to services)                                                                                                 |
+| `libs/database/src/lib/repositories/person-repository.ts`                   | MODIFY | Add markSuperseded(), getMergeChain()                                                                                                                                                 |
 | `libs/database/src/lib/repositories/story-repository.ts`                    | MODIFY | Update to use story_entities join table instead of arrays                                                                                                                             |
 | `libs/database/src/lib/repositories/timeline-event-repository.ts`           | MODIFY | Update to use event_participants join table (polymorphic), add markSuperseded()                                                                                                       |
-| `libs/agents/registrar/src/lib/registrar.ts`                                | MODIFY | Implement enhanced processing workflow with merge tracking, claim_entities management                                                                                                 |
-| `libs/agents/registrar/src/lib/claim-strength-calculator.ts`                | NEW    | Algorithmic claim strength calculation logic (hybrid approach)                                                                                                                        |
+| `libs/agents/registrar/src/lib/registrar.ts`                                | MODIFY | Refactor to orchestrator pattern using services (see chatbots app plan)                                                                                                               |
+| `libs/agents/registrar/src/lib/services/entity-matcher.ts`                  | NEW    | Entity matching logic (exact, alias, fuzzy, optional LLM verification)                                                                                                                |
+| `libs/agents/registrar/src/lib/services/conflict-detector.ts`               | NEW    | Claim conflict detection (value-based + optional semantic via LLM)                                                                                                                    |
+| `libs/agents/registrar/src/lib/services/strength-calculator.ts`             | NEW    | Algorithmic claim strength calculation logic (hybrid approach)                                                                                                                        |
+| `libs/agents/registrar/src/lib/services/merge-handler.ts`                   | NEW    | Entity merge operations with audit trail                                                                                                                                              |
+| `libs/agents/historian/src/lib/retriever.ts`                                | MODIFY | Use shared DataRetrieverService, move common logic there                                                                                                                              |
 | `libs/shared/types/src/lib/entities.ts`                                     | MODIFY | Add EntityMerge, IdentityClaim, ClaimEntity, IngestionBatch, StoryEntity, EventParticipant, EntityCluster, EntityClusterMember types; add merge fields to Person, Place, Event, Story |
-| `libs/shared/types/src/lib/claims.ts`                                       | MODIFY | Update Claim interface: add derived_from_claim_ids, inference_method, claim_strength, strength_factors, needs_llm_evaluation; make entity_id/entity_type nullable                     |
+| `libs/shared/types/src/lib/claims.ts`                                       | MODIFY | Update Claim interface: add inference_method, claim_strength, strength_factors, needs_llm_evaluation; make entity_id/entity_type nullable (derivations via claim_relationships)       |
+| `libs/shared/types/src/lib/domain-model.ts`                                 | MODIFY | Add inferenceMethod, referencedPeople, referencedPlaces to ExtractedClaim                                                                                                             |
 
 ---
 
@@ -1319,7 +1450,7 @@ async function processLLMEvaluationQueue() {
   - Claim 1: "Maria born 1920" (source_event_id = msg_123, claimed_by = "João")
   - Claim 2: "Maria born 1920" (source_event_id = msg_456, claimed_by = "Ana")
   - claim_relationships: (claim_2, claim_1, 'supports')
-- Inferred claims get multiple parents via `derived_from_claim_ids` array (different from sources)
+- Inferred claims link to parents via `claim_relationships` with `type='derived_from'` (consistent with other claim links)
 
 **Why not array of sources:**
 
@@ -1330,8 +1461,8 @@ async function processLLMEvaluationQueue() {
 **Implementation:**
 
 - Keep single `source_event_id` for direct claims
-- Add `derived_from_claim_ids UUID[]` for inferred claims (different concept)
-- Use claim_relationships table to link supporting/confirming claims
+- Use `claim_relationships` with `type='derived_from'` for inferred claims (consistent pattern)
+- Use `claim_relationships` to link supporting/confirming claims
 
 ---
 
@@ -1342,7 +1473,8 @@ async function processLLMEvaluationQueue() {
 **Current arrays to KEEP:**
 
 - `people.aliases` (JSONB) - Simple strings, no metadata needed, rarely queried reverse direction
-- `derived_from_claim_ids` - Parent claim list, no per-parent metadata
+
+Note: `derived_from_claim_ids` was removed in favor of `claim_relationships` with `type='derived_from'` for consistency.
 
 **Current arrays to CONVERT TO JOIN TABLES:**
 
@@ -1371,9 +1503,10 @@ async function processLLMEvaluationQueue() {
 ```sql
 -- Migration: 20260121002_convert_arrays_to_join_tables.sql
 
--- First, add composite unique constraints to parent tables for FK reference
-ALTER TABLE stories ADD CONSTRAINT uq_stories_family_id UNIQUE (family_id, id);
-ALTER TABLE events ADD CONSTRAINT uq_events_family_id UNIQUE (family_id, id);
+-- NOTE: Composite unique constraints on stories/events are already added in
+-- the entity merge tracking migration. The constraints below are shown for
+-- completeness but will be skipped if they already exist.
+-- (In actual migration, use DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$;)
 
 CREATE TABLE story_entities (
   family_id UUID NOT NULL,
@@ -1443,6 +1576,10 @@ FROM events e
 WHERE e.people_involved IS NOT NULL AND array_length(e.people_involved, 1) > 0
 ON CONFLICT DO NOTHING;
 
+-- NOTE: The claim_entities data migration below requires the claim_entities table to exist.
+-- claim_entities is created in Phase 2.3 (see "Enable Multi-Entity Claims" section).
+-- Ensure the claim_entities migration runs BEFORE this data migration script.
+--
 -- Migrate existing claims.(entity_id, entity_type) to claim_entities
 -- This preserves the original single-entity references as primary entities
 INSERT INTO claim_entities (family_id, claim_id, entity_id, entity_type, role, significance)
@@ -1492,7 +1629,7 @@ ON CONFLICT DO NOTHING;
 - `source_event_id` - Provenance
 - `claimed_by`, `claimed_by_source`, `claimed_at` - Attribution
 - `certainty_language`, `context_original`, `language_original` - Original context
-- `derived_from_claim_ids`, `inference_method` - Derivation chain
+- `inference_method` - Whether claim is direct/inferred (derivations via claim_relationships are immutable edges)
 
 **Note**: `entity_id` and `entity_type` are nullable legacy fields. Use `claim_entities` join table for all entity associations.
 
@@ -1529,8 +1666,8 @@ BEGIN
      OLD.certainty_language IS DISTINCT FROM NEW.certainty_language OR
      OLD.context_original IS DISTINCT FROM NEW.context_original OR
      OLD.language_original IS DISTINCT FROM NEW.language_original OR
-     OLD.derived_from_claim_ids IS DISTINCT FROM NEW.derived_from_claim_ids OR
      OLD.inference_method IS DISTINCT FROM NEW.inference_method THEN
+     -- Note: derivations are modeled via claim_relationships, which are immutable edges
     RAISE EXCEPTION 'Cannot modify immutable claim fields. Create a new claim instead.';
   END IF;
   RETURN NEW;
@@ -1567,8 +1704,8 @@ CREATE TRIGGER enforce_claims_no_delete
 ```sql
 -- Instead of updating, create new claim and link
 INSERT INTO claims (...) VALUES (...);  -- id = claim_2 (refined version)
-INSERT INTO claim_relationships (claim_id, related_claim_id, relationship_type)
-VALUES (claim_2, claim_1, 'refines');
+INSERT INTO claim_relationships (family_id, claim_id, related_claim_id, relationship_type)
+VALUES (family_uuid, claim_2, claim_1, 'refines');
 UPDATE claims SET status = 'superseded' WHERE id = claim_1;
 ```
 
@@ -1597,8 +1734,9 @@ UPDATE claims SET status = 'superseded' WHERE id = claim_1;
    - **Rationale**: Cost-optimized while maintaining context-aware intelligence
 
 4. **Entity versioning approach**: **Self-referential (superseded_by column)**
-   - Track merges via `superseded_by`, `superseded_at`, `merge_reason` columns
+   - Track merges via `superseded_by`, `superseded_at` columns (merge_reason lives on entity_merges only)
    - Query current entities: `WHERE superseded_by IS NULL`
+   - **Source of truth**: `entity_merges` table; `superseded_by` columns are derived cache
    - **No separate version tables needed** - claims already provide complete temporal provenance
-   - **Rationale**: Entity tables are just materialized views for performance; canonical truth lives in claims with timestamps. Simpler schema, no redundant storage, still fully auditable via claims table.
+   - **Rationale**: Entity tables are derived summaries maintained for fast reads; the canonical truth is claims (facts + provenance) and entity_merges (identity/merge decisions), rooted in the immutable conversation_events ledger.
    - For "what we knew about Maria on 2025-06-01": query claims WHERE entity_id = maria AND created_at <= date

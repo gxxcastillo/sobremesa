@@ -1,7 +1,17 @@
 # Research Notes: Entity Resolution & Knowledge Graph Architecture
 
-**Status:** Research complete, decision pending
+> **Part of**: [Data Architecture Overview](./2026-01-21-data-architecture-overview.md) - Start here for the big picture
+
+**Status:** Research complete — See [Data Architecture Redesign](./2026-01-21-data-architecture-redesign.md) for implementation decisions
 **Date:** 2026-01-16
+**Superseded by:** `2026-01-21-data-architecture-redesign.md` (for implementation details)
+
+> **Note**: This document contains background research and exploration. The actual implementation decisions are captured in the Data Architecture Redesign plan. Key decisions made:
+>
+> - **Option 2 selected** (Keep Supabase, add LLM-based entity resolution)
+> - **Neo4j deferred** (schema prepared but integration not implemented)
+> - **entity_merges table** (not claim_type='entity_merge') as source of truth for merges
+> - **identity_claims table** as first-class entity for identity resolution
 
 ---
 
@@ -110,6 +120,12 @@ Same information stored twice, with complex merge logic to keep them in sync.
 
 **Fit for Sobremesa:** The clustering approach is elegant - LLM decides what merges, not just fuzzy string matching.
 
+> **Implementation note**: The data architecture plan supports this pattern via:
+>
+> - `entity_merges` table with `merge_strategy = 'llm_resolved'`
+> - `identity_claims` table for descriptive→canonical resolution
+> - `needs_llm_evaluation` flag on claims for selective LLM enhancement
+
 ---
 
 ## Concrete Options
@@ -151,24 +167,34 @@ Same information stored twice, with complex merge logic to keep them in sync.
 
 ## Recommendation for Medium Scale (100-1000 people)
 
-**Option 2** seems like the sweet spot:
+**Option 2** was selected as the approach:
 
 - Don't migrate to Neo4j yet (can do later if needed)
-- Add an LLM-based entity resolution step after Registrar
-- Store merge decisions as claims (`claim_type: "entity_merge"`)
+- ~~Add an LLM-based entity resolution step after Registrar~~ → **Updated**: Entity resolution happens **within Registrar** via `EntityMatcherService` (see [Chatbots App Changes](./2026-01-21-chatbots-app-data-architecture-changes.md))
+- ~~Store merge decisions as claims (`claim_type: "entity_merge"`)~~ → **Updated**: Use dedicated `entity_merges` table as source of truth (see data architecture plan)
 - Revert the `updateName` function - let the resolver handle it
 - People table becomes "current best understanding"
 
 This gives you:
 
-- Claims as source of truth (audit trail)
-- LLM-powered semantic entity resolution
+- Claims as source of truth for **facts** (audit trail)
+- `entity_merges` table as source of truth for **merge decisions**
+- LLM-powered semantic entity resolution (within Registrar's EntityMatcherService)
 - Minimal architectural change
 - Path to Neo4j later if needed
 
+> **Implementation**: See [Data Architecture Redesign](./2026-01-21-data-architecture-redesign.md) for the full schema including:
+>
+> - `entity_merges` table with `merge_status` enum (`proposed`, `accepted`, `rejected`, `reversed`)
+> - `identity_claims` table for descriptive→canonical name resolution
+> - Circular merge prevention via database trigger
+> - Composite foreign keys for tenant integrity
+
 ---
 
-## Detailed Plan: Neo4j Hybrid Integration
+## Detailed Plan: Neo4j Hybrid Integration (DEFERRED)
+
+> **Status**: Deferred. Schema preparation is included in the data architecture plan (graph_labels, temporal bounds, neo4j_synced_at columns), but actual Neo4j integration is deferred until relationship queries become a bottleneck.
 
 **Architecture: Neo4j for people/relationships, Supabase for claims/stories**
 
@@ -226,38 +252,40 @@ Telegram → Scribe → Registrar → Supabase + Neo4j (sync)
 2. Performance benchmarking (compare SQL vs Cypher)
 3. Monitor consistency between DBs
 
-### What This Solves
+### What This Would Solve (when implemented)
 
-- **Entity resolution**: Neo4j's built-in algorithms + LLM Graph Builder option
+- **Entity resolution**: ~~Neo4j's built-in algorithms + LLM Graph Builder option~~ → **Current approach**: `entity_merges` table + LLM-based resolution in Registrar (see data architecture plan)
 - **Relationship queries**: 1 Cypher query vs 5+ SQL queries
 - **Family tree visualization**: Native graph representation
 - **Claims provenance**: Still in Supabase with full audit trail
 
-### What to Revert
+### What to Revert (if adopting Neo4j)
 
 - Remove the `updateName` function added earlier
-- Remove identity claim handling in Registrar (let Neo4j handle merging)
-- Let Scribe/Registrar write entities, Neo4j handles resolution
+- ~~Remove identity claim handling in Registrar (let Neo4j handle merging)~~ → **Retained**: Registrar handles identity claims via `identity_claims` table
+- Let Scribe/Registrar write entities, ~~Neo4j~~ `entity_merges` table handles resolution
 
 ---
 
 ## Current Code Changes (Already Applied)
 
-These changes were made during this session but should be **reverted** if proceeding with Neo4j:
+These changes were made during this session:
 
 1. **`libs/prompts/src/agents/facilitator.txt`** - Made Permission component optional (KEEP)
 2. **`libs/prompts/src/agents/scribe.txt`** - Added pronoun rules, reference resolution, identity claims (KEEP)
-3. **`libs/database/src/lib/repositories/person-repository.ts`** - Added `updateName()` method (REVERT if using Neo4j)
-4. **`libs/agents/registrar/src/lib/registrar.ts`** - Added identity claim handling (REVERT if using Neo4j)
+3. **`libs/database/src/lib/repositories/person-repository.ts`** - Added `updateName()` method (REVERT if using Neo4j; otherwise retained for manual corrections)
+4. **`libs/agents/registrar/src/lib/registrar.ts`** - Added identity claim handling → **Enhanced**: Will use `identity_claims` table per data architecture plan
 
 ---
 
 ## Next Steps When Resuming
 
-1. **Decide on approach**: Neo4j hybrid vs LLM-only entity resolution
-2. **If Neo4j**: Start with Phase 1 (foundation) - add neo4j-driver, create client
-3. **If LLM-only**: Create a new "Resolver" agent that clusters entities
-4. **Either way**: Revert the `updateName` and identity claim handling code
+> **Decision made**: Option 2 (Keep Supabase + LLM-based entity resolution). See [Data Architecture Redesign](./2026-01-21-data-architecture-redesign.md) for implementation.
+
+1. ~~**Decide on approach**: Neo4j hybrid vs LLM-only entity resolution~~ → **Done**: Option 2 selected
+2. ~~**If Neo4j**: Start with Phase 1 (foundation)~~ → **Deferred**: Schema prepared, integration later
+3. ~~**If LLM-only**: Create a new "Resolver" agent~~ → **Evolved**: Registrar handles resolution with `entity_merges` table + future LLM enhancement
+4. **Implement data architecture plan**: Create migrations for entity_merges, identity_claims, claim_entities tables
 
 ---
 
@@ -274,7 +302,7 @@ These changes were made during this session but should be **reverted** if procee
 
 1. ✅ Carmencita too apologetic - Fixed in facilitator prompt
 2. ✅ "her niece" becoming 2 people - Fixed in scribe prompt
-3. ⏸️ "Judy Dor" vs "Dexter's ex-wife" - Deferred to Neo4j/entity resolution
-4. ⏸️ Relationships table empty - Deferred to Neo4j
+3. ⏸️ "Judy Dor" vs "Dexter's ex-wife" → **Addressed**: `identity_claims` table + `entity_merges` table handle this (see data architecture plan)
+4. ⏸️ Relationships table empty - Deferred to Neo4j (schema prepared, integration deferred)
 5. ⏸️ Stories table empty - Schema was correct, may need more conversation data
 6. ✅ "He" as alias - Fixed in scribe prompt
