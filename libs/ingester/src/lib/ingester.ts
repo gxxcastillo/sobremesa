@@ -119,14 +119,14 @@ export interface MemberEventInput extends BaseMessageInput {
  * Handles deduplication, event creation, and queue enqueue.
  */
 export class MessageIngester {
-  private eventRepo: ConversationEventRepository;
+  private conversationEvents: ConversationEventRepository;
   private queueRepo: ProcessingQueueRepository;
   private eventLog: EventLogRepository;
   private identityRepo: IdentityRepository;
   private logger: pino.Logger;
 
   constructor(logger?: pino.Logger) {
-    this.eventRepo = new ConversationEventRepository();
+    this.conversationEvents = new ConversationEventRepository();
     this.queueRepo = new ProcessingQueueRepository();
     this.eventLog = new EventLogRepository();
     this.identityRepo = new IdentityRepository();
@@ -179,7 +179,7 @@ export class MessageIngester {
   /**
    * Enqueue an event for processing and log the ingestion.
    */
-  private async enqueueAndLog(
+  private async enqueue(
     familyId: string,
     eventId: string,
     actor: ActorInfo,
@@ -221,7 +221,7 @@ export class MessageIngester {
     await this.ensureIdentity(familyId, input.source, input.actor);
 
     // Check for duplicates
-    const existing = await this.eventRepo.findByExternalId(
+    const existing = await this.conversationEvents.findByExternalId(
       familyId,
       input.source,
       input.conversationId,
@@ -237,7 +237,7 @@ export class MessageIngester {
     }
 
     // Create conversation event
-    const event = await this.eventRepo.insert({
+    const event = await this.conversationEvents.insert({
       familyId,
       source: input.source,
       conversationId: input.conversationId,
@@ -255,15 +255,10 @@ export class MessageIngester {
       ingestedAt: new Date(),
     });
 
-    await this.enqueueAndLog(familyId, event.id, input.actor, 'text', {
+    await this.enqueue(familyId, event.id, input.actor, 'text', {
       textLength: input.text.length,
       language: detectLanguage(input.text),
     });
-
-    this.logger.info(
-      { eventId: event.id, externalEventId: input.externalEventId },
-      'Text message ingested and queued',
-    );
 
     return event.id;
   }
@@ -285,7 +280,7 @@ export class MessageIngester {
     await this.ensureIdentity(familyId, input.source, input.actor);
 
     // Check for duplicates
-    const existing = await this.eventRepo.findByExternalId(
+    const existing = await this.conversationEvents.findByExternalId(
       familyId,
       input.source,
       input.conversationId,
@@ -311,7 +306,7 @@ export class MessageIngester {
     };
 
     // Create conversation event
-    const event = await this.eventRepo.insert({
+    const event = await this.conversationEvents.insert({
       familyId,
       source: input.source,
       conversationId: input.conversationId,
@@ -331,7 +326,7 @@ export class MessageIngester {
       ingestedAt: new Date(),
     });
 
-    await this.enqueueAndLog(familyId, event.id, input.actor, 'photo', {
+    await this.enqueue(familyId, event.id, input.actor, 'photo', {
       hasCaption: !!input.caption,
       photoSize: input.fileSize,
     });
@@ -361,7 +356,7 @@ export class MessageIngester {
     await this.ensureIdentity(familyId, input.source, input.actor);
 
     // Check for duplicates
-    const existing = await this.eventRepo.findByExternalId(
+    const existing = await this.conversationEvents.findByExternalId(
       familyId,
       input.source,
       input.conversationId,
@@ -387,7 +382,7 @@ export class MessageIngester {
     };
 
     // Create conversation event
-    const event = await this.eventRepo.insert({
+    const event = await this.conversationEvents.insert({
       familyId,
       source: input.source,
       conversationId: input.conversationId,
@@ -407,7 +402,7 @@ export class MessageIngester {
       ingestedAt: new Date(),
     });
 
-    await this.enqueueAndLog(familyId, event.id, input.actor, 'document', {
+    await this.enqueue(familyId, event.id, input.actor, 'document', {
       hasCaption: !!input.caption,
       mimeType: input.mimeType,
       fileName: input.fileName,
@@ -438,7 +433,7 @@ export class MessageIngester {
     await this.ensureIdentity(familyId, input.source, input.actor);
 
     // Check for duplicates
-    const existing = await this.eventRepo.findByExternalId(
+    const existing = await this.conversationEvents.findByExternalId(
       familyId,
       input.source,
       input.conversationId,
@@ -467,7 +462,7 @@ export class MessageIngester {
     };
 
     // Create conversation event
-    const event = await this.eventRepo.insert({
+    const event = await this.conversationEvents.insert({
       familyId,
       source: input.source,
       conversationId: input.conversationId,
@@ -487,7 +482,7 @@ export class MessageIngester {
       ingestedAt: new Date(),
     });
 
-    await this.enqueueAndLog(familyId, event.id, input.actor, 'video', {
+    await this.enqueue(familyId, event.id, input.actor, 'video', {
       hasCaption: !!input.caption,
       duration: input.duration,
       mimeType: input.mimeType,
@@ -523,7 +518,7 @@ export class MessageIngester {
     await this.ensureIdentity(familyId, input.source, input.actor);
 
     // Check for duplicates
-    const existing = await this.eventRepo.findByExternalId(
+    const existing = await this.conversationEvents.findByExternalId(
       familyId,
       input.source,
       input.conversationId,
@@ -546,7 +541,7 @@ export class MessageIngester {
     };
 
     // Create conversation event
-    const event = await this.eventRepo.insert({
+    const event = await this.conversationEvents.insert({
       familyId,
       source: input.source,
       conversationId: input.conversationId,
@@ -562,7 +557,7 @@ export class MessageIngester {
     });
 
     // Enqueue with debounce delay (allows batching multiple joins)
-    await this.enqueueAndLog(
+    await this.enqueue(
       familyId,
       event.id,
       input.actor,
