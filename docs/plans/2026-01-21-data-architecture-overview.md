@@ -21,7 +21,7 @@ Sobremesa extracts family history from conversations, but the current architectu
 
 A comprehensive redesign that:
 
-1. **Adds entity merge tracking** - Explicit `entity_merges` table with audit trail and reversibility
+1. **Adds entity merge tracking** - Explicit `entity_merges` table for active merges (deletable to undo)
 2. **Introduces claim relationships** - Track when claims support, contradict, or refine each other
 3. **Calculates claim strength** - Score claims based on source type, certainty language, and conflicts
 4. **Extracts services from Registrar** - Testable services for matching, conflicts, strength, and merges
@@ -51,31 +51,31 @@ Telegram → Ingester → ConversationEvent → Intern (routing)
 ### New Flow
 
 ```
-Telegram → Ingester → IngestionBatch
+Telegram → Ingester → ConversationEvent (+ sequence_number)
                           ↓
-                    ConversationEvent (+ sequence_number)
+                        Intern (routing)
                           ↓
-                      Intern (routing)
+     ┌────────────────────┼────────────────────┐
+     ↓                    ↓                    ↓
+  [Admin]             [Scribe]            [Historian]
                           ↓
-                      [Scribe]
+                      DomainModel (+ inference signals)
                           ↓
-                    DomainModel (+ inference signals)
-                          ↓
-                    [Registrar] ─── orchestrator ───────────────────┐
+                     [Registrar] ─── orchestrator ──────────────────┐
                           │                                         │
-            ┌─────────────┼─────────────┐                          │
-            ↓             ↓             ↓                          ↓
-    EntityMatcher  ConflictDetector  StrengthCalc           MergeHandler
-            │             │             │                          │
-            └─────────────┴──────┬──────┘                          │
-                                 ↓                                 │
-                        DataRetrieverService  ←────────────────────┘
-                                 ↓                          ↑
-                           Repositories                     │
-                                 ↓                          │
-                            Database                        │
-                                                           │
-                    [Historian] ───────────────────────────┘
+            ┌─────────────┼─────────────┐                           │
+            ↓             ↓             ↓                           ↓
+    EntityMatcher  ConflictDetector  StrengthCalc              MergeHandler
+            │             │             │                           │
+            └─────────────┼─────────────┘                           │
+                          ↓                                         │
+                 DataRetrieverService  ←────────────────────────────┘
+                          ↓                                         ↑
+                     Repositories                                   │
+                          ↓                                         │
+                       Database                                     │
+                          ↓                                         │
+                     [Historian]  ──────────────────────────────────┘
 ```
 
 ### Key Architectural Decisions
@@ -83,7 +83,7 @@ Telegram → Ingester → IngestionBatch
 | Decision                       | Choice                                            | Rationale                                 |
 | ------------------------------ | ------------------------------------------------- | ----------------------------------------- |
 | Entity resolution approach     | Keep Supabase + LLM-based resolution in Registrar | Minimal migration, Option 2 from research |
-| Merge tracking                 | Dedicated `entity_merges` table                   | Explicit audit trail, reversible          |
+| Merge tracking                 | Dedicated `entity_merges` table                   | Explicit, deletable to undo               |
 | Where entity matching lives    | `EntityMatcherService` in Registrar               | Transactional, testable                   |
 | Where conflict detection lives | `ConflictDetectorService` in Registrar            | Access to context, testable               |
 | Shared retrieval               | `DataRetrieverService` in libs/database           | Avoids Registrar↔Historian coupling      |
@@ -124,7 +124,7 @@ Telegram → Ingester → IngestionBatch
 
 When we determine that two entities are the same (e.g., "Dexter's ex-wife" = "Judy Dor"):
 
-1. Create `entity_merges` record (source of truth, auditable)
+1. Create `entity_merges` record (tracks active merge, deletable to undo)
 2. Set `superseded_by` on source entity (denormalized for query performance)
 3. Target entity gains source's name as alias
 4. Claims retain original entity references (preserves provenance)
@@ -151,6 +151,11 @@ Arrays are replaced with join tables for better querying and metadata:
 | `events.people_involved[]`  | `event_participants` | Role per participant          |
 | `claims.entity_id` (single) | `claim_entities`     | Multiple entities per claim   |
 
+### Migrations
+
+We're still in the development phase of the app, so database migrations should all be added to
+the xxx_init_schema.sql instead of creating separate migration files and the db should be reset.
+
 ---
 
 ## Implementation Phases
@@ -169,6 +174,8 @@ Arrays are replaced with join tables for better querying and metadata:
 | Create claim_entities table                 | Data Architecture | 004        |
 | Enhance claims table (strength fields)      | Data Architecture | 005        |
 | Create claim_relationships table            | Data Architecture | 006        |
+
+**Note**: `ingestion_batch_id` on conversation_events is **nullable**. It is only populated for batch operations (cron jobs, manual imports). Real-time Telegram messages have `NULL` ingestion_batch_id since they are processed individually.
 
 **Verification**: All migrations run successfully, existing data intact
 
@@ -267,7 +274,7 @@ Arrays are replaced with join tables for better querying and metadata:
 
 ### Functional
 
-- [ ] Entity merges create audit trail in `entity_merges` table
+- [ ] Entity merges tracked in `entity_merges` table with reason and confidence
 - [ ] Merged entities have `superseded_by` set correctly
 - [ ] Claims linked to multiple entities via `claim_entities`
 - [ ] Claim strength calculated for all new claims
@@ -310,7 +317,7 @@ Arrays are replaced with join tables for better querying and metadata:
 ## Open Questions
 
 1. **Scribe output storage**: Should we store Scribe's domain model output for replay testing? (See Data Integrity plan)
-2. **Merge approval UI**: How will users approve proposed merges? (Deferred to future work)
+2. **Merge review UI**: How will users review potential matches (medium-confidence) and trigger/undo merges? (Deferred to future work)
 3. **Bulk retroactive strength calculation**: Should we recalculate strength for all historical claims? (Recommended for Phase 4)
 
 ---

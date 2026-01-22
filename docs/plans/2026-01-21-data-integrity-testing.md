@@ -48,7 +48,7 @@ The schema uses a mix of foreign key constraints (enforced by DB) and polymorphi
 
 #### Logical Consistency
 
-- Entities (people, places, events, stories) with `superseded_by` should have corresponding `entity_merges` record with `status = 'accepted'`
+- Entities (people, places, events, stories) with `superseded_by` should have corresponding `entity_merges` record
 - `identity_claims.resolved = true` should have `entity_merge_id` set
 - No circular merge chains (trigger-enforced, but worth validating)
 
@@ -139,16 +139,14 @@ WHERE p.superseded_by IS NOT NULL
     WHERE em.source_entity_id = p.id
       AND em.source_entity_type = 'person'
       AND em.target_entity_id = p.superseded_by
-      AND em.status = 'accepted'
       AND em.family_id = p.family_id
   );
 -- (Repeat for places, events, stories)
 
--- 7. entity_merges accepted but entity not marked superseded
+-- 7. entity_merges record exists but entity not marked superseded
 SELECT em.id, em.source_entity_id, em.source_entity_type, em.target_entity_id
 FROM entity_merges em
-WHERE em.status = 'accepted'
-  AND em.source_entity_type = 'person'
+WHERE em.source_entity_type = 'person'
   AND NOT EXISTS (
     SELECT 1 FROM people p
     WHERE p.id = em.source_entity_id
@@ -178,7 +176,6 @@ WITH RECURSIVE merge_chain AS (
   SELECT source_entity_id, target_entity_id, source_entity_type, family_id,
          ARRAY[source_entity_id] as path, FALSE as is_cycle, 1 as depth
   FROM entity_merges
-  WHERE status = 'accepted'
 
   UNION ALL
 
@@ -190,7 +187,6 @@ WITH RECURSIVE merge_chain AS (
   JOIN entity_merges em ON em.source_entity_id = mc.target_entity_id
     AND em.source_entity_type = mc.source_entity_type
     AND em.family_id = mc.family_id
-    AND em.status = 'accepted'
   WHERE mc.depth < 100 AND NOT mc.is_cycle
 )
 SELECT DISTINCT source_entity_id, source_entity_type, family_id, path

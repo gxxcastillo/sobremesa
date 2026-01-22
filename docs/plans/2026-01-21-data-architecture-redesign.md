@@ -20,7 +20,7 @@ Summary of key architectural choices:
 4. **Polymorphic event_participants** - Like story_entities, supports both people and places (for location context)
 5. **Identity claims people-only** - Removed entity_type field; identity resolution is exclusively for people; `canonical_name` is nullable (may not be known initially)
 6. **Clean join table pattern** - Consistent polymorphic design across story_entities, event_participants, claim_entities, and entity_cluster_members. **All join tables include `family_id`** with **composite foreign keys** (e.g., `FOREIGN KEY (family_id, claim_id) REFERENCES claims(family_id, id)`) that enforce tenant integrity at the DB level - no app-layer validation needed.
-7. **entity_merges is source of truth** - Canonical merge records; superseded_by columns are denormalized for query performance. **Uses `merge_status` enum** (`proposed`, `accepted`, `rejected`, `reversed`) instead of boolean to avoid NULL-boolean issues.
+7. **entity_merges is mutable and deletable** - Records active merges; superseded_by columns are denormalized for query performance. **Merges can be deleted** (no status workflow) - provenance is preserved in immutable `claims` and `identity_claims` tables. Event logs capture deletions if audit trail needed.
 8. **Circular merge prevention** - Database trigger traverses **`entity_merges` table directly** (not denormalized columns) to prevent A→B→C→A merge cycles
 9. **Claim cascade queries** - `get_entity_merge_chain()` helper finds claims across merged entity predecessors
 10. **LLM evaluation via flag polling with locking** - No separate queue table; uses `needs_llm_evaluation` + `llm_evaluated_at` columns. **Includes lock/lease mechanism** (`llm_eval_locked_at`, `llm_eval_locked_by`) to prevent duplicate processing by concurrent workers.
@@ -194,6 +194,14 @@ ALTER TABLE conversation_events
 
 **Goal**: Track ingestion batches for audit and rollback
 
+**Scope**: IngestionBatch is used for:
+
+- Cron job ingestions (scheduled imports)
+- Manual/historical bulk imports
+- **NOT** for real-time Telegram polling (messages processed individually via Telegraf long-polling)
+
+**Rationale**: Real-time Telegram polling typically returns 0-1 messages per poll for a family chat. IngestionBatch adds overhead without meaningful grouping in this flow. The `sequence_number` + `created_at` on conversation_events provides sufficient ordering and debugging for real-time messages.
+
 **Changes**:
 
 ```sql
@@ -212,13 +220,15 @@ CREATE TABLE ingestion_batches (
 
 ALTER TABLE conversation_events
   ADD COLUMN ingestion_batch_id UUID REFERENCES ingestion_batches(id);
+  -- Nullable: only populated for batch operations (cron jobs, manual imports)
+  -- Real-time Telegram messages have NULL ingestion_batch_id
 ```
 
 **Benefits**:
 
-- Can identify and potentially rollback bad ingestion batches
-- Track ingestion health over time
-- Useful for data quality monitoring
+- Can identify and rollback bad batch imports (not applicable to real-time messages)
+- Track ingestion health for scheduled jobs over time
+- Useful for data quality monitoring of bulk operations
 
 ---
 
@@ -232,24 +242,30 @@ ALTER TABLE conversation_events
 
 **Entity tables are just materialized views** for query performance. The canonical truth lives in claims.
 
-> **ARCHITECTURAL INVARIANT: Merge Source of Truth**
+> **ARCHITECTURAL INVARIANT: Merge Records and Provenance**
 >
-> **`entity_merges` is THE single source of truth for all merge decisions.**
+> **`entity_merges` tracks active merges. `claims` provides immutable provenance.**
 >
-> - **Source of truth for facts**: `claims` table (with `source_event_id` provenance)
-> - **Source of truth for merges**: `entity_merges` table
+> - **Source of truth for facts**: `claims` table (immutable, with `source_event_id` provenance)
+> - **Active merges**: `entity_merges` table (mutable, deletable)
 > - **Derived cache**: `superseded_by` and `superseded_at` columns on entity tables
 >
 > **Sync contract:**
 >
 > - Registrar writes to `entity_merges` AND updates `superseded_by` in the same transaction
-> - If `entity_merges` says A→B is `accepted`, then `A.superseded_by = B`
+> - If `entity_merges` has a record for A→B, then `A.superseded_by = B`
 > - If they ever diverge, `entity_merges` wins (rebuild cache from it)
 > - No other component may write to `superseded_by` directly
 >
-> **Implication**: Entity tables can be fully reconstructed by replaying claims + applying merges from `entity_merges`. If an entity table is corrupted or inconsistent, re-process the relevant `conversation_events` through Scribe→Registrar pipeline.
+> **Deleting a merge:**
 >
-> **Note**: `merge_reason` lives on `entity_merges`, NOT on entity tables. This avoids duplicating data and ensures single source of truth.
+> - Delete the `entity_merges` record
+> - Clear `superseded_by` on the source entity
+> - For identity-claim merges: set `identity_claims.resolved = FALSE` (the FK is ON DELETE SET NULL)
+> - The underlying `claim` remains immutable - provenance is preserved
+> - Event logs can capture the deletion with original reason if audit trail needed
+>
+> **Implication**: Entity tables can be fully reconstructed by replaying claims + applying merges from `entity_merges`. If an entity table is corrupted or inconsistent, re-process the relevant `conversation_events` through Scribe→Registrar pipeline.
 
 **Changes**:
 
@@ -263,7 +279,7 @@ ALTER TABLE stories ADD CONSTRAINT uq_stories_family_id UNIQUE (family_id, id);
 
 -- Add merge tracking to core entity tables (denormalized from entity_merges for query performance)
 -- These columns are populated by Registrar when creating entity_merge records
--- Note: merge_reason is NOT stored here (it's on entity_merges - the source of truth)
+-- Note: merge_reason is NOT stored here (it lives on entity_merges)
 ALTER TABLE people
   ADD COLUMN superseded_by UUID,
   ADD COLUMN superseded_at TIMESTAMPTZ,
@@ -312,7 +328,7 @@ CREATE INDEX idx_stories_current
 - Can query current entities: `WHERE superseded_by IS NULL`
 - Can trace merge chains: follow superseded_by → target
 - Temporal history via claims table (no redundant storage)
-- Easy to reverse merges via entity_merges table
+- Easy to undo merges by deleting entity_merges record
 
 **Why This Works**:
 
@@ -322,16 +338,15 @@ CREATE INDEX idx_stories_current
 
 #### 2.2 Entity Merge Tracking (First-Class)
 
-**Goal**: Make entity merges explicit, auditable, and reversible
+**Goal**: Make entity merges explicit and auditable
 
 **Current Problem**: When Registrar merges "Dexter's ex-wife" into "Judy Dor", the merge is implicit (just updates aliases). No record of the decision.
 
 **Solution**: Create explicit merge table
 
-```sql
--- Status enum for merge workflow (replaces reversed BOOLEAN)
-CREATE TYPE merge_status AS ENUM ('proposed', 'accepted', 'rejected', 'reversed');
+**Design Decision**: `entity_merges` is **mutable and deletable**. To undo a merge, simply delete the record and clear the `superseded_by` column on the source entity. Provenance for identity-based merges is preserved in the immutable `claims` table. For non-identity merges (fuzzy match, manual), event logs can capture deletions with the original reason if audit trail is needed.
 
+```sql
 CREATE TABLE entity_merges (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id UUID NOT NULL REFERENCES families(id),
@@ -351,16 +366,6 @@ CREATE TABLE entity_merges (
   -- Tenant safety is enforced by trigger below (not composite FK)
   trigger_event_id UUID REFERENCES conversation_events(id),
 
-  -- Workflow status (replaces reversed BOOLEAN to avoid NULL-boolean issues)
-  -- 'proposed': pending approval (medium confidence merges)
-  -- 'accepted': merge is active
-  -- 'rejected': merge was proposed but declined
-  -- 'reversed': merge was accepted then undone
-  status merge_status NOT NULL DEFAULT 'proposed',
-  status_changed_at TIMESTAMPTZ DEFAULT NOW(),  -- Always set for reliable timestamps
-  status_changed_by VARCHAR(255),
-  status_reason TEXT,
-
   -- Provenance
   merged_by VARCHAR(50), -- 'registrar', 'curator', 'admin', 'llm_resolver'
   merge_reason TEXT,
@@ -378,11 +383,10 @@ CREATE TABLE entity_merges (
   CONSTRAINT no_self_merge CHECK (source_entity_id <> target_entity_id)
 );
 
--- Only one accepted outgoing merge per source entity
--- Prevents ambiguous state where A→B and A→C are both accepted
-CREATE UNIQUE INDEX idx_entity_merges_unique_accepted_source
-  ON entity_merges(family_id, source_entity_type, source_entity_id)
-  WHERE status = 'accepted';
+-- Only one active merge per source entity
+-- Prevents ambiguous state where A→B and A→C both exist
+CREATE UNIQUE INDEX idx_entity_merges_unique_source
+  ON entity_merges(family_id, source_entity_type, source_entity_id);
 
 CREATE INDEX idx_entity_merges_source
   ON entity_merges(family_id, source_entity_type, source_entity_id);
@@ -390,56 +394,38 @@ CREATE INDEX idx_entity_merges_source
 CREATE INDEX idx_entity_merges_target
   ON entity_merges(family_id, target_entity_type, target_entity_id);
 
--- Index for querying active merges (status column omitted - all rows in this index have status='accepted')
-CREATE INDEX idx_entity_merges_accepted
-  ON entity_merges(family_id)
-  WHERE status = 'accepted';
-
--- Index for pending approvals (status column omitted - all rows in this index have status='proposed')
-CREATE INDEX idx_entity_merges_proposed
-  ON entity_merges(family_id)
-  WHERE status = 'proposed';
-
 -- Prevent circular merges (A→B→C→A)
--- IMPORTANT: Traverses entity_merges (source of truth) NOT denormalized superseded_by columns
+-- IMPORTANT: Traverses entity_merges NOT denormalized superseded_by columns
 -- This ensures cycle detection is consistent even if superseded_by is temporarily out of sync
--- Fires on INSERT and UPDATE (when status changes to 'accepted')
 CREATE OR REPLACE FUNCTION prevent_circular_merges()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Only check for cycles when merge is being accepted
-  -- (INSERT with status='accepted' OR UPDATE changing status to 'accepted')
-  IF NEW.status = 'accepted' AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'accepted') THEN
-    -- Check if target entity is already in the merge chain leading to source
-    -- This prevents cycles like A→B→C→A
-    -- Uses entity_merges table directly (the source of truth) rather than denormalized columns
-    IF EXISTS (
-      WITH RECURSIVE merge_chain AS (
-        -- Start from the target entity
-        SELECT NEW.target_entity_id as entity_id, 1 as depth
-        UNION ALL
-        -- Follow the merge chain: find where this entity was merged TO
-        SELECT em.target_entity_id, mc.depth + 1
-        FROM entity_merges em
-        JOIN merge_chain mc ON em.source_entity_id = mc.entity_id
-        WHERE em.family_id = NEW.family_id  -- CRITICAL: scope to same tenant
-          AND em.source_entity_type = NEW.source_entity_type
-          AND em.status = 'accepted'  -- Only follow accepted merges
-          AND mc.depth < 100  -- Depth limit for safety
-      )
-      SELECT 1 FROM merge_chain WHERE entity_id = NEW.source_entity_id
-    ) THEN
-      RAISE EXCEPTION 'Circular merge detected: would create cycle in % merge chain', NEW.source_entity_type;
-    END IF;
+  -- Check if target entity is already in the merge chain leading to source
+  -- This prevents cycles like A→B→C→A
+  IF EXISTS (
+    WITH RECURSIVE merge_chain AS (
+      -- Start from the target entity
+      SELECT NEW.target_entity_id as entity_id, 1 as depth
+      UNION ALL
+      -- Follow the merge chain: find where this entity was merged TO
+      SELECT em.target_entity_id, mc.depth + 1
+      FROM entity_merges em
+      JOIN merge_chain mc ON em.source_entity_id = mc.entity_id
+      WHERE em.family_id = NEW.family_id  -- CRITICAL: scope to same tenant
+        AND em.source_entity_type = NEW.source_entity_type
+        AND mc.depth < 100  -- Depth limit for safety
+    )
+    SELECT 1 FROM merge_chain WHERE entity_id = NEW.source_entity_id
+  ) THEN
+    RAISE EXCEPTION 'Circular merge detected: would create cycle in % merge chain', NEW.source_entity_type;
   END IF;
 
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger fires on both INSERT and UPDATE to catch proposed→accepted transitions
 CREATE TRIGGER check_circular_merges
-  BEFORE INSERT OR UPDATE ON entity_merges
+  BEFORE INSERT ON entity_merges
   FOR EACH ROW
   EXECUTE FUNCTION prevent_circular_merges();
 
@@ -466,7 +452,7 @@ CREATE TRIGGER check_entity_merge_trigger_event
   EXECUTE FUNCTION validate_entity_merge_trigger_event();
 ```
 
-**Source of Truth**: This table is the **canonical record** of all merge decisions. The `superseded_by` columns on entity tables are denormalized copies for query performance.
+**Active Merges**: This table tracks currently active merges. The `superseded_by` columns on entity tables are denormalized copies for query performance. To undo a merge, delete the record and clear `superseded_by`.
 
 **Workflow**:
 
@@ -481,21 +467,21 @@ CREATE TRIGGER check_entity_merge_trigger_event
 
 **Benefits**:
 
-- Full audit trail of merge decisions
-- Can reverse merges (un-merge entities)
+- Explicit record of active merges with reason and confidence
+- Can undo merges by deleting record (provenance preserved in claims)
 - Can query "what entities were merged into this person?"
-- Enables merge confidence tracking
+- Simple model - no status workflow, just exists or doesn't
 - Supports LLM-based entity resolution (future)
 
 #### 2.2.1 Querying Claims for Superseded Entities
 
 **Problem**: When entity A is merged into entity B, claims in `claim_entities` still reference A's ID. How do we find "all claims about B" including claims originally about A?
 
-**Solution**: Query helper that follows merge chains using `entity_merges` (source of truth)
+**Solution**: Query helper that follows merge chains using `entity_merges`
 
 ```sql
 -- Helper function: Get all entity IDs in merge chain (entity + all merged predecessors)
--- Uses entity_merges table (source of truth) NOT denormalized superseded_by columns
+-- Uses entity_merges table NOT denormalized superseded_by columns
 -- This ensures consistency even if superseded_by columns are temporarily out of sync
 -- Supports all mergeable entity types: person, place, event, story
 CREATE OR REPLACE FUNCTION get_entity_merge_chain(
@@ -517,7 +503,6 @@ BEGIN
     WHERE em.family_id = p_family_id
       AND em.source_entity_type = p_entity_type
       AND em.target_entity_type = p_entity_type  -- Defensive: both types must match
-      AND em.status = 'accepted'  -- Only follow accepted merges
       AND mc.depth < 100  -- Depth limit for safety (matches cycle prevention)
   )
   SELECT id FROM merge_chain;
@@ -684,8 +669,9 @@ CREATE TABLE identity_claims (
   resolved_at TIMESTAMPTZ,
   resolved_by VARCHAR(255),
 
-  -- Link to merge decision
-  entity_merge_id UUID REFERENCES entity_merges(id),
+  -- Link to merge decision (NULL if no merge needed, or merge was deleted)
+  -- ON DELETE SET NULL: when a merge is deleted, this becomes NULL and resolved should be set to FALSE
+  entity_merge_id UUID REFERENCES entity_merges(id) ON DELETE SET NULL,
 
   created_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -1215,9 +1201,9 @@ async function processLLMEvaluationQueue() {
 ### New Entities
 
 7. **EntityMerge**
-   - Tracks all entity deduplication decisions
-   - Reversible, auditable
-   - Links source entity → target entity with confidence
+   - Tracks active entity merges (mutable, deletable)
+   - Delete to undo merge; provenance preserved in claims
+   - Links source entity → target entity with confidence and reason
 
 8. **IdentityClaim**
    - First-class identity resolution for people
@@ -1230,10 +1216,11 @@ async function processLLMEvaluationQueue() {
    - Fast bidirectional lookup (claim → entities, entity → claims)
    - Includes role and significance metadata per link
 
-10. **IngestionBatch**
-    - Groups conversation_events by ingestion run
-    - Enables rollback and quality tracking
-    - Tracks ingestion health metrics
+10. **IngestionBatch** (batch operations only)
+    - Groups conversation_events for bulk/manual imports and cron jobs
+    - **NOT** used for real-time Telegram polling (messages processed individually)
+    - Enables rollback for batch imports
+    - Tracks ingestion health for scheduled jobs
 
 11. **ClaimRelationship**
     - Links claims that support/contradict each other
@@ -1300,8 +1287,10 @@ Registrar (orchestrator)
       - Update target person (add source name to aliases)
       - Mark source person as superseded (superseded_by = target_id)
    d. If confidence requires review (0.7-0.9):
-      - Create entity_merge with status='proposed' (pending approval)
-      - Add to review queue
+      - Do NOT create merge yet
+      - Log potential match for manual review (future Curator agent)
+   e. If low confidence (<0.7):
+      - Create as separate entity, no merge
 
 2. Process identity_claims
    a. Create claim record (in claims table)
@@ -1339,8 +1328,8 @@ Registrar (orchestrator)
 **Capabilities**:
 
 - Review unresolved identity_claims
-- Approve or reject entity_merges
-- Reverse incorrect merges
+- Create merges for medium-confidence matches
+- Delete incorrect merges
 - Manually link claims to entities
 - Adjust claim strengths
 
@@ -1352,7 +1341,7 @@ Registrar (orchestrator)
 
 1. ✅ Check sequence_number is monotonically increasing per family
 2. ✅ Check no duplicate (source, conversation_id, external_event_id) per family
-3. ✅ Check all events have ingestion_batch_id
+3. ✅ Check batch-imported events have ingestion_batch_id (real-time messages may have NULL)
 4. ✅ Run event replay: delete all entities, replay events in sequence order → should recreate identical state
 
 ### Phase 2 Verification (entity ingestion)
@@ -1360,7 +1349,7 @@ Registrar (orchestrator)
 1. ✅ Check every entity has at least one entry in claim_entities (except placeholders)
 2. ✅ Check every superseded entity has entity_merge record
 3. ✅ Check identity_claims.resolved matches existence of entity_merge_id
-4. ✅ Reverse a merge → verify all claims still accessible via entity_merges
+4. ✅ Delete a merge → verify claims still queryable (original entity references preserved)
 5. ✅ Check claim_strength calculations are consistent
 6. ✅ Verify temporal history via claims: query claims at specific timestamp returns correct facts for that point in time
 7. ✅ Check claim_entities bidirectional consistency: all claims have entities, all entity references are valid
@@ -1406,7 +1395,7 @@ Registrar (orchestrator)
 | `libs/agents/registrar/src/lib/services/entity-matcher.ts`                  | NEW    | Entity matching logic (exact, alias, fuzzy, optional LLM verification)                                                                                                                |
 | `libs/agents/registrar/src/lib/services/conflict-detector.ts`               | NEW    | Claim conflict detection (value-based + optional semantic via LLM)                                                                                                                    |
 | `libs/agents/registrar/src/lib/services/strength-calculator.ts`             | NEW    | Algorithmic claim strength calculation logic (hybrid approach)                                                                                                                        |
-| `libs/agents/registrar/src/lib/services/merge-handler.ts`                   | NEW    | Entity merge operations with audit trail                                                                                                                                              |
+| `libs/agents/registrar/src/lib/services/merge-handler.ts`                   | NEW    | Entity merge and unmerge operations                                                                                                                                                   |
 | `libs/agents/historian/src/lib/retriever.ts`                                | MODIFY | Use shared DataRetrieverService, move common logic there                                                                                                                              |
 | `libs/shared/types/src/lib/entities.ts`                                     | MODIFY | Add EntityMerge, IdentityClaim, ClaimEntity, IngestionBatch, StoryEntity, EventParticipant, EntityCluster, EntityClusterMember types; add merge fields to Person, Place, Event, Story |
 | `libs/shared/types/src/lib/claims.ts`                                       | MODIFY | Update Claim interface: add inference_method, claim_strength, strength_factors, needs_llm_evaluation; make entity_id/entity_type nullable (derivations via claim_relationships)       |
@@ -1715,11 +1704,11 @@ UPDATE claims SET status = 'superseded' WHERE id = claim_1;
 
 ### ✅ Decided
 
-1. **Merge approval workflow**: **Confidence-based threshold**
-   - High confidence (>0.9): Auto-approve
-   - Medium confidence (0.7-0.9): Require manual review
-   - Low confidence (<0.7): Flag only, no auto-merge
-   - **Rationale**: Balances speed and accuracy for genealogy data
+1. **Merge workflow**: **Confidence-based threshold**
+   - High confidence (>0.9): Create merge immediately
+   - Medium confidence (0.7-0.9): Do not merge, log for manual review
+   - Low confidence (<0.7): Create as separate entity, no merge
+   - **Rationale**: Merges only exist for confirmed matches. No "proposed" status - keeps `entity_merges` simple and deletable.
 
 2. **Neo4j timeline**: **Not now (prepare schema only)**
    - Add graph metadata columns (graph_labels, temporal bounds)
@@ -1736,7 +1725,7 @@ UPDATE claims SET status = 'superseded' WHERE id = claim_1;
 4. **Entity versioning approach**: **Self-referential (superseded_by column)**
    - Track merges via `superseded_by`, `superseded_at` columns (merge_reason lives on entity_merges only)
    - Query current entities: `WHERE superseded_by IS NULL`
-   - **Source of truth**: `entity_merges` table; `superseded_by` columns are derived cache
+   - **Active merges**: `entity_merges` table (mutable, deletable); `superseded_by` columns are derived cache
    - **No separate version tables needed** - claims already provide complete temporal provenance
-   - **Rationale**: Entity tables are derived summaries maintained for fast reads; the canonical truth is claims (facts + provenance) and entity_merges (identity/merge decisions), rooted in the immutable conversation_events ledger.
+   - **Rationale**: Entity tables are derived summaries maintained for fast reads; the canonical truth is claims (facts + provenance), rooted in the immutable conversation_events ledger. `entity_merges` tracks active merge decisions and can be deleted to undo merges.
    - For "what we knew about Maria on 2025-06-01": query claims WHERE entity_id = maria AND created_at <= date

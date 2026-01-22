@@ -185,7 +185,7 @@ This gives you:
 
 > **Implementation**: See [Data Architecture Redesign](./2026-01-21-data-architecture-redesign.md) for the full schema including:
 >
-> - `entity_merges` table with `merge_status` enum (`proposed`, `accepted`, `rejected`, `reversed`)
+> - `entity_merges` table (mutable, deletable - no status workflow)
 > - `identity_claims` table for descriptive→canonical name resolution
 > - Circular merge prevention via database trigger
 > - Composite foreign keys for tenant integrity

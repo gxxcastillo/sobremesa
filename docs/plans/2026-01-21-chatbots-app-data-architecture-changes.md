@@ -523,7 +523,7 @@ export class StrengthCalculatorService {
 
 ### 3.4 MergeHandlerService
 
-**Purpose**: Handle entity merge operations with audit trail.
+**Purpose**: Handle entity merge and unmerge operations.
 
 ```typescript
 export class MergeHandlerService {
@@ -546,7 +546,7 @@ export class MergeHandlerService {
       reason: string;
     },
   ): Promise<EntityMerge> {
-    // 1. Create merge audit record
+    // 1. Create merge record
     const merge = await this.entityMergeRepo.create({
       familyId,
       sourceEntityId,
@@ -555,23 +555,35 @@ export class MergeHandlerService {
       targetEntityType: entityType,
       mergeStrategy: options.strategy,
       confidence: options.confidence,
-      status: options.confidence >= 0.9 ? 'accepted' : 'proposed',
       triggerEventId: options.triggerEventId,
       mergedBy: 'registrar',
       mergeReason: options.reason,
     });
 
-    // 2. Update superseded_by on source entity (if accepted)
-    if (merge.status === 'accepted') {
-      await this.markSuperseded(
-        familyId,
-        sourceEntityId,
-        targetEntityId,
-        entityType,
-      );
-    }
+    // 2. Update superseded_by on source entity
+    await this.markSuperseded(
+      familyId,
+      sourceEntityId,
+      targetEntityId,
+      entityType,
+    );
 
     return merge;
+  }
+
+  async deleteMerge(familyId: string, mergeId: string): Promise<void> {
+    const merge = await this.entityMergeRepo.findById(familyId, mergeId);
+    if (!merge) return;
+
+    // 1. Clear superseded_by on source entity
+    const repo = this.getRepoForType(merge.sourceEntityType);
+    await repo.update(familyId, merge.sourceEntityId, {
+      supersededBy: null,
+      supersededAt: null,
+    });
+
+    // 2. Delete the merge record
+    await this.entityMergeRepo.delete(familyId, mergeId);
   }
 
   private async markSuperseded(
@@ -802,7 +814,7 @@ await this.ingestionBatchRepo.complete(batch.id, eventCount);
 
 | Type                | Purpose                                      |
 | ------------------- | -------------------------------------------- |
-| `EntityMerge`       | Audit trail for entity merges                |
+| `EntityMerge`       | Active merge record (deletable to undo)      |
 | `IdentityClaim`     | Tracks descriptive→canonical name resolution |
 | `ClaimEntity`       | Many-to-many claim↔entity                   |
 | `ClaimRelationship` | Claim conflict/support relationships         |
@@ -887,7 +899,7 @@ await this.ingestionBatchRepo.complete(batch.id, eventCount);
 | **EntityMatcherService**      | Decide if extracted entity matches existing                |
 | **ConflictDetectorService**   | Detect claim conflicts                                     |
 | **StrengthCalculatorService** | Calculate claim strength from signals                      |
-| **MergeHandlerService**       | Handle entity merges with audit trail                      |
+| **MergeHandlerService**       | Handle entity merge and unmerge operations                 |
 | **DataRetrieverService**      | Shared retrieval logic (used by Registrar + Historian)     |
 | **Historian**                 | Answer questions using DataRetriever                       |
 | **Repositories**              | CRUD operations (persistence only)                         |
