@@ -62,9 +62,8 @@ export interface TimelineEventInfo {
   id: string;
   title: string;
   eventType: string;
+  dateText?: string;
   dateYear?: number;
-  dateMonth?: number;
-  dateApproximate?: string;
   place?: string;
   peopleInvolved: string[];
   confidence: Confidence;
@@ -121,8 +120,6 @@ export interface RetrievedContext {
 export interface HistorianConfig {
   /** Display name for the historian */
   historianName: string;
-  /** Model to use */
-  model: string;
   /** Maximum tokens for response */
   maxTokens: number;
   /** Maximum claims to retrieve per query */
@@ -142,7 +139,6 @@ export interface HistorianConfig {
  */
 export const DEFAULT_HISTORIAN_CONFIG: HistorianConfig = {
   historianName: 'Clio',
-  model: 'claude-sonnet-4-20250514',
   maxTokens: 1024,
   maxClaimsPerQuery: 20,
   maxStories: 5,

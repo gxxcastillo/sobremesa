@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS conversation_events (
 
   -- Content (original language only; translate on-read)
   content_original TEXT,
-  language_original VARCHAR(10),                -- 'es','en','mixed', etc.
+  language_original VARCHAR(10),                -- 'es','en','unknown', etc.
 
   -- Provider-specific metadata
   metadata JSONB,
@@ -541,11 +541,8 @@ CREATE TABLE IF NOT EXISTS events (
   description_language VARCHAR(10),
 
   -- Temporal (as claims; these are derived summaries)
-  date_year INTEGER,
-  date_month INTEGER,
-  date_day INTEGER,
-  date_approximate VARCHAR(255),               -- "late 1880s", "summer"
-  date_confidence VARCHAR(20),
+  date_text VARCHAR(255),                       -- Original: "summer 1920", "around 1889"
+  date_year INTEGER,                            -- Extracted for queries (nullable)
 
   -- Connections (POC-friendly arrays; can be normalized later)
   people_involved UUID[],
@@ -649,7 +646,7 @@ CREATE TABLE IF NOT EXISTS claims (
   -- Provenance
   source_event_id UUID NOT NULL REFERENCES conversation_events(id),
   claimed_by VARCHAR(255) NOT NULL,
-  claimed_by_source VARCHAR(20),              -- 'direct','attributed','hearsay'
+  claimed_by_source VARCHAR(20) NOT NULL DEFAULT 'direct', -- 'direct','attributed','hearsay'
   claimed_at TIMESTAMPTZ DEFAULT NOW(),
 
   -- Certainty
@@ -701,8 +698,7 @@ CREATE INDEX IF NOT EXISTS idx_claims_active
   WHERE status = 'active';
 
 CREATE INDEX IF NOT EXISTS idx_claims_family_source_type
-  ON claims(family_id, claimed_by_source)
-  WHERE claimed_by_source IS NOT NULL;
+  ON claims(family_id, claimed_by_source);
 
 -- ============================================================================
 -- CLAIM CONFLICTS (Explicit preservation, graph-friendly)
@@ -786,7 +782,7 @@ CREATE TABLE IF NOT EXISTS questions (
   language_original VARCHAR(10) NOT NULL,
 
   -- Origin and status
-  origin TEXT NOT NULL CHECK (origin IN ('scribe', 'curator', 'human')),
+  origin TEXT NOT NULL CHECK (origin IN ('curator', 'human')),
   status TEXT NOT NULL CHECK (status IN ('proposed', 'asked', 'answered', 'retired')),
   priority INTEGER NOT NULL DEFAULT 50 CHECK (priority >= 0 AND priority <= 100),
 

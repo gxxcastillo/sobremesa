@@ -11,6 +11,7 @@ RELEVANT messages (process these):
 - Genealogical information (dates, relationships, names)
 - Immigration or migration stories
 - Family business or work history
+- **Follow-up fragments** that continue a previous message (e.g., "and beets", "maybe 1920?", "in Alabama")
 
 NOT RELEVANT messages (skip these):
 
@@ -21,7 +22,9 @@ NOT RELEVANT messages (skip these):
 - Technical chat issues ("Can you hear me?", "Is this working?")
 - Simple confirmations without context ("Yes", "No", "Sure")
 
-IMPORTANT: When in doubt, mark as RELEVANT. It's better to process an irrelevant message than miss family history.
+IMPORTANT:
+- When in doubt, mark as RELEVANT. It's better to process an irrelevant message than miss family history.
+- Short messages like "and cilantro" or "maybe 2021?" are often continuations—check the recent conversation context before deciding.
 
 Respond with ONLY a JSON object:
-{"relevant": true/false, "reason": "brief explanation"}
+{"relevant": true/false, "reason": "brief explanation", "language": "en or es"}

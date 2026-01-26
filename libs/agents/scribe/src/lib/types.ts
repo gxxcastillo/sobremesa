@@ -4,8 +4,6 @@ import type { SupportedLanguage } from '@sobremesa/shared-types';
  * Configuration for the Scribe agent.
  */
 export interface ScribeConfig {
-  /** Claude model to use */
-  model: string;
   /** Maximum tokens for response */
   maxTokens: number;
   /** Extraction thoroughness level */
@@ -16,7 +14,7 @@ export interface ScribeConfig {
   culturalTerms: string[];
   /** Scribe name for prompts */
   scribeName: string;
-  /** Primary language for generating questions */
+  /** Primary language for the family */
   primaryLanguage: SupportedLanguage;
 }
 
@@ -24,7 +22,6 @@ export interface ScribeConfig {
  * Default Scribe configuration.
  */
 export const DEFAULT_SCRIBE_CONFIG: ScribeConfig = {
-  model: 'claude-sonnet-4-20250514',
   maxTokens: 4096,
   thoroughness: 'standard',
   confidence: 'moderate',
@@ -70,99 +67,4 @@ export interface ScribeContext {
   }>;
   /** Recent images shared in conversation */
   recentImages: ImageContext[];
-  /** Pending questions to check for answers */
-  pendingQuestions: Array<{
-    id: string;
-    content: string;
-  }>;
-  /** Recent claims for conflict detection */
-  recentClaims: Array<{
-    subject: string;
-    claimValue: Record<string, unknown>;
-    claimedBy: string;
-  }>;
-}
-
-/**
- * Raw response from Claude before parsing.
- */
-export interface RawScribeResponse {
-  people: Array<{
-    name: string;
-    aliases?: string[];
-    birth_year?: number;
-    death_year?: number;
-    confidence?: string;
-  }>;
-  places: Array<{
-    name: string;
-    type?: string;
-    city?: string;
-    region?: string;
-    country?: string;
-    confidence?: string;
-  }>;
-  events: Array<{
-    title: string;
-    event_type?: string;
-    date_year?: number;
-    date_month?: number;
-    date_day?: number;
-    date_approximate?: string;
-    people_involved?: string[];
-    place?: string;
-    confidence?: string;
-  }>;
-  stories?: Array<{
-    title?: string;
-    content: string;
-    themes?: string[];
-    timeframe?: string;
-  }>;
-  claims: Array<{
-    claim_type: string;
-    subject: string;
-    claim_value: Record<string, unknown>;
-    confidence?: string;
-    certainty_language?: string;
-    context_original?: string;
-    /** Who made this claim (person name or description) */
-    claimed_by?: string;
-    /** Source type: "direct" (speaker), "attributed" (citing someone), "hearsay" (vague source) */
-    claimed_by_source?: string;
-  }>;
-  relationships?: Array<{
-    person_a: string;
-    person_b: string;
-    relationship_type: string;
-    confidence?: string;
-  }>;
-  questions: Array<{
-    question_original: string;
-    language_original?: string;
-    question_type?: string;
-    priority?: number;
-    target_person?: string;
-    target_event?: string;
-    target_place?: string;
-    story_context?: string;
-  }>;
-  answered_questions?: Array<{
-    question_id: string;
-    completeness?: string;
-  }>;
-  conflicts?: Array<{
-    subject: string;
-    existing_claim_value?: Record<string, unknown>;
-    new_claim_value?: Record<string, unknown>;
-    conflict_type?: string;
-  }>;
-  image_references?: Array<{
-    image_id: string;
-    reference_type: string;
-    people_identified?: string[];
-    context_provided?: string;
-    confidence?: string;
-  }>;
-  detected_language?: string;
 }

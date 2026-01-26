@@ -39,8 +39,8 @@ export interface Place {
 export interface TimelineEvent {
   title: string;
   event_type?: string;
+  date_text?: string;
   date_year?: number;
-  date_month?: number;
   description_original?: string;
 }
 

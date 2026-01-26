@@ -20,6 +20,32 @@ const MEDIA_EVENT_TYPES = ['photo', 'document', 'video'] as const;
 type MediaEventType = (typeof MEDIA_EVENT_TYPES)[number];
 
 /**
+ * Shared message context fetched once and passed to processors.
+ * Avoids duplicate DB queries for recent messages/images.
+ */
+export interface MessageContext {
+  /** Recent messages for context resolution */
+  recentMessages: Array<{
+    id: string;
+    content: string;
+    senderName: string;
+    occurredAt: Date;
+  }>;
+  /** Recent images in conversation */
+  recentImages: Array<{
+    id: string;
+    fileType: string;
+    sharedBy?: string;
+    sharedAt: Date;
+    analyzed: boolean;
+    description?: string;
+    peopleCount?: number;
+    estimatedEra?: string;
+    visibleText?: string[];
+  }>;
+}
+
+/**
  * Filter result returned by the filter processor.
  */
 export interface FilterProcessorResult {
@@ -27,6 +53,8 @@ export interface FilterProcessorResult {
   relevant: boolean;
   /** Reason for the decision (for logging/debugging) */
   reason: string;
+  /** Detected language of the message (en, es) */
+  language?: string;
   /** Tokens used for this filter call */
   tokensUsed?: number;
 }
@@ -59,19 +87,23 @@ export interface ImageLinkProcessorResult {
 /**
  * Filter processor function type.
  * Implementations should determine if a message is relevant for extraction.
+ * Optional context parameter allows sharing pre-fetched context.
  */
 export type FilterProcessor = (
   eventId: string,
   familyId: string,
+  context?: MessageContext,
 ) => Promise<FilterProcessorResult>;
 
 /**
  * Scribe processor function type.
  * Implementations should extract domain model from a conversation event.
+ * Optional context parameter allows sharing pre-fetched context.
  */
 export type ScribeProcessor = (
   eventId: string,
   familyId: string,
+  context?: MessageContext,
 ) => Promise<ScribeDomainModel>;
 
 /**
@@ -86,10 +118,12 @@ export type RegistrarProcessor = (
 /**
  * Image linker processor function type.
  * Implementations should determine if a message references a recent image.
+ * Optional context parameter allows sharing pre-fetched context.
  */
 export type ImageLinkerProcessor = (
   eventId: string,
   familyId: string,
+  context?: MessageContext,
 ) => Promise<ImageLinkProcessorResult>;
 
 /**
@@ -117,6 +151,8 @@ export interface RoutingProcessorResult {
   adminSubtype?: AdminSubtype;
   /** Reason for the routing decision */
   reason: string;
+  /** Detected language of the message (en, es) */
+  language?: string;
   /** Tokens used (if AI was called) */
   tokensUsed?: number;
 }
@@ -124,10 +160,12 @@ export interface RoutingProcessorResult {
 /**
  * Router processor function type.
  * Implementations should determine where to route a message.
+ * Optional context parameter allows sharing pre-fetched context.
  */
 export type RouterProcessor = (
   eventId: string,
   familyId: string,
+  context?: MessageContext,
 ) => Promise<RoutingProcessorResult>;
 
 /**
@@ -257,6 +295,59 @@ export class MessageProcessor {
   }
 
   /**
+   * Fetch message context (recent messages and images) for a conversation.
+   * This context is shared between Router, Filter, Scribe, and ImageLinker
+   * to avoid duplicate database queries.
+   */
+  async fetchContext(
+    familyId: string,
+    conversationId: string,
+    options?: { recentMessageCount?: number; maxImages?: number },
+  ): Promise<MessageContext> {
+    const recentMessageCount = options?.recentMessageCount ?? 5;
+    const maxImages = options?.maxImages ?? 5;
+
+    // Fetch data in parallel
+    const [recentEvents, recentImages] = await Promise.all([
+      this.eventRepo.findRecent(familyId, conversationId, recentMessageCount),
+      this.imageRepo.findRecentInConversation(
+        familyId,
+        conversationId,
+        maxImages,
+      ),
+    ]);
+
+    // Transform to context format
+    const recentMessages = recentEvents
+      .filter((e) => e.contentOriginal)
+      .map((e) => ({
+        id: e.id,
+        content: e.contentOriginal || '',
+        senderName: e.actorDisplayName || e.actorUsername || 'Unknown',
+        occurredAt: new Date(e.occurredAt),
+      }));
+
+    const recentImagesContext = recentImages.map((img) => ({
+      id: img.id,
+      fileType: img.fileType || 'photo',
+      sharedBy: img.sharedBy,
+      sharedAt: new Date(img.createdAt),
+      analyzed: img.analyzed,
+      description: img.analyzed
+        ? ((img.analysis as Record<string, unknown>)?.description as string)
+        : undefined,
+      peopleCount: img.peopleCount,
+      estimatedEra: img.estimatedEra,
+      visibleText: img.visibleText?.length ? img.visibleText : undefined,
+    }));
+
+    return {
+      recentMessages,
+      recentImages: recentImagesContext,
+    };
+  }
+
+  /**
    * Check if an event type is a media type.
    */
   private isMediaEvent(eventType: string): eventType is MediaEventType {
@@ -311,6 +402,9 @@ export class MessageProcessor {
         eventData: { status: 'started', eventType: event.eventType },
       });
 
+      // Fetch context once and share between all processors
+      const context = await this.fetchContext(familyId, event.conversationId);
+
       // Handle media events: create Image record for async Curator
       let imageId: string | undefined;
       if (this.isMediaEvent(event.eventType)) {
@@ -322,7 +416,7 @@ export class MessageProcessor {
       let adminSubtype: AdminSubtype | undefined;
 
       if (this.router) {
-        const routing = await this.router(eventId, familyId);
+        const routing = await this.router(eventId, familyId, context);
         routingAction = routing.action;
         adminSubtype = routing.adminSubtype;
 
@@ -332,6 +426,7 @@ export class MessageProcessor {
             action: routing.action,
             adminSubtype: routing.adminSubtype,
             reason: routing.reason,
+            language: routing.language,
             tokensUsed: routing.tokensUsed,
           },
           'Message routed',
@@ -350,6 +445,7 @@ export class MessageProcessor {
             action: routing.action,
             adminSubtype: routing.adminSubtype,
             reason: routing.reason,
+            language: routing.language,
             tokensUsed: routing.tokensUsed,
           },
         });
@@ -416,7 +512,7 @@ export class MessageProcessor {
       // Route to scribe pipeline (runs for both historian and scribe routing)
       // Process text content through Filter/Scribe (including media captions)
       if (event.contentOriginal || event.eventType === 'message') {
-        await this.processTextContent(eventId, familyId);
+        await this.processTextContent(eventId, familyId, context);
       }
 
       // Mark event as processed
@@ -480,16 +576,18 @@ export class MessageProcessor {
 
   /**
    * Process text content through Filter/Scribe/Registrar pipeline.
+   * Context is shared between all processors to avoid duplicate DB queries.
    */
   private async processTextContent(
     eventId: string,
     familyId: string,
+    context: MessageContext,
   ): Promise<void> {
     // Run Filter (if configured) to determine if message is relevant
     let shouldProcess = true;
     if (this.filter) {
       this.logger.debug({ eventId }, 'Running Filter');
-      const filterResult = await this.filter(eventId, familyId);
+      const filterResult = await this.filter(eventId, familyId, context);
 
       if (!filterResult.relevant) {
         // Message is not relevant - skip Scribe
@@ -534,7 +632,7 @@ export class MessageProcessor {
     let domainModel: ScribeDomainModel | undefined;
     if (this.scribe && shouldProcess) {
       this.logger.debug({ eventId }, 'Running Scribe');
-      domainModel = await this.scribe(eventId, familyId);
+      domainModel = await this.scribe(eventId, familyId, context);
 
       // Log extraction results
       if (domainModel) {
@@ -544,8 +642,8 @@ export class MessageProcessor {
             people: domainModel.people.length,
             places: domainModel.places.length,
             events: domainModel.events.length,
+            hasStory: !!domainModel.story,
             claims: domainModel.claims.length,
-            questions: domainModel.questions.length,
             imageReferences: domainModel.imageReferences?.length || 0,
           },
           'Scribe extraction complete',
@@ -556,7 +654,7 @@ export class MessageProcessor {
     // Run Image Linker (if configured and we have a domain model)
     // This catches image references that Scribe may have missed
     if (this.imageLinker && domainModel) {
-      const linkResult = await this.imageLinker(eventId, familyId);
+      const linkResult = await this.imageLinker(eventId, familyId, context);
 
       if (linkResult.linked && linkResult.imageId && linkResult.referenceType) {
         // Check if Scribe already detected this image reference
@@ -573,6 +671,7 @@ export class MessageProcessor {
               imageId: linkResult.imageId,
               referenceType: linkResult.referenceType,
               confidence: Confidence.MEDIUM, // Intern detection is medium confidence
+              peopleIdentified: [], // No people identified from Intern linking
             },
           ];
 

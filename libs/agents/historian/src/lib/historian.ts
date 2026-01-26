@@ -4,6 +4,7 @@ import {
   FamilyRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
+import type { AIProvider } from '@sobremesa/ai-provider';
 import type pino from 'pino';
 import { parseQuestion, isQuestion } from './question-parser';
 import { DataRetriever } from './retriever';
@@ -15,17 +16,13 @@ import {
 } from './types';
 
 /**
- * Anthropic client interface.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnthropicClient = any;
-
-/**
  * Options for HistorianAgent.
  */
 export interface HistorianAgentOptions {
-  /** Anthropic client */
-  anthropic: AnthropicClient;
+  /** AI provider for completions */
+  provider: AIProvider;
+  /** Model to use */
+  model: string;
   /** Conversation event repository */
   eventRepo?: ConversationEventRepository;
   /** Family repository */
@@ -47,7 +44,8 @@ export interface HistorianAgentOptions {
  * for the Facilitator to format and send with appropriate warmth/language.
  */
 export class HistorianAgent {
-  private anthropic: AnthropicClient;
+  private provider: AIProvider;
+  private model: string;
   private eventRepo: ConversationEventRepository;
   // @ts-expect-error FamilyRepo is available for future use (e.g., getting family name for responses)
   private _familyRepo: FamilyRepository;
@@ -57,7 +55,8 @@ export class HistorianAgent {
   private config: HistorianConfig;
 
   constructor(options: HistorianAgentOptions) {
-    this.anthropic = options.anthropic;
+    this.provider = options.provider;
+    this.model = options.model;
     this.eventRepo = options.eventRepo || new ConversationEventRepository();
     this._familyRepo = options.familyRepo || new FamilyRepository();
     this.eventLog = options.eventLog || new EventLogRepository();
@@ -128,21 +127,18 @@ export class HistorianAgent {
       const systemPrompt = buildSystemPrompt(this.config);
       const userPrompt = buildUserPrompt(parsedQuestion, context);
 
-      // Call Claude to synthesize answer
-      const response = await this.anthropic.messages.create({
-        model: this.config.model,
-        max_tokens: this.config.maxTokens,
+      // Call AI provider to synthesize answer
+      const response = await this.provider.complete({
+        model: this.model,
+        maxTokens: this.config.maxTokens,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       });
 
-      // Extract answer text
-      const answerContent = response.content?.[0];
-      if (!answerContent || answerContent.type !== 'text') {
+      const answerText = response.content;
+      if (!answerText) {
         return { success: false, error: 'Unexpected or empty response' };
       }
-
-      const answerText = answerContent.text;
 
       // Calculate data points used
       const dataPointsUsed =
@@ -151,10 +147,8 @@ export class HistorianAgent {
         context.stories.length +
         context.claims.length;
 
-      // Calculate tokens used
-      const tokensUsed =
-        (response.usage?.input_tokens || 0) +
-        (response.usage?.output_tokens || 0);
+      // Get tokens used from response
+      const tokensUsed = response.usage.totalTokens;
 
       // Prepare reply metadata
       const externalMessageId = event.externalEventId

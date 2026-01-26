@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /**
- * Test script to debug Scribe question generation.
+ * Test script to debug Scribe entity extraction.
  * Run with: npx tsx scripts/test-scribe.ts
  */
 import 'dotenv/config';
@@ -23,20 +23,19 @@ const TEST_SENDER = 'TestUser';
 
 async function main() {
   const anthropic = new Anthropic();
+  const model = 'claude-sonnet-4-5-20250929';
 
   const config: ScribeConfig = {
-    model: 'claude-sonnet-4-20250514',
     maxTokens: 4096,
     thoroughness: 'standard',
     confidence: 'moderate',
     culturalTerms: [],
     scribeName: 'Scribe',
+    primaryLanguage: 'en',
   };
 
   const context: ScribeContext = {
     recentMessages: [],
-    pendingQuestions: [],
-    recentClaims: [],
     recentImages: [],
   };
 
@@ -48,7 +47,7 @@ async function main() {
   console.log('\n');
 
   const response = await anthropic.messages.create({
-    model: config.model,
+    model,
     max_tokens: config.maxTokens,
     system: systemPrompt,
     messages: [{ role: 'user', content: userMessage }],
@@ -75,24 +74,28 @@ async function main() {
   console.log('Places:', domainModel.places.length);
   console.log('Events:', domainModel.events.length);
   console.log('Claims:', domainModel.claims.length);
-  console.log('Questions:', domainModel.questions.length);
+  console.log('Relationships:', domainModel.relationships.length);
+  console.log('Story:', domainModel.story ? 'Yes' : 'No');
   console.log('\n');
 
-  if (domainModel.questions.length > 0) {
-    console.log('=== Generated Questions ===\n');
-    for (const q of domainModel.questions) {
-      console.log(`- "${q.content}"`);
-      console.log(
-        `  Priority: ${q.priority}, Target: ${
-          q.targetPerson || q.targetEvent || q.targetPlace || 'none'
-        }`,
-      );
+  if (domainModel.people.length > 0) {
+    console.log('=== Extracted People ===\n');
+    for (const p of domainModel.people) {
+      console.log(`- ${p.name}`);
+      if (p.aliases.length > 0) {
+        console.log(`  Aliases: ${p.aliases.join(', ')}`);
+      }
     }
-  } else {
-    console.log('*** NO QUESTIONS GENERATED ***');
-    console.log(
-      'This might indicate Claude is not outputting questions in its response.',
-    );
+  }
+
+  if (domainModel.claims.length > 0) {
+    console.log('\n=== Extracted Claims ===\n');
+    for (const c of domainModel.claims) {
+      console.log(`- [${c.claimType}] ${c.subject}: ${c.claimValue}`);
+      if (c.certaintyLanguage) {
+        console.log(`  Certainty: "${c.certaintyLanguage}"`);
+      }
+    }
   }
 }
 

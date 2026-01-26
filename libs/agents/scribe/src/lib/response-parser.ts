@@ -6,54 +6,44 @@ import {
   type ExtractedEvent,
   type ExtractedRelationship,
   type ExtractedClaim,
-  type GeneratedQuestion,
-  type DetectedAnswer,
-  type DetectedConflict,
   type ImageReference,
-  type LanguageCode,
-  type ClaimSourceType,
 } from '@sobremesa/shared-types';
 import { createLogger } from '@sobremesa/shared-utils';
-import type { RawScribeResponse } from './types';
+import { RawScribeResponseSchema, type RawScribeResponse } from './schema';
 
 const logger = createLogger({ name: 'scribe-parser' });
 
 /**
- * Parse confidence string to Confidence enum.
+ * Infer confidence from certainty language.
  */
-function parseConfidence(value?: string): Confidence {
-  if (!value) return Confidence.MEDIUM;
-  const lower = value.toLowerCase();
-  if (lower === 'high' || lower === 'definite' || lower === 'certain') {
+function inferConfidence(certaintyLanguage?: string): Confidence {
+  if (!certaintyLanguage) return Confidence.MEDIUM;
+  const lower = certaintyLanguage.toLowerCase();
+  if (
+    lower.includes('definitely') ||
+    lower.includes('certainly') ||
+    lower.includes('always')
+  ) {
     return Confidence.HIGH;
   }
-  if (lower === 'low' || lower === 'uncertain' || lower === 'guess') {
+  if (
+    lower.includes('maybe') ||
+    lower.includes('might') ||
+    lower.includes('possibly') ||
+    lower.includes('not sure')
+  ) {
     return Confidence.LOW;
   }
   return Confidence.MEDIUM;
 }
 
 /**
- * Parse language code string to LanguageCode.
+ * Extract a year from a date string like "1920", "summer 1920", "around 1889".
  */
-function parseLanguage(value?: string): LanguageCode {
-  if (!value) return 'en';
-  const lower = value.toLowerCase();
-  if (lower === 'es' || lower === 'spanish') return 'es';
-  if (lower === 'mixed') return 'mixed';
-  return 'en';
-}
-
-/**
- * Parse claim source type string to ClaimSourceType.
- */
-function parseClaimSourceType(value?: string): ClaimSourceType | undefined {
-  if (!value) return undefined;
-  const lower = value.toLowerCase();
-  if (lower === 'direct') return 'direct';
-  if (lower === 'attributed') return 'attributed';
-  if (lower === 'hearsay') return 'hearsay';
-  return undefined;
+function extractYear(dateText?: string): number | undefined {
+  if (!dateText) return undefined;
+  const match = dateText.match(/\b(1[89]\d{2}|20[0-2]\d)\b/);
+  return match ? parseInt(match[1], 10) : undefined;
 }
 
 /**
@@ -107,119 +97,93 @@ export function parseScribeResponse(
 
   try {
     const jsonStr = extractJson(rawText);
-    raw = JSON.parse(jsonStr) as RawScribeResponse;
+    const parseResult = RawScribeResponseSchema.safeParse(JSON.parse(jsonStr));
+
+    if (!parseResult.success) {
+      logger.warn(
+        { error: parseResult.error.flatten(), rawText: rawText.slice(0, 500) },
+        'Zod validation failed for Scribe response',
+      );
+      return createEmptyDomainModel(sourceEventId, familyId);
+    }
+
+    raw = parseResult.data;
   } catch (error) {
     logger.warn(
       { error, rawText: rawText.slice(0, 500) },
       'Failed to parse Scribe response JSON',
     );
-    // Return empty domain model on parse failure
     return createEmptyDomainModel(sourceEventId, familyId);
   }
 
-  // Parse people
-  const people: ExtractedPerson[] = (raw.people || []).map((p) => ({
+  // Parse people (confidence removed from schema, default to MEDIUM)
+  const people: ExtractedPerson[] = raw.people.map((p) => ({
     name: p.name,
-    aliases: p.aliases || [],
+    aliases: p.aliases,
     birthYear: p.birth_year,
     deathYear: p.death_year,
-    confidence: parseConfidence(p.confidence),
+    confidence: Confidence.MEDIUM,
   }));
 
   // Parse places
-  const places: ExtractedPlace[] = (raw.places || []).map((p) => ({
+  const places: ExtractedPlace[] = raw.places.map((p) => ({
     name: p.name,
     type: p.type,
     city: p.city,
     region: p.region,
     country: p.country,
-    confidence: parseConfidence(p.confidence),
+    confidence: Confidence.MEDIUM,
   }));
 
   // Parse events
-  const events: ExtractedEvent[] = (raw.events || []).map((e) => ({
+  const events: ExtractedEvent[] = raw.events.map((e) => ({
     title: e.title,
     eventType: e.event_type,
-    dateYear: e.date_year,
-    dateMonth: e.date_month,
-    dateDay: e.date_day,
-    dateApproximate: e.date_approximate,
-    peopleInvolved: e.people_involved || [],
+    dateText: e.date,
+    dateYear: extractYear(e.date),
+    peopleInvolved: e.people_involved,
     placeName: e.place,
-    confidence: parseConfidence(e.confidence),
+    confidence: Confidence.MEDIUM,
   }));
 
-  // Parse relationships
-  const relationships: ExtractedRelationship[] = (raw.relationships || []).map(
-    (r) => ({
-      personAName: r.person_a,
-      personBName: r.person_b,
-      relationshipType: r.relationship_type,
-      confidence: parseConfidence(r.confidence),
-    }),
-  );
+  // Parse relationships (confidence removed from schema)
+  const relationships: ExtractedRelationship[] = raw.relationships.map((r) => ({
+    personAName: r.person_a,
+    personBName: r.person_b,
+    relationshipType: r.relationship_type,
+    confidence: Confidence.MEDIUM,
+  }));
 
-  // Parse claims
-  const claims: ExtractedClaim[] = (raw.claims || []).map((c) => ({
+  // Parse claims (infer confidence from certainty_language)
+  const claims: ExtractedClaim[] = raw.claims.map((c) => ({
     claimType: c.claim_type,
     subject: c.subject,
     claimValue: c.claim_value,
-    confidence: parseConfidence(c.confidence),
+    confidence: inferConfidence(c.certainty_language),
     certaintyLanguage: c.certainty_language,
-    contextOriginal: c.context_original,
     claimedBy: c.claimed_by,
-    claimedBySource: parseClaimSourceType(c.claimed_by_source),
+    claimedBySource: c.claimed_by_source,
   }));
 
   // Parse story (take first one if multiple)
-  const storyData = raw.stories?.[0];
+  const storyData = raw.stories[0];
   const story = storyData
     ? {
         title: storyData.title,
         content: storyData.content,
-        themes: storyData.themes || [],
+        themes: storyData.themes,
         timeframe: storyData.timeframe,
       }
     : undefined;
 
-  // Parse questions
-  const questions: GeneratedQuestion[] = (raw.questions || []).map((q) => ({
-    content: q.question_original,
-    language: parseLanguage(q.language_original),
-    priority: q.priority ?? 50,
-    origin: 'scribe' as const,
-    targetPerson: q.target_person,
-    targetEvent: q.target_event,
-    targetPlace: q.target_place,
-    storyContext: q.story_context,
+  // Parse image references (confidence removed from schema)
+  const imageReferences: ImageReference[] = raw.image_references.map((r) => ({
+    imageId: r.image_id,
+    referenceType: parseImageReferenceType(r.reference_type),
+    peopleIdentified: r.people_identified,
+    contextProvided: r.context_provided,
+    confidence: Confidence.MEDIUM,
   }));
-
-  // Parse answered questions
-  const answers: DetectedAnswer[] = (raw.answered_questions || []).map((a) => ({
-    questionId: a.question_id,
-    answerContent: '', // Content is in the message itself
-    confidence: parseConfidence(a.completeness === 'full' ? 'high' : 'medium'),
-  }));
-
-  // Parse conflicts
-  const conflicts: DetectedConflict[] = (raw.conflicts || []).map((c) => ({
-    existingClaimSubject: c.subject,
-    existingClaimValue: c.existing_claim_value || {},
-    newClaimValue: c.new_claim_value || {},
-    conflictType:
-      c.conflict_type === 'inconsistency' ? 'inconsistency' : 'contradiction',
-  }));
-
-  // Parse image references
-  const imageReferences: ImageReference[] = (raw.image_references || []).map(
-    (r) => ({
-      imageId: r.image_id,
-      referenceType: parseImageReferenceType(r.reference_type),
-      peopleIdentified: r.people_identified,
-      contextProvided: r.context_provided,
-      confidence: parseConfidence(r.confidence),
-    }),
-  );
 
   return {
     sourceEventId,
@@ -231,11 +195,8 @@ export function parseScribeResponse(
     relationships,
     claims,
     story,
-    questions,
-    answers,
-    conflicts,
     imageReferences,
-    detectedLanguage: parseLanguage(raw.detected_language),
+    detectedLanguage: raw.detected_language,
   };
 }
 
@@ -255,9 +216,6 @@ function createEmptyDomainModel(
     events: [],
     relationships: [],
     claims: [],
-    questions: [],
-    answers: [],
-    conflicts: [],
     imageReferences: [],
     detectedLanguage: 'en',
   };

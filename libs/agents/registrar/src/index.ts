@@ -3,4 +3,8 @@ export {
   type RegistrarAgentOptions,
   type PersistResult,
 } from './lib/registrar';
-export { detectClaimConflict, subjectsMatch } from './lib/conflict-detector';
+export {
+  detectClaimConflict,
+  subjectsMatch,
+  canClaimTypeConflict,
+} from './lib/conflict-detector';

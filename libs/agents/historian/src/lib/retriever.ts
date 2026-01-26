@@ -620,9 +620,8 @@ export class DataRetriever {
     id: string;
     title: string;
     eventType?: string | null;
+    dateText?: string | null;
     dateYear?: number | null;
-    dateMonth?: number | null;
-    dateApproximate?: string | null;
     place?: string | null;
     peopleInvolved?: string[] | null;
     confidence?: string | null;
@@ -630,9 +629,8 @@ export class DataRetriever {
     id: event.id,
     title: event.title,
     eventType: event.eventType || 'unknown',
+    dateText: event.dateText || undefined,
     dateYear: event.dateYear || undefined,
-    dateMonth: event.dateMonth || undefined,
-    dateApproximate: event.dateApproximate || undefined,
     place: event.place || undefined,
     peopleInvolved: event.peopleInvolved || [],
     confidence: (event.confidence || 'medium') as Confidence,

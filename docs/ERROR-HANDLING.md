@@ -165,7 +165,6 @@ class Registrar {
           await this.savePeople(domainModel.entities.people);
           await this.savePlaces(domainModel.entities.places);
           await this.saveClaims(domainModel.claims);
-          await this.saveQuestions(domainModel.questions);
 
           // Commit transaction
           await this.db.rpc('commit');

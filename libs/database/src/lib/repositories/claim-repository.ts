@@ -129,11 +129,28 @@ export class ClaimRepository extends BaseRepository<Claim> {
     entityId?: string,
     entityType?: 'person' | 'place' | 'event' | 'story',
   ): Promise<Claim> {
+    // Convert string claimValue to Record for storage
+    // Try to parse as JSON first, otherwise wrap in { value: string }
+    let claimValue: Record<string, unknown>;
+    if (typeof extracted.claimValue === 'string') {
+      try {
+        const parsed = JSON.parse(extracted.claimValue);
+        claimValue =
+          typeof parsed === 'object' && parsed !== null
+            ? parsed
+            : { value: extracted.claimValue };
+      } catch {
+        claimValue = { value: extracted.claimValue };
+      }
+    } else {
+      claimValue = extracted.claimValue as Record<string, unknown>;
+    }
+
     const record: Omit<Claim, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,
       claimType: extracted.claimType,
       subject: extracted.subject,
-      claimValue: extracted.claimValue,
+      claimValue,
       sourceEventId,
       claimedBy,
       claimedBySource: extracted.claimedBySource,

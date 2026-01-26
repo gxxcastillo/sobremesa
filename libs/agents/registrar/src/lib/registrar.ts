@@ -6,14 +6,17 @@ import {
   StoryRepository,
   ClaimRepository,
   RelationshipRepository,
-  QuestionRepository,
   EventLogRepository,
   ConversationEventRepository,
   ImageRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
-import { detectClaimConflict, subjectsMatch } from './conflict-detector';
+import {
+  detectClaimConflict,
+  subjectsMatch,
+  canClaimTypeConflict,
+} from './conflict-detector';
 
 /**
  * Options for creating a RegistrarAgent.
@@ -31,8 +34,6 @@ export interface RegistrarAgentOptions {
   claimRepo?: ClaimRepository;
   /** Relationship repository */
   relationshipRepo?: RelationshipRepository;
-  /** Question repository */
-  questionRepo?: QuestionRepository;
   /** Event log repository */
   eventLog?: EventLogRepository;
   /** Conversation event repository (for getting claimedBy info) */
@@ -55,8 +56,6 @@ export interface PersistResult {
   claimsCreated: number;
   conflictsDetected: number;
   relationshipsCreated: number;
-  questionsCreated: number;
-  answersProcessed: number;
   imageReferencesProcessed: number;
 }
 
@@ -71,7 +70,6 @@ export class RegistrarAgent {
   private storyRepo: StoryRepository;
   private claimRepo: ClaimRepository;
   private relationshipRepo: RelationshipRepository;
-  private questionRepo: QuestionRepository;
   private eventLog: EventLogRepository;
   private conversationEventRepo: ConversationEventRepository;
   private imageRepo: ImageRepository;
@@ -85,7 +83,6 @@ export class RegistrarAgent {
     this.claimRepo = options.claimRepo || new ClaimRepository();
     this.relationshipRepo =
       options.relationshipRepo || new RelationshipRepository();
-    this.questionRepo = options.questionRepo || new QuestionRepository();
     this.eventLog = options.eventLog || new EventLogRepository();
     this.conversationEventRepo =
       options.conversationEventRepo || new ConversationEventRepository();
@@ -115,8 +112,6 @@ export class RegistrarAgent {
       claimsCreated: 0,
       conflictsDetected: 0,
       relationshipsCreated: 0,
-      questionsCreated: 0,
-      answersProcessed: 0,
       imageReferencesProcessed: 0,
     };
 
@@ -300,6 +295,26 @@ export class RegistrarAgent {
 
       // 6. Process Claims (with conflict detection and identity resolution)
       for (const claim of domainModel.claims) {
+        // Skip claims with unresolved pronoun subjects
+        const pronouns = [
+          'he',
+          'she',
+          'they',
+          'him',
+          'her',
+          'them',
+          'his',
+          'hers',
+          'their',
+        ];
+        if (pronouns.includes(claim.subject.toLowerCase().trim())) {
+          this.logger.warn(
+            { familyId, subject: claim.subject, claimValue: claim.claimValue },
+            'Skipping claim with unresolved pronoun subject',
+          );
+          continue;
+        }
+
         // Find entity ID if we can resolve it
         let entityId: string | undefined;
         let entityType: 'person' | 'place' | 'event' | 'story' | undefined;
@@ -313,8 +328,18 @@ export class RegistrarAgent {
 
         // Handle identity claims - merge descriptive name with real name
         if (claim.claimType === 'identity' && claim.claimValue) {
-          const realName = (claim.claimValue as Record<string, unknown>)
-            .real_name as string | undefined;
+          // claimValue is now a string - try to parse it or extract name
+          let realName: string | undefined;
+          try {
+            const parsed = JSON.parse(claim.claimValue);
+            realName =
+              typeof parsed === 'object' && parsed?.real_name
+                ? String(parsed.real_name)
+                : undefined;
+          } catch {
+            // If not JSON, the claimValue string itself might be the real name
+            realName = claim.claimValue;
+          }
           if (realName && claim.subject) {
             // Find the person with the descriptive name (e.g., "Dexter's ex-wife")
             const descriptivePerson = await this.personRepo.findByFuzzyMatch(
@@ -414,13 +439,8 @@ export class RegistrarAgent {
           claim.subject,
         );
 
-        // Determine who made this claim:
-        // - Use Scribe's extracted claimedBy if available (e.g., "Mom" in "Mom told me...")
-        // - Fall back to message sender
-        const effectiveClaimedBy = claim.claimedBy || claimedBy;
-
         // Log attribution if it differs from sender
-        if (claim.claimedBy && claim.claimedBy !== claimedBy) {
+        if (claim.claimedBy !== claimedBy) {
           this.logger.debug(
             {
               familyId,
@@ -433,20 +453,39 @@ export class RegistrarAgent {
           );
         }
 
+        // Skip duplicate claims (same type, subject, value already exists)
+        const isDuplicate = existingClaims.some(
+          (existing) =>
+            existing.claimType === claim.claimType &&
+            subjectsMatch(existing.subject, claim.subject) &&
+            !detectClaimConflict(existing.claimValue, claim.claimValue),
+        );
+        if (isDuplicate) {
+          this.logger.debug(
+            { familyId, claimType: claim.claimType, subject: claim.subject },
+            'Skipping duplicate claim',
+          );
+          continue;
+        }
+
         // Create the new claim
         const newClaim = await this.claimRepo.createFromExtracted(
           familyId,
           claim,
           sourceEventId,
-          effectiveClaimedBy,
+          claim.claimedBy,
           entityId,
           entityType,
         );
         result.claimsCreated++;
 
         // Check for conflicts and create links
+        // Only singular claim types (date, location, identity) can conflict
+        // Additive types (detail, fact, note) are complementary, not conflicting
         for (const existing of existingClaims) {
           if (
+            canClaimTypeConflict(claim.claimType) &&
+            existing.claimType === claim.claimType &&
             subjectsMatch(existing.subject, claim.subject) &&
             detectClaimConflict(existing.claimValue, claim.claimValue)
           ) {
@@ -469,34 +508,7 @@ export class RegistrarAgent {
         }
       }
 
-      // 7. Process Questions
-      for (const question of domainModel.questions) {
-        await this.questionRepo.createFromGenerated(
-          familyId,
-          question,
-          sourceEventId,
-        );
-        result.questionsCreated++;
-      }
-
-      // 8. Process Detected Answers
-      for (const answer of domainModel.answers) {
-        try {
-          await this.questionRepo.markAnswered(
-            familyId,
-            answer.questionId,
-            sourceEventId,
-          );
-          result.answersProcessed++;
-        } catch (error) {
-          this.logger.warn(
-            { questionId: answer.questionId, error },
-            'Failed to mark question as answered',
-          );
-        }
-      }
-
-      // 9. Process Image References
+      // 7. Process Image References
       for (const imageRef of domainModel.imageReferences || []) {
         try {
           // Handle people identification

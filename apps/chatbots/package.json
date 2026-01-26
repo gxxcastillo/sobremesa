@@ -5,6 +5,7 @@
   "dependencies": {
     "telegraf": "^4.16.3",
     "@anthropic-ai/sdk": "^0.71.2",
+    "@sobremesa/ai-provider": "workspace:*",
     "@sobremesa/shared-types": "workspace:*",
     "@sobremesa/shared-utils": "workspace:*",
     "@sobremesa/database": "workspace:*",

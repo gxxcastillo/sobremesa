@@ -1,26 +1,18 @@
 import { ImageRepository } from '@sobremesa/database';
 import { loadPrompt } from '@sobremesa/prompts';
 import { createLogger } from '@sobremesa/shared-utils';
+import type { AIProvider } from '@sobremesa/ai-provider';
 import type pino from 'pino';
-
-/**
- * Anthropic client interface.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnthropicClient = any;
 
 /**
  * Configuration for the Curator vision service.
  */
 export interface CuratorConfig {
-  /** Model to use for image analysis */
-  model: string;
   /** Maximum tokens for response */
   maxTokens: number;
 }
 
 export const DEFAULT_CURATOR_CONFIG: CuratorConfig = {
-  model: 'claude-3-5-haiku-20241022',
   maxTokens: 1024,
 };
 
@@ -46,8 +38,10 @@ export interface ImageAnalysis {
  * Options for creating a Curator.
  */
 export interface CuratorOptions {
-  /** Anthropic client (from @anthropic-ai/sdk) */
-  anthropic: AnthropicClient;
+  /** AI provider for completions (must support vision) */
+  provider: AIProvider;
+  /** Model to use */
+  model: string;
   /** Image repository */
   imageRepo?: ImageRepository;
   /** Logger instance */
@@ -62,13 +56,15 @@ export interface CuratorOptions {
  * Curator provides visual context that Scribe can use when processing related text messages.
  */
 export class Curator {
-  private anthropic: AnthropicClient;
+  private provider: AIProvider;
+  private model: string;
   private imageRepo: ImageRepository;
   private logger: pino.Logger;
   private config: CuratorConfig;
 
   constructor(options: CuratorOptions) {
-    this.anthropic = options.anthropic;
+    this.provider = options.provider;
+    this.model = options.model;
     this.imageRepo = options.imageRepo || new ImageRepository();
     this.logger = options.logger || createLogger({ name: 'curator' });
     this.config = { ...DEFAULT_CURATOR_CONFIG, ...options.config };
@@ -98,12 +94,21 @@ export class Curator {
     const startTime = Date.now();
 
     try {
+      // Check if provider supports vision
+      if (!this.provider.supportsVision()) {
+        this.logger.warn(
+          { imageId },
+          'Provider does not support vision, falling back to metadata-only analysis',
+        );
+        return this.analyzeMetadataOnly(familyId, imageId);
+      }
+
       const base64Image = imageData.toString('base64');
       const mimeType = this.getMimeType(image.fileType);
 
-      const response = await this.anthropic.messages.create({
-        model: this.config.model,
-        max_tokens: this.config.maxTokens,
+      const response = await this.provider.complete({
+        model: this.model,
+        maxTokens: this.config.maxTokens,
         system: loadPrompt('curator'),
         messages: [
           {
@@ -113,7 +118,7 @@ export class Curator {
                 type: 'image',
                 source: {
                   type: 'base64',
-                  media_type: mimeType,
+                  mediaType: mimeType,
                   data: base64Image,
                 },
               },
@@ -127,18 +132,13 @@ export class Curator {
       });
 
       const duration = Date.now() - startTime;
-      this.logger.info({ imageId, duration }, 'Vision API response received');
-
-      // Extract text content
-      const textContent = response.content.find(
-        (c: { type: string; text?: string }) => c.type === 'text',
+      this.logger.info(
+        { imageId, duration, tokens: response.usage.totalTokens },
+        'Vision API response received',
       );
-      if (!textContent || textContent.type !== 'text' || !textContent.text) {
-        throw new Error('No text content in Claude response');
-      }
 
       // Parse the analysis
-      const analysis = this.parseAnalysis(textContent.text);
+      const analysis = this.parseAnalysis(response.content);
 
       // Update the Image record
       await this.imageRepo.markAnalyzed(familyId, imageId, {

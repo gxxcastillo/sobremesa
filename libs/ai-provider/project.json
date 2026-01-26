@@ -1,0 +1,28 @@
+{
+  "name": "ai-provider",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/ai-provider/src",
+  "projectType": "library",
+  "tags": ["scope:service"],
+  "// targets": "to see all targets run: nx show project ai-provider --web",
+  "targets": {
+    "types": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --noEmit -p libs/ai-provider/tsconfig.lib.json"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint libs/ai-provider"
+      }
+    },
+    "test": {
+      "executor": "@nx/vite:test",
+      "options": {
+        "configFile": "libs/ai-provider/vitest.config.mts"
+      }
+    }
+  }
+}

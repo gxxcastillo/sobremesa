@@ -25,10 +25,9 @@ export function isSupportedLanguage(lang: string): lang is SupportedLanguage {
 }
 
 /**
- * Language codes for content detection (broader than SupportedLanguage).
- * Includes 'mixed' for bilingual content and allows any string for extensibility.
+ * Language codes for content detection (broader than SupportedLanguage)
  */
-export type LanguageCode = 'es' | 'en' | 'mixed' | string;
+export type LanguageCode = 'es' | 'en' | 'unknown';
 
 /**
  * Language configuration for a family.
@@ -56,7 +55,7 @@ export interface BilingualContent {
 }
 
 /**
- * Detect if text contains mixed languages.
+ * Detect language used in "text"
  */
 export function detectLanguage(text: string): LanguageCode {
   // Simple heuristic - count Spanish-specific characters and common words
@@ -72,15 +71,6 @@ export function detectLanguage(text: string): LanguageCode {
 
   const spanishScore = spanishChars + spanishWordCount * 2;
   const englishScore = englishWordCount * 2;
-
-  if (spanishScore > 0 && englishScore > 0) {
-    const ratio =
-      Math.min(spanishScore, englishScore) /
-      Math.max(spanishScore, englishScore);
-    if (ratio > 0.3) {
-      return 'mixed';
-    }
-  }
 
   if (spanishScore > englishScore) {
     return 'es';

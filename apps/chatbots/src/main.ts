@@ -1,5 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createLogger } from '@sobremesa/shared-utils';
+import {
+  loadAIConfig,
+  createAIProviderFactory,
+  validateConfig,
+} from '@sobremesa/ai-provider';
 import { MessageQueue, MessageProcessor } from '@sobremesa/queue';
 import { BotManager } from '@sobremesa/telegram';
 import { AdminAgent } from '@sobremesa/agents-admin';
@@ -53,7 +58,7 @@ async function main() {
     logger.debug('Creating MessageProcessor...');
     const processor = new MessageProcessor();
 
-    // Configure Admin agent (doesn't require Anthropic API)
+    // Configure Admin agent (doesn't require AI)
     logger.debug('Configuring Admin agent...');
     const admin = new AdminAgent({
       messageSender: botManager,
@@ -63,43 +68,77 @@ async function main() {
     );
     logger.info('Admin agent configured');
 
+    // Load AI configuration from environment
+    const aiConfig = loadAIConfig(
+      process.env as Record<string, string | undefined>,
+    );
+    const configWarnings = validateConfig(aiConfig);
+    if (configWarnings.length > 0) {
+      for (const warning of configWarnings) {
+        logger.warn(warning);
+      }
+    }
+    logger.info(
+      {
+        providers: Object.keys(aiConfig.providers),
+        default: aiConfig.defaultProvider,
+      },
+      'AI configuration loaded',
+    );
+
     // Create Anthropic client if API key is available
     const anthropic = anthropicApiKey
       ? new Anthropic({ apiKey: anthropicApiKey })
       : undefined;
 
+    // Create AI provider factory
+    const aiFactory = createAIProviderFactory(aiConfig, anthropic);
+    const hasAIProvider = aiConfig.defaultProvider !== 'mock';
+
     // Configure Facilitator agent (with optional AI for warmth transformation)
     logger.debug('Configuring Facilitator agent...');
+    const facilitatorProvider = hasAIProvider
+      ? aiFactory.getProviderForAgent('facilitator')
+      : undefined;
     const facilitator = new FacilitatorAgent({
       messageSender: botManager,
-      anthropic, // Pass anthropic client for warmth formula
+      provider: facilitatorProvider,
+      model: aiFactory.getModelForAgent('facilitator'),
       minMinutesBetweenQuestions: 5,
     });
-    logger.info({ hasAI: !!anthropic }, 'Facilitator agent configured');
+    logger.info({ hasAI: hasAIProvider }, 'Facilitator agent configured');
 
-    // Configure AI agents if API key is available
-    if (anthropic) {
+    // Configure AI agents if a provider is available
+    if (hasAIProvider) {
       logger.debug(
         'Configuring Intern, Scribe, Registrar and Historian agents...',
       );
 
       const intern = new InternAgent({
-        anthropic,
+        provider: aiFactory.getProviderForAgent('intern'),
+        model: aiFactory.getModelForAgent('intern'),
         config: { botUsername: botInfo.username },
       });
-      const scribe = new ScribeAgent({ anthropic });
+      const scribe = new ScribeAgent({
+        provider: aiFactory.getProviderForAgent('scribe'),
+        model: aiFactory.getModelForAgent('scribe'),
+      });
       const registrar = new RegistrarAgent();
-      const historian = new HistorianAgent({ anthropic });
+      const historian = new HistorianAgent({
+        provider: aiFactory.getProviderForAgent('historian'),
+        model: aiFactory.getModelForAgent('historian'),
+      });
 
       // Set router (Intern routes to admin/scribe/ignore)
-      processor.setRouter((eventId, familyId) =>
-        intern.route(eventId, familyId),
+      // Context is pre-fetched by MessageProcessor and shared to avoid duplicate DB queries
+      processor.setRouter((eventId, familyId, context) =>
+        intern.route(eventId, familyId, context),
       );
-      processor.setImageLinker((eventId, familyId) =>
-        intern.linkToImage(eventId, familyId),
+      processor.setImageLinker((eventId, familyId, context) =>
+        intern.linkToImage(eventId, familyId, context),
       );
-      processor.setScribe((eventId, familyId) =>
-        scribe.process(eventId, familyId),
+      processor.setScribe((eventId, familyId, context) =>
+        scribe.process(eventId, familyId, context),
       );
       processor.setHistorianProcessor(async (eventId, familyId) => {
         // 1. Historian generates the answer

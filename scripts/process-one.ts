@@ -4,11 +4,11 @@
  * Run with: npx tsx scripts/process-one.ts
  */
 import 'dotenv/config';
-import Anthropic from '@anthropic-ai/sdk';
 import { ProcessingQueueRepository } from '../libs/database/src/lib/repositories/processing-queue-repository.js';
 import { ScribeAgent } from '../libs/agents/scribe/src/lib/scribe.js';
 import { RegistrarAgent } from '../libs/agents/registrar/src/lib/registrar.js';
 import { MessageProcessor } from '../libs/queue/src/lib/processor.js';
+import { AnthropicProvider } from '../libs/ai-provider/src/lib/anthropic-provider.js';
 
 async function main() {
   const anthropicApiKey = process.env['ANTHROPIC_API_KEY'];
@@ -18,8 +18,11 @@ async function main() {
   }
 
   const queueRepo = new ProcessingQueueRepository();
-  const anthropic = new Anthropic({ apiKey: anthropicApiKey });
-  const scribe = new ScribeAgent({ anthropic });
+  const provider = new AnthropicProvider({ apiKey: anthropicApiKey });
+  const scribe = new ScribeAgent({
+    provider,
+    model: 'claude-sonnet-4-5-20250929',
+  });
   const registrar = new RegistrarAgent();
 
   // Set up processor

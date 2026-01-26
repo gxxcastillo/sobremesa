@@ -9,6 +9,7 @@ import {
 } from 'vitest';
 import { InternAgent, DEFAULT_INTERN_CONFIG } from './intern';
 import type { Image } from '@sobremesa/shared-types';
+import type { AIProvider, AICompletionResponse } from '@sobremesa/ai-provider';
 
 // Mock event repository
 const mockEventRepo = {
@@ -21,13 +22,31 @@ const mockImageRepo = {
   findRecentInConversation: vi.fn(),
 };
 
-// Mock Anthropic client
-const mockAnthropicCreate = vi.fn();
-const mockAnthropic = {
-  messages: {
-    create: mockAnthropicCreate,
-  },
+// Mock AI provider (replaces mockAnthropic)
+const mockProviderComplete = vi.fn();
+const mockProvider: AIProvider = {
+  name: 'mock',
+  complete: mockProviderComplete,
+  supportsVision: () => false,
+  isAvailable: async () => true,
 };
+
+// Helper to create mock AIProvider response
+function createMockResponse(
+  content: string,
+  inputTokens: number,
+  outputTokens: number,
+): AICompletionResponse {
+  return {
+    content,
+    usage: {
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+    },
+    model: 'claude-3-5-haiku-20241022',
+  };
+}
 
 // Mock logger
 const mockLogger = {
@@ -44,7 +63,8 @@ describe('InternAgent', () => {
     vi.clearAllMocks();
 
     intern = new InternAgent({
-      anthropic: mockAnthropic,
+      provider: mockProvider,
+      model: 'claude-3-5-haiku-20241022',
       eventRepo: mockEventRepo as any,
       imageRepo: mockImageRepo as any,
       logger: mockLogger as any,
@@ -74,7 +94,7 @@ describe('InternAgent', () => {
 
         expect(result.relevant).toBe(true);
         expect(result.reason).toContain('Non-text event type');
-        expect(mockAnthropicCreate).not.toHaveBeenCalled();
+        expect(mockProviderComplete).not.toHaveBeenCalled();
       });
 
       it('should return relevant=false for empty messages', async () => {
@@ -88,7 +108,7 @@ describe('InternAgent', () => {
 
         expect(result.relevant).toBe(false);
         expect(result.reason).toBe('Empty message');
-        expect(mockAnthropicCreate).not.toHaveBeenCalled();
+        expect(mockProviderComplete).not.toHaveBeenCalled();
       });
 
       it('should return relevant=false for very short messages', async () => {
@@ -102,7 +122,7 @@ describe('InternAgent', () => {
 
         expect(result.relevant).toBe(false);
         expect(result.reason).toBe('Message too short');
-        expect(mockAnthropicCreate).not.toHaveBeenCalled();
+        expect(mockProviderComplete).not.toHaveBeenCalled();
       });
 
       it('should return relevant=false for messages with only 2 characters', async () => {
@@ -130,37 +150,33 @@ describe('InternAgent', () => {
         mockEventRepo.findRecent.mockResolvedValue([]);
       });
 
-      it('should call Anthropic with correct model', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"relevant": true, "reason": "Family history"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+      it('should call provider with correct model', async () => {
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Family history"}',
+            100,
+            20,
+          ),
+        );
 
         await intern.filter('event-123', 'family-abc');
 
-        expect(mockAnthropicCreate).toHaveBeenCalledWith(
+        expect(mockProviderComplete).toHaveBeenCalledWith(
           expect.objectContaining({
-            model: DEFAULT_INTERN_CONFIG.model,
-            max_tokens: DEFAULT_INTERN_CONFIG.maxTokens,
+            model: 'claude-3-5-haiku-20241022',
+            maxTokens: DEFAULT_INTERN_CONFIG.maxTokens,
           }),
         );
       });
 
-      it('should return relevant=true when Haiku determines message is relevant', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"relevant": true, "reason": "Contains family immigration story"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+      it('should return relevant=true when AI determines message is relevant', async () => {
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Contains family immigration story"}',
+            100,
+            20,
+          ),
+        );
 
         const result = await intern.filter('event-123', 'family-abc');
 
@@ -169,7 +185,7 @@ describe('InternAgent', () => {
         expect(result.tokensUsed).toBe(120);
       });
 
-      it('should return relevant=false when Haiku determines message is not relevant', async () => {
+      it('should return relevant=false when AI determines message is not relevant', async () => {
         mockEventRepo.findById.mockResolvedValue({
           id: 'event-123',
           eventType: 'message',
@@ -177,15 +193,13 @@ describe('InternAgent', () => {
           conversationId: 'conv-123',
         });
 
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"relevant": false, "reason": "General greeting"}',
-            },
-          ],
-          usage: { input_tokens: 80, output_tokens: 15 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": false, "reason": "General greeting"}',
+            80,
+            15,
+          ),
+        );
 
         const result = await intern.filter('event-123', 'family-abc');
 
@@ -208,16 +222,13 @@ describe('InternAgent', () => {
           },
         ]);
 
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            { type: 'text', text: '{"relevant": true, "reason": "test"}' },
-          ],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse('{"relevant": true, "reason": "test"}', 100, 20),
+        );
 
         await intern.filter('event-123', 'family-abc');
 
-        expect(mockAnthropicCreate).toHaveBeenCalledWith(
+        expect(mockProviderComplete).toHaveBeenCalledWith(
           expect.objectContaining({
             messages: [
               expect.objectContaining({
@@ -240,28 +251,14 @@ describe('InternAgent', () => {
         mockEventRepo.findRecent.mockResolvedValue([]);
       });
 
-      it('should handle non-text response type', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'image', data: 'some-data' }],
-          usage: { input_tokens: 100, output_tokens: 0 },
-        });
-
-        const result = await intern.filter('event-123', 'family-abc');
-
-        expect(result.relevant).toBe(true);
-        expect(result.reason).toBe('Unexpected response type');
-      });
-
       it('should handle JSON with extra text', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: 'Here is my analysis: {"relevant": false, "reason": "Not relevant"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            'Here is my analysis: {"relevant": false, "reason": "Not relevant"}',
+            100,
+            20,
+          ),
+        );
 
         const result = await intern.filter('event-123', 'family-abc');
 
@@ -270,10 +267,9 @@ describe('InternAgent', () => {
       });
 
       it('should handle invalid JSON response', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: 'This is not valid JSON' }],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse('This is not valid JSON', 100, 20),
+        );
 
         const result = await intern.filter('event-123', 'family-abc');
 
@@ -282,10 +278,9 @@ describe('InternAgent', () => {
       });
 
       it('should handle malformed JSON', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: '{"relevant": }' }],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse('{"relevant": }', 100, 20),
+        );
 
         const result = await intern.filter('event-123', 'family-abc');
 
@@ -294,15 +289,13 @@ describe('InternAgent', () => {
       });
 
       it('should default to relevant=true if relevant field is not boolean', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"relevant": "yes", "reason": "Some reason"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": "yes", "reason": "Some reason"}',
+            100,
+            20,
+          ),
+        );
 
         const result = await intern.filter('event-123', 'family-abc');
 
@@ -310,10 +303,9 @@ describe('InternAgent', () => {
       });
 
       it('should handle missing reason field', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: '{"relevant": true}' }],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse('{"relevant": true}', 100, 20),
+        );
 
         const result = await intern.filter('event-123', 'family-abc');
 
@@ -334,7 +326,7 @@ describe('InternAgent', () => {
       });
 
       it('should return relevant=true on API error', async () => {
-        mockAnthropicCreate.mockRejectedValue(
+        mockProviderComplete.mockRejectedValue(
           new Error('API rate limit exceeded'),
         );
 
@@ -409,7 +401,7 @@ describe('InternAgent', () => {
 
         expect(result.linked).toBe(false);
         expect(result.reason).toBe('No recent images in conversation');
-        expect(mockAnthropicCreate).not.toHaveBeenCalled();
+        expect(mockProviderComplete).not.toHaveBeenCalled();
       });
     });
 
@@ -444,20 +436,18 @@ describe('InternAgent', () => {
         mockImageRepo.findRecentInConversation.mockResolvedValue([mockImage]);
       });
 
-      it('should call Anthropic for image linking', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"linked": true, "image_id": "img-123", "reference_type": "identifies_people", "reason": "Identifies grandma"}',
-            },
-          ],
-          usage: { input_tokens: 150, output_tokens: 30 },
-        });
+      it('should call provider for image linking', async () => {
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"linked": true, "image_id": "img-123", "reference_type": "identifies_people", "reason": "Identifies grandma"}',
+            150,
+            30,
+          ),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
-        expect(mockAnthropicCreate).toHaveBeenCalled();
+        expect(mockProviderComplete).toHaveBeenCalled();
         expect(result.linked).toBe(true);
         expect(result.imageId).toBe('img-123');
         expect(result.referenceType).toBe('identifies_people');
@@ -465,19 +455,17 @@ describe('InternAgent', () => {
       });
 
       it('should include image context in prompt', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"linked": false, "reason": "No reference"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"linked": false, "reason": "No reference"}',
+            100,
+            20,
+          ),
+        );
 
         await intern.linkToImage('event-123', 'family-abc');
 
-        expect(mockAnthropicCreate).toHaveBeenCalledWith(
+        expect(mockProviderComplete).toHaveBeenCalledWith(
           expect.objectContaining({
             messages: [
               expect.objectContaining({
@@ -489,16 +477,13 @@ describe('InternAgent', () => {
       });
 
       it('should format image with all available metadata', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            { type: 'text', text: '{"linked": false, "reason": "test"}' },
-          ],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse('{"linked": false, "reason": "test"}', 100, 20),
+        );
 
         await intern.linkToImage('event-123', 'family-abc');
 
-        const callArgs = mockAnthropicCreate.mock.calls[0][0];
+        const callArgs = mockProviderComplete.mock.calls[0][0];
         const messageContent = callArgs.messages[0].content;
 
         expect(messageContent).toContain('img-123');
@@ -524,15 +509,13 @@ describe('InternAgent', () => {
       });
 
       it('should detect describes reference type', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "Describes the scene"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 30 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "Describes the scene"}',
+            100,
+            30,
+          ),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -540,15 +523,13 @@ describe('InternAgent', () => {
       });
 
       it('should detect identifies_people reference type', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"linked": true, "image_id": "img-123", "reference_type": "identifies_people", "reason": "Names people"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 30 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"linked": true, "image_id": "img-123", "reference_type": "identifies_people", "reason": "Names people"}',
+            100,
+            30,
+          ),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -556,15 +537,13 @@ describe('InternAgent', () => {
       });
 
       it('should detect provides_context reference type', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"linked": true, "image_id": "img-123", "reference_type": "provides_context", "reason": "Provides date info"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 30 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"linked": true, "image_id": "img-123", "reference_type": "provides_context", "reason": "Provides date info"}',
+            100,
+            30,
+          ),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -572,15 +551,13 @@ describe('InternAgent', () => {
       });
 
       it('should detect asks_about reference type', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"linked": true, "image_id": "img-123", "reference_type": "asks_about", "reason": "Asks a question"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 30 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"linked": true, "image_id": "img-123", "reference_type": "asks_about", "reason": "Asks a question"}',
+            100,
+            30,
+          ),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -588,15 +565,13 @@ describe('InternAgent', () => {
       });
 
       it('should default to describes for invalid reference type', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"linked": true, "image_id": "img-123", "reference_type": "invalid_type", "reason": "test"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 30 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"linked": true, "image_id": "img-123", "reference_type": "invalid_type", "reason": "test"}',
+            100,
+            30,
+          ),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -617,16 +592,14 @@ describe('InternAgent', () => {
         ]);
       });
 
-      it('should return linked=false when Haiku says not linked', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"linked": false, "image_id": null, "reference_type": null, "reason": "No image reference"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+      it('should return linked=false when AI says not linked', async () => {
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"linked": false, "image_id": null, "reference_type": null, "reason": "No image reference"}',
+            100,
+            20,
+          ),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -635,23 +608,10 @@ describe('InternAgent', () => {
         expect(result.referenceType).toBeUndefined();
       });
 
-      it('should handle non-text response type', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'image', data: 'some-data' }],
-          usage: { input_tokens: 100, output_tokens: 0 },
-        });
-
-        const result = await intern.linkToImage('event-123', 'family-abc');
-
-        expect(result.linked).toBe(false);
-        expect(result.reason).toBe('Unexpected response type');
-      });
-
       it('should handle invalid JSON response', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: 'Not valid JSON' }],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse('Not valid JSON', 100, 20),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -660,10 +620,9 @@ describe('InternAgent', () => {
       });
 
       it('should handle malformed JSON', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [{ type: 'text', text: '{"linked": true, "image_id":}' }],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse('{"linked": true, "image_id":}', 100, 20),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -672,15 +631,13 @@ describe('InternAgent', () => {
       });
 
       it('should return linked=false if image_id is missing when linked is true', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: '{"linked": true, "reference_type": "describes", "reason": "test"}',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 20 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"linked": true, "reference_type": "describes", "reason": "test"}',
+            100,
+            20,
+          ),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -689,15 +646,13 @@ describe('InternAgent', () => {
       });
 
       it('should handle JSON with extra text around it', async () => {
-        mockAnthropicCreate.mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: 'Here is my analysis:\n{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "test"}\nThank you!',
-            },
-          ],
-          usage: { input_tokens: 100, output_tokens: 30 },
-        });
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            'Here is my analysis:\n{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "test"}\nThank you!',
+            100,
+            30,
+          ),
+        );
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -720,7 +675,7 @@ describe('InternAgent', () => {
       });
 
       it('should return linked=false on API error', async () => {
-        mockAnthropicCreate.mockRejectedValue(new Error('API timeout'));
+        mockProviderComplete.mockRejectedValue(new Error('API timeout'));
 
         const result = await intern.linkToImage('event-123', 'family-abc');
 
@@ -764,7 +719,8 @@ describe('InternAgent', () => {
 
     it('should use default configuration', () => {
       const agent = new InternAgent({
-        anthropic: mockAnthropic,
+        provider: mockProvider,
+        model: 'claude-3-5-haiku-20241022',
       });
 
       expect(agent).toBeDefined();
@@ -772,11 +728,11 @@ describe('InternAgent', () => {
 
     it('should allow custom configuration overrides', async () => {
       const customIntern = new InternAgent({
-        anthropic: mockAnthropic,
+        provider: mockProvider,
+        model: 'claude-3-haiku-20240307',
         eventRepo: mockEventRepo as any,
         imageRepo: mockImageRepo as any,
         config: {
-          model: 'claude-3-haiku-20240307',
           maxTokens: 50,
         },
       });
@@ -788,19 +744,16 @@ describe('InternAgent', () => {
         conversationId: 'conv-123',
       });
       mockEventRepo.findRecent.mockResolvedValue([]);
-      mockAnthropicCreate.mockResolvedValue({
-        content: [
-          { type: 'text', text: '{"relevant": true, "reason": "test"}' },
-        ],
-        usage: { input_tokens: 100, output_tokens: 20 },
-      });
+      mockProviderComplete.mockResolvedValue(
+        createMockResponse('{"relevant": true, "reason": "test"}', 100, 20),
+      );
 
       await customIntern.filter('event-123', 'family-abc');
 
-      expect(mockAnthropicCreate).toHaveBeenCalledWith(
+      expect(mockProviderComplete).toHaveBeenCalledWith(
         expect.objectContaining({
           model: 'claude-3-haiku-20240307',
-          max_tokens: 50,
+          maxTokens: 50,
         }),
       );
     });
@@ -818,15 +771,13 @@ describe('InternAgent', () => {
     });
 
     it('should log debug info for filter results', async () => {
-      mockAnthropicCreate.mockResolvedValue({
-        content: [
-          {
-            type: 'text',
-            text: '{"relevant": true, "reason": "Family story"}',
-          },
-        ],
-        usage: { input_tokens: 100, output_tokens: 20 },
-      });
+      mockProviderComplete.mockResolvedValue(
+        createMockResponse(
+          '{"relevant": true, "reason": "Family story"}',
+          100,
+          20,
+        ),
+      );
 
       await intern.filter('event-123', 'family-abc');
 
@@ -844,15 +795,13 @@ describe('InternAgent', () => {
       mockImageRepo.findRecentInConversation.mockResolvedValue([
         { id: 'img-123', familyId: 'family-abc', createdAt: new Date() },
       ]);
-      mockAnthropicCreate.mockResolvedValue({
-        content: [
-          {
-            type: 'text',
-            text: '{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "test"}',
-          },
-        ],
-        usage: { input_tokens: 100, output_tokens: 30 },
-      });
+      mockProviderComplete.mockResolvedValue(
+        createMockResponse(
+          '{"linked": true, "image_id": "img-123", "reference_type": "describes", "reason": "test"}',
+          100,
+          30,
+        ),
+      );
 
       await intern.linkToImage('event-123', 'family-abc');
 

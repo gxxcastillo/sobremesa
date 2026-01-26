@@ -118,7 +118,7 @@ async function main() {
   // Events
   const { data: events } = await client
     .from('events')
-    .select('title, event_type, date_year, date_month, description_original')
+    .select('title, event_type, date_text, date_year, description_original')
     .eq('family_id', family.id)
     .eq('redacted', false)
     .order('date_year', { ascending: true, nullsFirst: false });
@@ -127,12 +127,7 @@ async function main() {
     console.log(`TIMELINE EVENTS (${events.length})`);
     console.log('-'.repeat(40));
     for (const e of events) {
-      let date = '';
-      if (e.date_year) {
-        date = e.date_month
-          ? `${e.date_month}/${e.date_year}`
-          : String(e.date_year);
-      }
+      const date = e.date_text || (e.date_year ? String(e.date_year) : '');
       const dateStr = date ? `[${date}] ` : '';
       const typeStr = e.event_type ? `(${e.event_type}) ` : '';
       console.log(`  • ${dateStr}${typeStr}${e.title}`);

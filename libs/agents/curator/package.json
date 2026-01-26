@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "tslib": "^2.3.0",
+    "@sobremesa/ai-provider": "workspace:*",
     "@sobremesa/shared-types": "workspace:*",
     "@sobremesa/shared-utils": "workspace:*",
     "@sobremesa/prompts": "workspace:*",

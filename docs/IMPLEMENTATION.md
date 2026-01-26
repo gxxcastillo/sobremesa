@@ -73,7 +73,7 @@ nx serve chatbots
 - [x] Call Claude API with extraction prompt
 - [x] Extract entities: people, places, events, relationships
 - [x] Extract stories (narrative fragments)
-- [x] Detect language (en/es/mixed)
+- [x] Detect language (en/es/unknown)
 - [x] Output domain model (ScribeDomainModel type)
 - [x] Context loading (recent messages + family data)
 

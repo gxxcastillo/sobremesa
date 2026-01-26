@@ -30,62 +30,31 @@ export function buildUserMessage(
 ): string {
   const parts: string[] = [];
 
-  // Add pending questions for answer detection
-  if (context.pendingQuestions.length > 0) {
-    parts.push('## Pending Questions (check if this message answers any)');
-    for (const q of context.pendingQuestions.slice(0, 10)) {
-      parts.push(`- [${q.id}] ${q.content}`);
-    }
-    parts.push('');
-  }
-
-  // Add recent claims for conflict detection
-  if (context.recentClaims.length > 0) {
-    parts.push('## Recent Claims (check for conflicts)');
-    for (const claim of context.recentClaims.slice(0, 10)) {
-      parts.push(
-        `- ${claim.subject}: ${JSON.stringify(claim.claimValue)} (by ${
-          claim.claimedBy
-        })`,
-      );
-    }
-    parts.push('');
-  }
-
   // Add recent messages for context
   if (context.recentMessages.length > 0) {
-    parts.push('## Recent Conversation Context');
+    parts.push('CONTEXT:');
     for (const msg of context.recentMessages.slice(0, 5)) {
-      parts.push(`[${msg.senderName}]: ${msg.content.slice(0, 300)}...`);
+      const truncated =
+        msg.content.length > 200
+          ? msg.content.slice(0, 200) + '...'
+          : msg.content;
+      parts.push(`${msg.senderName}: ${truncated}`);
     }
     parts.push('');
   }
 
-  // Add recent images for context
+  // Add recent images for context (compact format)
   if (context.recentImages && context.recentImages.length > 0) {
-    parts.push('## Recent Images in Conversation');
-    parts.push(
-      '(If this message describes or references one of these images, note the connection)',
-    );
+    parts.push('IMAGES:');
     for (const img of context.recentImages) {
-      const imgParts: string[] = [`[${img.id}]`];
-      imgParts.push(img.fileType);
-      if (img.sharedBy) {
-        imgParts.push(`shared by ${img.sharedBy}`);
-      }
+      const imgParts: string[] = [`[${img.id.slice(0, 8)}]`];
       if (img.analyzed && img.description) {
-        imgParts.push(`- "${img.description}"`);
-        if (img.peopleCount) {
-          imgParts.push(`(${img.peopleCount} people)`);
-        }
-        if (img.estimatedEra) {
-          imgParts.push(`(~${img.estimatedEra})`);
-        }
-        if (img.visibleText && img.visibleText.length > 0) {
-          imgParts.push(`[text: "${img.visibleText.slice(0, 2).join(', ')}"]`);
-        }
+        imgParts.push(img.description.slice(0, 80));
+        if (img.peopleCount) imgParts.push(`${img.peopleCount}ppl`);
+        if (img.estimatedEra) imgParts.push(`~${img.estimatedEra}`);
       } else {
-        imgParts.push('(not yet analyzed)');
+        imgParts.push(img.fileType);
+        if (img.sharedBy) imgParts.push(`by ${img.sharedBy}`);
       }
       parts.push(imgParts.join(' '));
     }
@@ -93,12 +62,11 @@ export function buildUserMessage(
   }
 
   // Add the main message to process
-  parts.push('## Message to Process');
-  parts.push(`Sender: ${senderName}`);
-  parts.push(`Content: ${messageContent}`);
+  parts.push(`MESSAGE from ${senderName}:`);
+  parts.push(messageContent);
   parts.push('');
   parts.push(
-    'Extract all entities, claims, and questions from this message. Return only valid JSON.',
+    'Extract from this MESSAGE. CRITICAL: Replace all pronouns (he/she/they) with actual names from CONTEXT. Never output a pronoun as subject. Short follow-ups like "and beets" contain information—use context to interpret.',
   );
 
   return parts.join('\n');

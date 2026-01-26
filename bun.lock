@@ -78,6 +78,7 @@
         "@sobremesa/agents-intern": "workspace:*",
         "@sobremesa/agents-registrar": "workspace:*",
         "@sobremesa/agents-scribe": "workspace:*",
+        "@sobremesa/ai-provider": "workspace:*",
         "@sobremesa/database": "workspace:*",
         "@sobremesa/queue": "workspace:*",
         "@sobremesa/shared-types": "workspace:*",
@@ -116,6 +117,7 @@
       "name": "@sobremesa/agents-curator",
       "version": "0.0.1",
       "dependencies": {
+        "@sobremesa/ai-provider": "workspace:*",
         "@sobremesa/database": "workspace:*",
         "@sobremesa/prompts": "workspace:*",
         "@sobremesa/shared-types": "workspace:*",
@@ -127,6 +129,7 @@
       "name": "@sobremesa/agents-facilitator",
       "version": "0.0.1",
       "dependencies": {
+        "@sobremesa/ai-provider": "workspace:*",
         "@sobremesa/database": "workspace:*",
         "@sobremesa/prompts": "workspace:*",
         "@sobremesa/shared-types": "workspace:*",
@@ -138,6 +141,7 @@
       "name": "@sobremesa/agents-historian",
       "version": "0.0.1",
       "dependencies": {
+        "@sobremesa/ai-provider": "workspace:*",
         "@sobremesa/database": "workspace:*",
         "@sobremesa/prompts": "workspace:*",
         "@sobremesa/shared-types": "workspace:*",
@@ -149,8 +153,10 @@
       "name": "@sobremesa/agents-intern",
       "version": "0.0.1",
       "dependencies": {
+        "@sobremesa/ai-provider": "workspace:*",
         "@sobremesa/database": "workspace:*",
         "@sobremesa/prompts": "workspace:*",
+        "@sobremesa/queue": "workspace:*",
         "@sobremesa/shared-types": "workspace:*",
         "@sobremesa/shared-utils": "workspace:*",
         "tslib": "^2.3.0",
@@ -170,12 +176,18 @@
       "name": "@sobremesa/agents-scribe",
       "version": "0.0.1",
       "dependencies": {
+        "@sobremesa/ai-provider": "workspace:*",
         "@sobremesa/database": "workspace:*",
         "@sobremesa/prompts": "workspace:*",
+        "@sobremesa/queue": "workspace:*",
         "@sobremesa/shared-types": "workspace:*",
         "@sobremesa/shared-utils": "workspace:*",
         "tslib": "^2.3.0",
       },
+    },
+    "libs/ai-provider": {
+      "name": "@sobremesa/ai-provider",
+      "version": "0.0.1",
     },
     "libs/api-client": {
       "name": "@sobremesa/api-client",
@@ -790,6 +802,8 @@
     "@sobremesa/agents-registrar": ["@sobremesa/agents-registrar@workspace:libs/agents/registrar"],
 
     "@sobremesa/agents-scribe": ["@sobremesa/agents-scribe@workspace:libs/agents/scribe"],
+
+    "@sobremesa/ai-provider": ["@sobremesa/ai-provider@workspace:libs/ai-provider"],
 
     "@sobremesa/api": ["@sobremesa/api@workspace:apps/api"],
 

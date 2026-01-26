@@ -4,14 +4,10 @@ import {
   ImageRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
+import type { AIProvider } from '@sobremesa/ai-provider';
 import type pino from 'pino';
 import type { Image } from '@sobremesa/shared-types';
-
-/**
- * Anthropic client interface.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnthropicClient = any;
+import type { MessageContext } from '@sobremesa/queue';
 
 /**
  * Result of a message filter task.
@@ -21,6 +17,8 @@ export interface FilterResult {
   relevant: boolean;
   /** Reason for the decision (for logging/debugging) */
   reason: string;
+  /** Detected language of the message (en, es) */
+  language?: string;
   /** Tokens used for this call */
   tokensUsed?: number;
 }
@@ -40,6 +38,8 @@ export interface RoutingResult {
   adminSubtype?: 'command' | 'status' | 'dm' | 'member_event' | 'mention';
   /** Reason for the routing decision */
   reason: string;
+  /** Detected language of the message (en, es) */
+  language?: string;
   /** Tokens used (if AI was called) */
   tokensUsed?: number;
 }
@@ -73,8 +73,6 @@ export interface ImageLinkResult {
  * Configuration for the Intern agent.
  */
 export interface InternConfig {
-  /** Model to use (default: claude-3-5-haiku) */
-  model: string;
   /** Maximum tokens for response */
   maxTokens: number;
   /** Number of recent messages for context */
@@ -84,17 +82,18 @@ export interface InternConfig {
 }
 
 export const DEFAULT_INTERN_CONFIG: InternConfig = {
-  model: 'claude-3-5-haiku-20241022',
   maxTokens: 100,
-  recentMessageCount: 2,
+  recentMessageCount: 5, // Enough context to see conversation continuations
 };
 
 /**
  * Options for creating an InternAgent.
  */
 export interface InternAgentOptions {
-  /** Anthropic client (from @anthropic-ai/sdk) */
-  anthropic: AnthropicClient;
+  /** AI provider for completions */
+  provider: AIProvider;
+  /** Model to use */
+  model: string;
   /** Conversation event repository */
   eventRepo?: ConversationEventRepository;
   /** Image repository */
@@ -116,14 +115,16 @@ export interface InternAgentOptions {
  * It handles quick checks and classifications before heavier agents run.
  */
 export class InternAgent {
-  private anthropic: AnthropicClient;
+  private provider: AIProvider;
+  private model: string;
   private eventRepo: ConversationEventRepository;
   private imageRepo: ImageRepository;
   private logger: pino.Logger;
   private config: InternConfig;
 
   constructor(options: InternAgentOptions) {
-    this.anthropic = options.anthropic;
+    this.provider = options.provider;
+    this.model = options.model;
     this.eventRepo = options.eventRepo || new ConversationEventRepository();
     this.imageRepo = options.imageRepo || new ImageRepository();
     this.logger = options.logger || createLogger({ name: 'intern' });
@@ -132,8 +133,13 @@ export class InternAgent {
 
   /**
    * Filter a message to determine if it should be processed by Scribe.
+   * Optional context parameter allows sharing pre-fetched context from MessageProcessor.
    */
-  async filter(eventId: string, familyId: string): Promise<FilterResult> {
+  async filter(
+    eventId: string,
+    familyId: string,
+    context?: MessageContext,
+  ): Promise<FilterResult> {
     try {
       // Load the event
       const event = await this.eventRepo.findById(familyId, eventId);
@@ -164,51 +170,64 @@ export class InternAgent {
         return { relevant: false, reason: 'Message too short' };
       }
 
-      // Get recent messages for context
-      const recentMessages = await this.eventRepo.findRecent(
-        familyId,
-        event.conversationId,
-        this.config.recentMessageCount + 1, // +1 to include current, then filter it out
-      );
+      // Fast path: Messages starting with conjunctions are continuations
+      const lowerText = messageText.toLowerCase();
+      if (
+        lowerText.startsWith('and ') ||
+        lowerText.startsWith('but ') ||
+        lowerText.startsWith('or ') ||
+        lowerText.startsWith('also ')
+      ) {
+        return {
+          relevant: true,
+          reason: 'Continuation (starts with conjunction)',
+        };
+      }
 
-      // Build context from recent messages (excluding current)
-      const contextMessages = recentMessages
-        .filter((m) => m.id !== eventId && m.contentOriginal)
-        .slice(0, this.config.recentMessageCount)
-        .map(
-          (m) => `- ${m.actorDisplayName || 'Someone'}: "${m.contentOriginal}"`,
-        )
-        .join('\n');
+      // Use pre-fetched context if provided, otherwise fetch from DB
+      let contextMessages: string;
+      if (context) {
+        // Use shared context (excluding current message)
+        contextMessages = context.recentMessages
+          .filter((m) => m.id !== eventId)
+          .slice(0, this.config.recentMessageCount)
+          .map((m) => `- ${m.senderName}: "${m.content}"`)
+          .join('\n');
+      } else {
+        // Fallback: fetch from DB
+        const recentMessages = await this.eventRepo.findRecent(
+          familyId,
+          event.conversationId,
+          this.config.recentMessageCount + 1, // +1 to include current, then filter it out
+        );
+        contextMessages = recentMessages
+          .filter((m) => m.id !== eventId && m.contentOriginal)
+          .slice(0, this.config.recentMessageCount)
+          .map(
+            (m) =>
+              `- ${m.actorDisplayName || 'Someone'}: "${m.contentOriginal}"`,
+          )
+          .join('\n');
+      }
 
       // Build user message
       const userMessage = contextMessages
         ? `Recent conversation:\n${contextMessages}\n\nNew message to evaluate:\n"${messageText}"`
         : `Message to evaluate:\n"${messageText}"`;
 
-      // Call Haiku
-      const response = await this.anthropic.messages.create({
-        model: this.config.model,
-        max_tokens: this.config.maxTokens,
+      // Call AI provider
+      const response = await this.provider.complete({
+        model: this.model,
+        maxTokens: this.config.maxTokens,
         system: loadPrompt('internFilter'),
         messages: [{ role: 'user', content: userMessage }],
       });
 
       // Parse response
-      const content = response.content[0];
-      if (content.type !== 'text') {
-        this.logger.warn(
-          { eventId },
-          'Unexpected response type, defaulting to relevant',
-        );
-        return { relevant: true, reason: 'Unexpected response type' };
-      }
+      const result = this.parseFilterResponse(response.content);
 
-      const result = this.parseFilterResponse(content.text);
-
-      // Calculate tokens used
-      const tokensUsed =
-        (response.usage?.input_tokens || 0) +
-        (response.usage?.output_tokens || 0);
+      // Get tokens used
+      const tokensUsed = response.usage.totalTokens;
 
       this.logger.debug(
         {
@@ -240,6 +259,7 @@ export class InternAgent {
   private parseFilterResponse(text: string): {
     relevant: boolean;
     reason: string;
+    language?: string;
   } {
     try {
       // Try to extract JSON from the response
@@ -260,8 +280,10 @@ export class InternAgent {
         typeof parsed.reason === 'string'
           ? parsed.reason
           : 'No reason provided';
+      const language =
+        typeof parsed.language === 'string' ? parsed.language : undefined;
 
-      return { relevant, reason };
+      return { relevant, reason, language };
     } catch {
       return {
         relevant: true,
@@ -273,10 +295,12 @@ export class InternAgent {
   /**
    * Check if a message references a recently shared image.
    * This helps Scribe understand when text messages are describing photos.
+   * Optional context parameter allows sharing pre-fetched context from MessageProcessor.
    */
   async linkToImage(
     eventId: string,
     familyId: string,
+    context?: MessageContext,
   ): Promise<ImageLinkResult> {
     try {
       // Load the event
@@ -299,49 +323,48 @@ export class InternAgent {
         return { linked: false, reason: 'Empty message' };
       }
 
-      // Get recent images in the conversation
-      const recentImages = await this.imageRepo.findRecentInConversation(
-        familyId,
-        event.conversationId,
-        5, // Check last 5 images
-      );
-
-      if (recentImages.length === 0) {
+      // Use pre-fetched context if provided, otherwise fetch from DB
+      let imageDescriptions: string;
+      if (context && context.recentImages.length > 0) {
+        // Use shared context images
+        imageDescriptions = context.recentImages
+          .map((img) => this.formatContextImageForPrompt(img))
+          .join('\n');
+      } else if (context && context.recentImages.length === 0) {
         return { linked: false, reason: 'No recent images in conversation' };
-      }
+      } else {
+        // Fallback: fetch from DB
+        const recentImages = await this.imageRepo.findRecentInConversation(
+          familyId,
+          event.conversationId,
+          5, // Check last 5 images
+        );
 
-      // Build image context for the prompt
-      const imageDescriptions = recentImages
-        .map((img) => this.formatImageForPrompt(img))
-        .join('\n');
+        if (recentImages.length === 0) {
+          return { linked: false, reason: 'No recent images in conversation' };
+        }
+
+        imageDescriptions = recentImages
+          .map((img) => this.formatImageForPrompt(img))
+          .join('\n');
+      }
 
       // Build user message
       const userMessage = `Recent images:\n${imageDescriptions}\n\nMessage to evaluate:\n"${messageText}"`;
 
-      // Call Haiku
-      const response = await this.anthropic.messages.create({
-        model: this.config.model,
-        max_tokens: this.config.maxTokens,
+      // Call AI provider
+      const response = await this.provider.complete({
+        model: this.model,
+        maxTokens: this.config.maxTokens,
         system: loadPrompt('internImageLink'),
         messages: [{ role: 'user', content: userMessage }],
       });
 
       // Parse response
-      const content = response.content[0];
-      if (content.type !== 'text') {
-        this.logger.warn(
-          { eventId },
-          'Unexpected response type for image link',
-        );
-        return { linked: false, reason: 'Unexpected response type' };
-      }
+      const result = this.parseImageLinkResponse(response.content);
 
-      const result = this.parseImageLinkResponse(content.text);
-
-      // Calculate tokens used
-      const tokensUsed =
-        (response.usage?.input_tokens || 0) +
-        (response.usage?.output_tokens || 0);
+      // Get tokens used
+      const tokensUsed = response.usage.totalTokens;
 
       this.logger.debug(
         {
@@ -366,7 +389,7 @@ export class InternAgent {
   }
 
   /**
-   * Format an image for the prompt context.
+   * Format an image for the prompt context (from DB Image type).
    */
   private formatImageForPrompt(image: Image): string {
     const parts: string[] = [`[${image.id}]`];
@@ -380,6 +403,34 @@ export class InternAgent {
     const analysis = image.analysis as Record<string, unknown> | undefined;
     if (analysis?.description) {
       parts.push(`- "${analysis.description}"`);
+    }
+
+    if (image.peopleCount) {
+      parts.push(`(${image.peopleCount} people visible)`);
+    }
+
+    if (image.estimatedEra) {
+      parts.push(`(~${image.estimatedEra})`);
+    }
+
+    return parts.join(' ');
+  }
+
+  /**
+   * Format an image from shared MessageContext for the prompt.
+   */
+  private formatContextImageForPrompt(
+    image: MessageContext['recentImages'][number],
+  ): string {
+    const parts: string[] = [`[${image.id}]`];
+    parts.push(image.fileType || 'image');
+
+    if (image.sharedBy) {
+      parts.push(`shared by ${image.sharedBy}`);
+    }
+
+    if (image.description) {
+      parts.push(`- "${image.description}"`);
     }
 
     if (image.peopleCount) {
@@ -509,6 +560,7 @@ export class InternAgent {
 
   /**
    * Route a message to the appropriate handler.
+   * Optional context parameter allows sharing pre-fetched context from MessageProcessor.
    *
    * Routing logic:
    * 1. Commands (/sobremesa, /status) → admin
@@ -517,7 +569,11 @@ export class InternAgent {
    * 4. Spam/noise (via filter) → ignore
    * 5. Everything else → scribe
    */
-  async route(eventId: string, familyId: string): Promise<RoutingResult> {
+  async route(
+    eventId: string,
+    familyId: string,
+    context?: MessageContext,
+  ): Promise<RoutingResult> {
     try {
       // Load the event
       const event = await this.eventRepo.findById(familyId, eventId);
@@ -637,12 +693,13 @@ export class InternAgent {
       }
 
       // Use filter to determine if message is relevant
-      const filterResult = await this.filter(eventId, familyId);
+      const filterResult = await this.filter(eventId, familyId, context);
 
       if (!filterResult.relevant) {
         return {
           action: 'ignore',
           reason: filterResult.reason,
+          language: filterResult.language,
           tokensUsed: filterResult.tokensUsed,
         };
       }
@@ -651,6 +708,7 @@ export class InternAgent {
       return {
         action: 'scribe',
         reason: filterResult.reason,
+        language: filterResult.language,
         tokensUsed: filterResult.tokensUsed,
       };
     } catch (error) {

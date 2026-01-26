@@ -173,7 +173,7 @@ const app = new Elysia()
         client
           .from('events')
           .select(
-            'title, event_type, date_year, date_month, description_original',
+            'title, event_type, date_text, date_year, description_original',
           )
           .eq('family_id', family.id)
           .eq('redacted', false)
@@ -282,7 +282,7 @@ const app = new Elysia()
         client
           .from('events')
           .select(
-            'title, event_type, date_year, date_month, description_original',
+            'title, event_type, date_text, date_year, description_original',
           )
           .eq('family_id', familyId)
           .eq('redacted', false)

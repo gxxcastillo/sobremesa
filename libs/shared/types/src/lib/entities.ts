@@ -63,11 +63,8 @@ export interface TimelineEvent extends BaseEntity {
     | string;
   descriptionOriginal?: string;
   descriptionLanguage?: LanguageCode;
+  dateText?: string;
   dateYear?: number;
-  dateMonth?: number;
-  dateDay?: number;
-  dateApproximate?: string;
-  dateConfidence?: Confidence;
   peopleInvolved: string[];
   placeId?: string;
   sourceEventId?: string;
@@ -102,7 +99,7 @@ export interface Claim extends BaseEntity {
   sourceEventId: string;
   claimedBy: string;
   /** How the claim was attributed: direct (speaker), attributed (citing someone), hearsay (vague) */
-  claimedBySource?: ClaimSourceType;
+  claimedBySource: ClaimSourceType;
   claimedAt: Date;
   confidence: Confidence;
   certaintyLanguage?: string;
@@ -212,7 +209,7 @@ export interface Question {
   familyId: string;
   contentOriginal: string;
   languageOriginal: LanguageCode;
-  origin: 'scribe' | 'curator' | 'human';
+  origin: 'curator' | 'human';
   status: 'proposed' | 'asked' | 'answered' | 'retired';
   priority: number;
   sourceMessageId?: string;

@@ -4,6 +4,7 @@ import {
   EventLogRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
+import type { AIProvider } from '@sobremesa/ai-provider';
 import type pino from 'pino';
 import {
   BotRole,
@@ -23,21 +24,15 @@ import {
 export type { MessageSender };
 
 /**
- * Anthropic client interface.
- * Using unknown to avoid TypeScript version mismatches across workspace packages.
- * The actual Anthropic client from @anthropic-ai/sdk should be passed.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnthropicClient = any;
-
-/**
  * Options for FacilitatorAgent.
  */
 export interface FacilitatorAgentOptions {
   /** Message sender (typically BotManager) */
   messageSender: MessageSender;
-  /** Anthropic client for warmth transformation (optional - falls back to verbatim if not provided) */
-  anthropic?: AnthropicClient;
+  /** AI provider for warmth transformation (optional - falls back to verbatim if not provided) */
+  provider?: AIProvider;
+  /** Model to use for warmth transformation */
+  model?: string;
   /** Question repository */
   questionRepo?: QuestionRepository;
   /** Family repository */
@@ -86,17 +81,18 @@ export interface SendResponseOptions {
   replyToMessageId?: number;
 }
 
-/** Model to use for warmth transformation (fast and cheap) */
-const WARMTH_MODEL = 'claude-3-5-haiku-latest';
+/** Default model to use for warmth transformation (fast and cheap) */
+const DEFAULT_WARMTH_MODEL = 'claude-3-5-haiku-latest';
 
 /**
  * The Facilitator agent asks warm follow-up questions to families.
  * It picks the highest priority pending question and sends it via the Facilitator bot.
- * When an Anthropic client is provided, it applies the warmth formula to questions.
+ * When an AI provider is available, it applies the warmth formula to questions.
  */
 export class FacilitatorAgent {
   private messageSender: MessageSender;
-  private anthropic?: AnthropicClient;
+  private provider?: AIProvider;
+  private model: string;
   private questionRepo: QuestionRepository;
   private familyRepo: FamilyRepository;
   private eventLog: EventLogRepository;
@@ -105,7 +101,8 @@ export class FacilitatorAgent {
 
   constructor(options: FacilitatorAgentOptions) {
     this.messageSender = options.messageSender;
-    this.anthropic = options.anthropic;
+    this.provider = options.provider;
+    this.model = options.model || DEFAULT_WARMTH_MODEL;
     this.questionRepo = options.questionRepo || new QuestionRepository();
     this.familyRepo = options.familyRepo || new FamilyRepository();
     this.eventLog = options.eventLog || new EventLogRepository();
@@ -216,7 +213,7 @@ export class FacilitatorAgent {
       );
 
       return NaN;
-    } else if (this.anthropic) {
+    } else if (this.provider) {
       try {
         message = await this.formatWithWarmth(family, question);
         this.logger.debug(
@@ -231,7 +228,7 @@ export class FacilitatorAgent {
         message = question.contentOriginal;
       }
     } else {
-      // No AI client - send verbatim
+      // No AI provider - send verbatim
       message = question.contentOriginal;
     }
 
@@ -248,29 +245,27 @@ export class FacilitatorAgent {
 
   /**
    * Apply the warmth formula to a question using AI.
-   * Uses Haiku for fast, cheap transformation.
+   * Uses a fast model for cheap transformation.
    */
   private async formatWithWarmth(
     family: Family,
     question: Question,
   ): Promise<string> {
+    if (!this.provider) {
+      throw new Error('No AI provider available for warmth formatting');
+    }
+
     const systemPrompt = buildSystemPrompt(family.config);
     const userPrompt = buildUserPrompt(question);
 
-    const response = await this.anthropic.messages.create({
-      model: WARMTH_MODEL,
-      max_tokens: 512,
+    const response = await this.provider.complete({
+      model: this.model,
+      maxTokens: 512,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     });
 
-    // Extract the text from the response
-    const content = response.content[0];
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response type from AI');
-    }
-
-    return content.text.trim();
+    return response.content.trim();
   }
 
   /**
@@ -350,7 +345,7 @@ export class FacilitatorAgent {
 
       // 2. Format the response with warmth and appropriate language
       let formattedResponse: string;
-      if (this.anthropic) {
+      if (this.provider) {
         try {
           formattedResponse = await this.formatResponseWithWarmth(
             family,
@@ -366,7 +361,7 @@ export class FacilitatorAgent {
           formattedResponse = historianAnswer;
         }
       } else {
-        // No AI client - send raw historian answer
+        // No AI provider - send raw historian answer
         formattedResponse = historianAnswer;
       }
 
@@ -420,6 +415,10 @@ export class FacilitatorAgent {
     originalQuestion: string,
     historianAnswer: string,
   ): Promise<string> {
+    if (!this.provider) {
+      throw new Error('No AI provider available for warmth formatting');
+    }
+
     // Detect the language of the original question
     const questionLanguage = detectLanguage(originalQuestion);
     this.logger.debug({ questionLanguage }, 'Detected question language');
@@ -433,19 +432,13 @@ export class FacilitatorAgent {
       historianAnswer,
     );
 
-    const response = await this.anthropic.messages.create({
-      model: WARMTH_MODEL,
-      max_tokens: 1024, // Responses can be longer than questions
+    const response = await this.provider.complete({
+      model: this.model,
+      maxTokens: 1024, // Responses can be longer than questions
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     });
 
-    // Extract the text from the response
-    const content = response.content[0];
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response type from AI');
-    }
-
-    return content.text.trim();
+    return response.content.trim();
   }
 }

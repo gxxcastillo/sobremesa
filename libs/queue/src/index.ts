@@ -6,6 +6,7 @@ export {
   type ImageLinkerProcessor,
   type ImageLinkProcessorResult,
   type ImageReferenceType,
+  type MessageContext,
   type ScribeProcessor,
   type RegistrarProcessor,
   type OnImageCreatedCallback,

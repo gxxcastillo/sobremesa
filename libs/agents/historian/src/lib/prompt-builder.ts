@@ -80,8 +80,8 @@ export function buildUserPrompt(
     parts.push('## TIMELINE EVENTS');
     for (const event of context.events) {
       let eventLine = `- **${event.title}**`;
-      if (event.dateYear) {
-        eventLine += ` (${event.dateApproximate || event.dateYear})`;
+      if (event.dateText || event.dateYear) {
+        eventLine += ` (${event.dateText || event.dateYear})`;
       }
       if (event.place) {
         eventLine += ` at ${event.place}`;

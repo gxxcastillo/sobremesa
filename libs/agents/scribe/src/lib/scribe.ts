@@ -1,38 +1,29 @@
 import type { ScribeDomainModel } from '@sobremesa/shared-types';
 import {
   ConversationEventRepository,
-  ClaimRepository,
-  QuestionRepository,
   FamilyRepository,
   ImageRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
+import type { AIProvider } from '@sobremesa/ai-provider';
+import type { MessageContext } from '@sobremesa/queue';
 import type pino from 'pino';
 import { buildSystemPrompt, buildUserMessage } from './prompt-builder';
 import { parseScribeResponse } from './response-parser';
 import { buildScribeContext } from './context-builder';
 import { DEFAULT_SCRIBE_CONFIG, type ScribeConfig } from './types';
-
-/**
- * Anthropic client interface.
- * Using unknown to avoid TypeScript version mismatches across workspace packages.
- * The actual Anthropic client from @anthropic-ai/sdk should be passed.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnthropicClient = any;
+import { SCRIBE_JSON_SCHEMA } from './schema';
 
 /**
  * Options for creating a ScribeAgent.
  */
 export interface ScribeAgentOptions {
-  /** Anthropic client (from @anthropic-ai/sdk) */
-  anthropic: AnthropicClient;
+  /** AI provider for completions */
+  provider: AIProvider;
+  /** Model to use */
+  model: string;
   /** Conversation event repository */
   eventRepo?: ConversationEventRepository;
-  /** Claim repository */
-  claimRepo?: ClaimRepository;
-  /** Question repository */
-  questionRepo?: QuestionRepository;
   /** Family repository */
   familyRepo?: FamilyRepository;
   /** Image repository (for recent images context) */
@@ -44,25 +35,23 @@ export interface ScribeAgentOptions {
 }
 
 /**
- * The Scribe agent extracts entities, claims, and questions from messages.
+ * The Scribe agent extracts entities and claims from messages.
  * It processes one message at a time and outputs a domain model.
- * Note: Entity matching (people/places) is handled by Registrar, not Scribe.
+ * Note: Entity matching is handled by Registrar. Question generation is handled downstream.
  */
 export class ScribeAgent {
-  private anthropic: AnthropicClient;
+  private provider: AIProvider;
+  private model: string;
   private eventRepo: ConversationEventRepository;
-  private claimRepo: ClaimRepository;
-  private questionRepo: QuestionRepository;
   private familyRepo: FamilyRepository;
   private imageRepo: ImageRepository;
   private logger: pino.Logger;
   private config: ScribeConfig;
 
   constructor(options: ScribeAgentOptions) {
-    this.anthropic = options.anthropic;
+    this.provider = options.provider;
+    this.model = options.model;
     this.eventRepo = options.eventRepo || new ConversationEventRepository();
-    this.claimRepo = options.claimRepo || new ClaimRepository();
-    this.questionRepo = options.questionRepo || new QuestionRepository();
     this.familyRepo = options.familyRepo || new FamilyRepository();
     this.imageRepo = options.imageRepo || new ImageRepository();
     this.logger = options.logger || createLogger({ name: 'scribe' });
@@ -72,8 +61,13 @@ export class ScribeAgent {
   /**
    * Process a conversation event and extract a domain model.
    * This is the ScribeProcessor function for MessageProcessor.
+   * Optional preloadedContext allows sharing pre-fetched context from MessageProcessor.
    */
-  async process(eventId: string, familyId: string): Promise<ScribeDomainModel> {
+  async process(
+    eventId: string,
+    familyId: string,
+    preloadedContext?: MessageContext,
+  ): Promise<ScribeDomainModel> {
     this.logger.info({ eventId, familyId }, 'Scribe processing started');
 
     // Load the conversation event
@@ -100,14 +94,18 @@ export class ScribeAgent {
       ],
     };
 
-    // Build context from database
+    // Build context (use preloaded if available, otherwise fetch from DB)
     // Note: People/places removed - Registrar handles entity matching
-    const context = await buildScribeContext(familyId, event.conversationId, {
-      eventRepo: this.eventRepo,
-      claimRepo: this.claimRepo,
-      questionRepo: this.questionRepo,
-      imageRepo: this.imageRepo,
-    });
+    const context = await buildScribeContext(
+      familyId,
+      event.conversationId,
+      {
+        eventRepo: this.eventRepo,
+        imageRepo: this.imageRepo,
+      },
+      undefined, // options
+      preloadedContext,
+    );
 
     // Build prompts
     const systemPrompt = buildSystemPrompt(config);
@@ -117,46 +115,33 @@ export class ScribeAgent {
       context,
     );
 
-    // Call Claude API
-    this.logger.debug({ eventId }, 'Calling Claude API');
+    // Call AI provider
+    this.logger.debug({ eventId, model: this.model }, 'Calling AI provider');
     const startTime = Date.now();
 
     try {
-      const response = await this.anthropic.messages.create({
-        model: config.model,
-        max_tokens: config.maxTokens,
+      const response = await this.provider.complete({
+        model: this.model,
+        maxTokens: config.maxTokens,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
+        responseFormat: {
+          type: 'json_schema',
+          json_schema: SCRIBE_JSON_SCHEMA,
+        },
       });
 
       const duration = Date.now() - startTime;
-      this.logger.info({ eventId, duration }, 'Claude API response received');
-
-      // Extract text content from response
-      const textContent = response.content.find(
-        (c: { type: string; text?: string }) => c.type === 'text',
+      this.logger.info(
+        { eventId, duration, tokens: response.usage.totalTokens },
+        'AI provider response received',
       );
-      if (!textContent || textContent.type !== 'text' || !textContent.text) {
-        throw new Error('No text content in Claude response');
-      }
 
       // Parse response into domain model
       const domainModel = parseScribeResponse(
-        textContent.text,
+        response.content,
         eventId,
         familyId,
-      );
-
-      this.logger.info(
-        {
-          eventId,
-          people: domainModel.people.length,
-          places: domainModel.places.length,
-          events: domainModel.events.length,
-          claims: domainModel.claims.length,
-          questions: domainModel.questions.length,
-        },
-        'Scribe extraction complete',
       );
 
       return domainModel;
@@ -207,9 +192,6 @@ export class ScribeAgent {
       events: [],
       relationships: [],
       claims: [],
-      questions: [],
-      answers: [],
-      conflicts: [],
       imageReferences: [],
       detectedLanguage: 'en',
     };

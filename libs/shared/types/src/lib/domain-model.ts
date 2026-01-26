@@ -24,10 +24,8 @@ export interface ExtractedPlace {
 export interface ExtractedEvent {
   title: string;
   eventType?: string;
+  dateText?: string;
   dateYear?: number;
-  dateMonth?: number;
-  dateDay?: number;
-  dateApproximate?: string;
   peopleInvolved: string[];
   placeName?: string;
   confidence: Confidence;
@@ -51,14 +49,14 @@ export type ClaimSourceType = 'direct' | 'attributed' | 'hearsay';
 export interface ExtractedClaim {
   claimType: string;
   subject: string;
-  claimValue: Record<string, unknown>;
+  claimValue: string;
   confidence: Confidence;
   certaintyLanguage?: string;
   contextOriginal?: string;
-  /** Who made this claim (extracted from message content) */
-  claimedBy?: string;
+  /** Who made this claim (sender name or attributed person) */
+  claimedBy: string;
   /** How the claim was attributed: direct (speaker), attributed (citing someone), hearsay (vague) */
-  claimedBySource?: ClaimSourceType;
+  claimedBySource: ClaimSourceType;
 }
 
 /**
@@ -68,31 +66,12 @@ export interface GeneratedQuestion {
   content: string;
   language: LanguageCode;
   priority: number;
-  origin: 'scribe' | 'curator';
+  origin: 'curator';
   targetPerson?: string;
   targetEvent?: string;
   targetPlace?: string;
   /** Brief context about the story this question aims to enrich */
   storyContext?: string;
-}
-
-/**
- * Detection of an answer to a pending question.
- */
-export interface DetectedAnswer {
-  questionId: string;
-  answerContent: string;
-  confidence: Confidence;
-}
-
-/**
- * Conflict between claims.
- */
-export interface DetectedConflict {
-  existingClaimSubject: string;
-  existingClaimValue: Record<string, unknown>;
-  newClaimValue: Record<string, unknown>;
-  conflictType: 'contradiction' | 'inconsistency';
 }
 
 /**
@@ -109,7 +88,7 @@ export interface ImageReference {
     | 'provides_context'
     | 'asks_about';
   /** People identified in the image by this message */
-  peopleIdentified?: string[];
+  peopleIdentified: string[];
   /** Additional context provided about the image */
   contextProvided?: string;
   /** Confidence in this reference */
@@ -138,15 +117,6 @@ export interface ScribeDomainModel {
     themes: string[];
     timeframe?: string;
   };
-
-  // Questions generated
-  questions: GeneratedQuestion[];
-
-  // Answers detected
-  answers: DetectedAnswer[];
-
-  // Conflicts detected
-  conflicts: DetectedConflict[];
 
   // Image references detected
   imageReferences: ImageReference[];
