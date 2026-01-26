@@ -1,8 +1,39 @@
 # Fix Bot Addressing People Mentioned in Stories (Revised)
 
+---
+
+## ⚠️ IMPLEMENTATION STATUS: DORMANT BUG (Not Currently Active)
+
+**THIS BUG IS NOT CURRENTLY HAPPENING** because question generation has been disabled. However, the bug will **immediately activate** as soon as questions are generated again (Historian agent, batch jobs, etc.).
+
+**Why dormant:**
+
+- Scribe no longer generates questions (intentionally removed per `2026-01-25-question-generation-future-work.md`)
+- Questions table is empty
+- `Facilitator.sendQuestion()` is active but has no questions to send
+- Returns "No pending questions" on every call
+
+**When it will activate:**
+
+- Historian agent starts generating questions
+- Batch question generation is implemented
+- Manual questions are added via admin interface
+- As soon as ANY question with `targetPerson` exists, the addressing bug manifests
+
+**Recommendation:** Implement this fix BEFORE re-enabling question generation to prevent the bug from ever occurring in production.
+
+---
+
 ## Problem
 
 The bot incorrectly addresses people mentioned in stories as if they're actual chat participants.
+
+**This is actually TWO distinct problems:**
+
+1. **Participant Verification** (Who CAN we address?) - Checking if someone is actually in the chat
+2. **Question Targeting** (Who SHOULD we address?) - Choosing the right person to ask
+
+Both must be solved for correct addressing behavior.
 
 **Example:**
 
@@ -17,14 +48,51 @@ The system has no distinction between:
 1. **Actual chat participants** - people who send messages (`actor_external_id` in conversation_events)
 2. **Mentioned people** - historical figures, deceased relatives, people in stories (extracted by Scribe)
 
-**Current flow:**
+**Current flow (when questions are generated):**
 
 1. User mentions "Nick" in a story
-2. Scribe extracts: `questions: [{ targetPerson: "Nick", ... }]`
+2. Question generation agent sets: `targetPerson: "Nick"`
 3. Facilitator receives question with `targetPerson: "Nick"`
 4. `buildUserPrompt()` adds: `**Who to ask:** Nick`
 5. Facilitator prompt says: "address them directly"
 6. Result: "Nick, this story..." ❌
+
+### The Two Problems in Detail
+
+#### Problem 1: Participant Verification (Who CAN we address?)
+
+**Issue:** No check if `targetPerson` is actually in the chat
+
+**Scenario:**
+
+- Bob says: "What would Nick say if he never married Judy?"
+- Nick/Judy are historical figures (deceased, not in chat)
+- Question gets `targetPerson: "Nick"`
+- Bot addresses Nick directly even though he's not a participant ❌
+
+**Solution:** Check if person has sent messages (`actor_external_id` exists in conversation_events)
+
+#### Problem 2: Question Targeting (Who SHOULD we address?)
+
+**Issue:** No logic for choosing WHO to ask when multiple people are involved
+
+**Scenario:**
+
+- Bob says: "Jim and Becky are my cousins and we love tacos on Tuesday"
+- All three (Bob, Jim, Becky) ARE in the chat
+- Question could be addressed to Bob (story teller), Jim, Becky, or the group
+- Current system has no targeting strategy ⚠️
+
+**Solution:** Define explicit targeting rules for question generation:
+
+- Ask story TELLER for elaboration ("Bob, tell us more about taco Tuesday!")
+- Ask MENTIONED people for their perspective ("Jim, what's your favorite taco place?")
+- Ask the GROUP for open-ended questions ("Does anyone remember other family traditions?")
+
+**Both problems must be solved:**
+
+- Problem 1 prevents addressing non-participants (safety check)
+- Problem 2 ensures we ask the RIGHT participant (smart targeting)
 
 ---
 
@@ -59,6 +127,141 @@ person_id → Person record
 - Conversation-specific (can participate in one chat but not another)
 - Enables recency tracking (`last_seen_at`)
 - Works with multi-provider (Telegram, WhatsApp, etc.)
+
+---
+
+## Solution Part 2: Question Targeting Strategy
+
+**Problem:** Even with participant tracking, we need rules for WHO to ask.
+
+### Targeting Rules for Question Generation
+
+When the question generation agent (Historian) creates questions, it should follow these rules:
+
+#### Rule 1: Story Teller Gets Elaboration Questions
+
+If asking for more details about what was just shared:
+
+```typescript
+// Bob says: "Jim and I went to MIT together"
+{
+  targetPerson: "Bob",  // Ask the teller
+  content: "Tell us more about your time at MIT with Jim!"
+}
+```
+
+**Rationale:** They initiated the topic and have fresh context
+
+#### Rule 2: Mentioned People Get Perspective Questions
+
+If asking for a different viewpoint on the story:
+
+```typescript
+// Bob says: "Jim graduated top of his class"
+{
+  targetPerson: "Jim",  // Ask the subject
+  content: "Jim, what was your MIT experience like?"
+}
+```
+
+**Rationale:** Gets their voice into the conversation
+
+#### Rule 3: Group Gets Open-Ended Questions
+
+If asking about broader context or family patterns:
+
+```typescript
+// Bob says: "We had a family reunion in 1985"
+{
+  targetPerson: null,  // Ask everyone
+  content: "Does anyone remember other family reunions from that era?"
+}
+```
+
+**Rationale:** Inclusive, anyone can contribute
+
+#### Rule 4: Historical Figures Never Targeted
+
+If a person is mentioned but clearly not present (deceased, historical):
+
+```typescript
+// Bob says: "Great-grandpa Joe fought in WWI"
+{
+  targetPerson: null,  // Don't target Joe
+  content: "Does anyone know more about Great-grandpa Joe's war experience?"
+}
+```
+
+**Rationale:** Safety - never address someone who can't respond
+
+### Implementation in Question Generation
+
+**File:** Future Historian agent or question generation logic
+
+```typescript
+interface QuestionTargetingContext {
+  storyTeller: Person; // Who sent the message
+  mentionedPeople: Person[]; // Extracted from content
+  conversationParticipants: Person[]; // Who is in the chat
+}
+
+function selectTargetPerson(
+  questionType: 'elaboration' | 'perspective' | 'context',
+  context: QuestionTargetingContext,
+): Person | null {
+  switch (questionType) {
+    case 'elaboration':
+      // Ask the story teller
+      return context.storyTeller;
+
+    case 'perspective':
+      // Ask someone mentioned who is also a participant
+      const eligibleTargets = context.mentionedPeople.filter(
+        (p) =>
+          context.conversationParticipants.some((cp) => cp.id === p.id) &&
+          p.id !== context.storyTeller.id, // Don't re-ask teller
+      );
+      return eligibleTargets[0] || null; // Pick first, or group question
+
+    case 'context':
+      // Ask the group
+      return null;
+  }
+}
+```
+
+### Interaction with Participant Verification
+
+The two systems work together:
+
+1. **Question Generation** (Historian): Sets `targetPerson` using targeting rules
+2. **Participant Verification** (Facilitator): Validates `targetPerson` is actually in chat
+
+```typescript
+// Historian generates question
+const question = {
+  content: 'Tell us more about taco Tuesday!',
+  targetPerson: 'Bob', // Targeting logic chose Bob
+  questionType: 'elaboration',
+};
+
+// Facilitator verifies before sending
+const isBobPresent = await participantRepo.isParticipant(
+  familyId,
+  conversationId,
+  bobPersonId,
+);
+
+if (isBobPresent) {
+  // Safe to address Bob
+  sendMessage('Bob, tell us more about taco Tuesday!');
+} else {
+  // Bob mentioned but not present - ask group instead
+  sendMessage('Tell us more about taco Tuesday!');
+}
+```
+
+**Key principle:** Targeting picks WHO to ask, verification ensures SAFETY.
 
 ---
 
@@ -169,7 +372,10 @@ export interface ConversationParticipant {
 }
 
 export class ParticipantRepository {
-  constructor(private client: ReturnType<typeof createClient>) {}
+  constructor(
+    private client: ReturnType<typeof createClient>,
+    private personRepo: PersonRepository,
+  ) {}
 
   /**
    * Upsert a participant (create or update last_seen_at).
@@ -694,7 +900,8 @@ describe('ParticipantRepository', () => {
     const identity2 = await identityRepo.create({ ... });
     const person = await personRepo.create({ ... });
 
-    await repo.upsertParticipant(familyId, convId, identity1.id, person.id);
+    await repo.upsertParticipant(familyId, convId, identity1.id);
+    await repo.linkParticipantToPerson(familyId, convId, identity1.id, person.id);
     await repo.upsertParticipant(familyId, convId, identity2.id); // No person
 
     const participants = await repo.findParticipants(familyId, convId);
@@ -708,7 +915,8 @@ describe('ParticipantRepository', () => {
     const person1 = await personRepo.create({ name: 'María', ... });
     const person2 = await personRepo.create({ name: 'Nick', ... });
 
-    await repo.upsertParticipant(familyId, convId, identity.id, person1.id);
+    await repo.upsertParticipant(familyId, convId, identity.id);
+    await repo.linkParticipantToPerson(familyId, convId, identity.id, person1.id);
 
     expect(await repo.isParticipant(familyId, convId, person1.id)).toBe(true);
     expect(await repo.isParticipant(familyId, convId, person2.id)).toBe(false);
@@ -945,12 +1153,24 @@ export class IdentityRepository {
 
 ### Success Criteria
 
+#### Participant Verification (Problem 1)
+
 ✅ Bot never addresses non-participants (verified via tests)
 ✅ Bot correctly addresses actual participants
 ✅ Participant tracking anchored to `actor_external_id` (not display names)
 ✅ Incremental sync (only processes new events)
 ✅ Resilient to name changes, multiple "David"s, etc.
 ✅ `isTargetParticipant === true` required for direct addressing (strict allowlist)
+
+#### Question Targeting (Problem 2)
+
+✅ Story tellers get elaboration questions
+✅ Mentioned participants get perspective questions
+✅ Group gets open-ended questions
+✅ Historical figures never targeted
+✅ Targeting rules documented and tested
+
+**Note:** Problem 2 (targeting) will be implemented when question generation is re-enabled (Historian agent). Problem 1 (verification) should be implemented first as a safety mechanism.
 
 ---
 
@@ -967,18 +1187,84 @@ export class IdentityRepository {
 
 ### Edge Cases Handled
 
+#### Participant Verification Edge Cases
+
 1. **Multiple "David"s** - distinguished by `actor_external_id` ✓
 2. **Display name changes** - identity tracks latest, participant tracking unaffected ✓
 3. **Person mentioned, then joins** - identity created on join, matched to person ✓
 4. **Deceased relatives** - no identity/participant, never addressed ✓
 5. **Actor with no person match** - participant exists with `person_id = null`, will retry later ✓
 6. **Verification failure** - falls back to group asking (safe) ✓
+7. **New member who hasn't sent a message** - NOT considered a participant (message-based approach)
+   - Conservative: Only address people who have actively participated
+   - Prevents "lurker anxiety" - respects passive observers
+   - Alternative: Could use `family_access.status = 'active'` for more inclusive approach
+8. **Member joins mid-conversation** - becomes participant after first message
+   - Incremental sync automatically tracks them
+   - No backfill needed
+
+#### Question Targeting Edge Cases
+
+1. **Story teller mentions themselves** - Bob says "Jim, Becky, and I love tacos"
+   - Elaboration question → Ask Bob (the teller)
+   - Perspective question → Ask Jim or Becky (others mentioned)
+2. **Multiple people mentioned** - Bob says "Jim and Becky went to MIT"
+   - Pick one person (Jim or Becky) based on question focus
+   - Or ask group if context is unclear
+3. **Everyone mentioned is present** - All participants involved in story
+   - Use targeting rules to pick most appropriate person
+   - Story teller for elaboration, others for perspective
+4. **No one mentioned is present** - Story about historical figures
+   - Always targetPerson = null (group question)
+   - Never address non-participants
 
 ### Performance
 
 - **Incremental**: Only syncs the single event being ingested
 - **Indexed**: Queries use indexed columns (`conversation_id`, `identity_id`, `person_id`)
 - **Cheap upsert**: ON CONFLICT updates only `last_seen_at`
+
+### Alternative: Simpler Query-Based Approach
+
+**Instead of a new `conversation_participants` table**, you could query existing tables:
+
+```sql
+-- Check if person has sent messages in this conversation
+SELECT DISTINCT 1
+FROM conversation_events ce
+JOIN identities i
+  ON i.provider = ce.source
+  AND i.provider_user_id = ce.actor_external_id
+JOIN family_access fa
+  ON fa.identity_id = i.id
+  AND fa.family_id = ce.family_id
+  AND fa.status = 'active'
+WHERE ce.family_id = ?
+  AND ce.conversation_id = ?
+  AND fa.person_id = ?
+  AND fa.person_id IS NOT NULL  -- Only matched identities
+```
+
+**Important:** This query only works for identities that have been linked to people via `family_access.person_id`. Identities that haven't been matched to people yet will not be detected as participants (which is correct behavior - you can't address someone you haven't identified).
+
+**Pros:**
+
+- No new table or sync logic
+- Always up-to-date (no eventual consistency)
+- Simpler architecture
+- Sufficient for 10-50 person families
+
+**Cons:**
+
+- Slightly slower queries (3-table join)
+- No built-in recency tracking (would need to add `AND ce.occurred_at > ?`)
+- No pre-computed participant roster
+
+**Recommendation:** Start with query-based approach. Add dedicated table later if:
+
+- Performance becomes an issue (hundreds of participants)
+- Need fast "list all participants" queries
+- Want built-in recency/activity tracking
 
 ### Future Enhancements
 
@@ -1082,3 +1368,82 @@ Based on feedback, the following improvements were made:
 - Comment added to adjust matchReason strings to match implementation
 - Prevents silent breakage if enum values differ
 - Example values documented: 'exact', 'alias', 'fuzzy'
+
+---
+
+## Summary & Implementation Priority
+
+### Current Status
+
+| Component                    | Status             | Action Required                         |
+| ---------------------------- | ------------------ | --------------------------------------- |
+| **Question Generation**      | ❌ Disabled        | None (dormant)                          |
+| **Question Sending**         | ✅ Active          | Ready to send when questions exist      |
+| **Participant Verification** | ❌ Not Implemented | Implement before re-enabling questions  |
+| **Question Targeting**       | ❌ Not Implemented | Implement when building Historian agent |
+
+### Implementation Phases
+
+#### Phase 1: Participant Verification (URGENT when questions return)
+
+**Implement BEFORE re-enabling question generation**
+
+1. Add participant tracking (table or query-based approach)
+2. Update Facilitator to check participation before addressing
+3. Update prompt builder for strict allowlist
+4. Add tests for verification logic
+
+**Priority:** HIGH (prevents bug from activating)
+**Effort:** Medium (2-3 days)
+**Blocks:** Question generation re-enablement
+
+#### Phase 2: Question Targeting (Implement with Historian)
+
+**Implement DURING Historian agent development**
+
+1. Define targeting rules in question generation logic
+2. Add `questionType` field to questions schema
+3. Implement `selectTargetPerson()` function
+4. Test targeting strategy with real conversations
+
+**Priority:** MEDIUM (improves question quality)
+**Effort:** Medium (2-3 days)
+**Blocks:** High-quality question generation
+
+### Decision Points
+
+1. **Table vs Query approach** for participant tracking
+   - Recommendation: Start with query-based (simpler)
+   - Upgrade to table if performance issues arise
+
+2. **New members without messages**
+   - Current: Message-based (conservative, only address after first message)
+   - Alternative: Access-based (include all family_access members)
+
+3. **Implementation timing**
+   - Option A: Implement now (preemptive, safer)
+   - Option B: Wait until questions return (defer work)
+   - **Recommendation:** Option B (questions not needed yet)
+
+### Files Affected
+
+**Phase 1 (Participant Verification):**
+
+- `libs/database/src/lib/repositories/participant-repository.ts` (new or query-based)
+- `libs/agents/facilitator/src/lib/facilitator.ts` (add verification)
+- `libs/agents/facilitator/src/lib/prompt-builder.ts` (strict allowlist)
+- `libs/prompts/src/agents/facilitator.txt` (update instructions)
+
+**Phase 2 (Question Targeting):**
+
+- Future Historian agent question generation logic
+- `libs/shared/types/src/lib/entities.ts` (add questionType field)
+- Question generation tests
+
+---
+
+## Related Documents
+
+- `docs/plans/2026-01-25-question-generation-future-work.md` - Why questions were disabled
+- `docs/architecture/data-architecture.md` - Overall system architecture
+- `apps/db/supabase/migrations/20260112074715_init_schema.sql` - Current database schema
