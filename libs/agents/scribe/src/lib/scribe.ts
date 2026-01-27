@@ -113,6 +113,7 @@ export class ScribeAgent {
       event.contentOriginal,
       event.actorDisplayName || event.actorUsername || 'Unknown',
       context,
+      new Date(event.occurredAt),
     );
 
     // Call AI provider

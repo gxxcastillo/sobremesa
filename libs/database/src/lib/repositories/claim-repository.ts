@@ -73,7 +73,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
       .eq('entity_type', entityType)
       .eq('entity_id', entityId)
       .neq('claims.status', 'redacted')
-      .order('claims.claimed_at', { ascending: false });
+      .order('claimed_at', { foreignTable: 'claims', ascending: false });
 
     if (error) {
       throw new Error(`Failed to find claims by entity: ${error.message}`);
@@ -120,26 +120,13 @@ export class ClaimRepository extends BaseRepository<Claim> {
 
   /**
    * Create a claim from extracted data.
+   * Note: Analysis fields (strength, inference method) are now in claim_analysis table.
    */
   async createFromExtracted(
     familyId: string,
     extracted: ExtractedClaim,
     conversationEventId: string,
     claimedBy: string,
-    options?: {
-      // Phase 1c: Optional strength calculation fields
-      inferenceMethod?: 'direct' | 'logical_inference' | 'llm_inference';
-      claimStrength?: number;
-      strengthFactors?: {
-        algorithmScore: number;
-        breakdown: Record<string, number>;
-        llmScore?: number;
-        llmReasoning?: string;
-        final: number;
-        evaluationTriggered?: string[];
-      };
-      needsLlmEvaluation?: boolean;
-    },
   ): Promise<Claim> {
     // Convert string claimValue to Record for storage
     // Try to parse as JSON first, otherwise wrap in { value: string }
@@ -171,12 +158,6 @@ export class ClaimRepository extends BaseRepository<Claim> {
       certaintyLanguage: extracted.certaintyLanguage,
       contextOriginal: extracted.contextOriginal,
       // Note: Entity associations now via claim_entities join table
-
-      // Phase 1c: Include strength fields if provided
-      inferenceMethod: options?.inferenceMethod,
-      claimStrength: options?.claimStrength,
-      strengthFactors: options?.strengthFactors,
-      needsLlmEvaluation: options?.needsLlmEvaluation,
 
       status: 'active',
     };
@@ -268,163 +249,6 @@ export class ClaimRepository extends BaseRepository<Claim> {
     }
 
     return (data || []).map((row) => this.mapFromDb(row));
-  }
-
-  /**
-   * Find claims that need LLM evaluation (Phase 1c).
-   * Returns claims where needs_llm_evaluation is true and not currently locked.
-   */
-  async findNeedingLlmEvaluation(
-    familyId: string,
-    limit = 10,
-  ): Promise<Claim[]> {
-    const { data, error } = await this.client
-      .from(this.tableName)
-      .select('*')
-      .eq('family_id', familyId)
-      .eq('needs_llm_evaluation', true)
-      .is('llm_eval_locked_at', null) // Not currently locked
-      .order('created_at', { ascending: true }) // Oldest first
-      .limit(limit);
-
-    if (error) {
-      throw new Error(
-        `Failed to find claims needing LLM evaluation: ${error.message}`,
-      );
-    }
-
-    return (data || []).map((row) => this.mapFromDb(row));
-  }
-
-  /**
-   * Acquire a lock on a claim for LLM evaluation (Phase 1c).
-   * Uses optimistic locking to prevent concurrent processing.
-   */
-  async acquireLlmEvalLock(
-    familyId: string,
-    claimId: string,
-    lockBy: string,
-    lockDurationMinutes = 10,
-  ): Promise<boolean> {
-    const lockExpiry = new Date();
-    lockExpiry.setMinutes(lockExpiry.getMinutes() + lockDurationMinutes);
-
-    const { data, error } = await this.client
-      .from(this.tableName)
-      .update({
-        llm_eval_locked_at: lockExpiry.toISOString(),
-        llm_eval_locked_by: lockBy,
-      })
-      .eq('family_id', familyId)
-      .eq('id', claimId)
-      .is('llm_eval_locked_at', null) // Only lock if not already locked
-      .select();
-
-    if (error) {
-      throw new Error(`Failed to acquire LLM eval lock: ${error.message}`);
-    }
-
-    return (data?.length ?? 0) > 0;
-  }
-
-  /**
-   * Release LLM evaluation lock (Phase 1c).
-   */
-  async releaseLlmEvalLock(familyId: string, claimId: string): Promise<void> {
-    const { error } = await this.client
-      .from(this.tableName)
-      .update({
-        llm_eval_locked_at: null,
-        llm_eval_locked_by: null,
-      })
-      .eq('family_id', familyId)
-      .eq('id', claimId);
-
-    if (error) {
-      throw new Error(`Failed to release LLM eval lock: ${error.message}`);
-    }
-  }
-
-  /**
-   * Update claim with LLM evaluation results (Phase 1c).
-   */
-  async updateLlmEvaluation(
-    familyId: string,
-    claimId: string,
-    result: {
-      llmScore: number;
-      llmReasoning: string;
-      finalStrength: number;
-      strengthFactors: {
-        algorithmScore: number;
-        breakdown: Record<string, number>;
-        llmScore: number;
-        llmReasoning: string;
-        final: number;
-        evaluationTriggered?: string[];
-      };
-    },
-  ): Promise<Claim> {
-    const { data, error } = await this.client
-      .from(this.tableName)
-      .update({
-        claim_strength: result.finalStrength,
-        strength_factors: result.strengthFactors,
-        needs_llm_evaluation: false,
-        llm_evaluated_at: new Date().toISOString(),
-        llm_eval_locked_at: null,
-        llm_eval_locked_by: null,
-      })
-      .eq('family_id', familyId)
-      .eq('id', claimId)
-      .select()
-      .single();
-
-    if (error) {
-      throw new Error(`Failed to update LLM evaluation: ${error.message}`);
-    }
-
-    return this.mapFromDb(data);
-  }
-
-  /**
-   * Record LLM evaluation failure (Phase 1c).
-   */
-  async recordLlmEvalFailure(
-    familyId: string,
-    claimId: string,
-    errorMessage: string,
-  ): Promise<void> {
-    // First get the current attempts count
-    const { data: current, error: fetchError } = await this.client
-      .from(this.tableName)
-      .select('llm_eval_attempts')
-      .eq('family_id', familyId)
-      .eq('id', claimId)
-      .single();
-
-    if (fetchError) {
-      throw new Error(
-        `Failed to fetch current eval attempts: ${fetchError.message}`,
-      );
-    }
-
-    const currentAttempts = (current?.llm_eval_attempts as number) ?? 0;
-
-    const { error } = await this.client
-      .from(this.tableName)
-      .update({
-        llm_eval_attempts: currentAttempts + 1,
-        llm_eval_last_error: errorMessage,
-        llm_eval_locked_at: null,
-        llm_eval_locked_by: null,
-      })
-      .eq('family_id', familyId)
-      .eq('id', claimId);
-
-    if (error) {
-      throw new Error(`Failed to record LLM eval failure: ${error.message}`);
-    }
   }
 
   /**

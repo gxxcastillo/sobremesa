@@ -1,6 +1,7 @@
-import type { Claim } from '@sobremesa/shared-types';
+import type { ClaimWithAnalysis } from '@sobremesa/shared-types';
 import { Confidence } from '@sobremesa/shared-types';
 import { ClaimEntityRepository } from '../repositories/claim-entity-repository.js';
+import { ClaimAnalysisRepository } from '../repositories/claim-analysis-repository.js';
 
 /**
  * Result of aggregating claims for a specific field.
@@ -29,7 +30,10 @@ export interface AggregatedPersonData {
  * and conflict resolution.
  */
 export class ClaimAggregatorService {
-  constructor(private claimEntityRepo: ClaimEntityRepository) {}
+  constructor(
+    private claimEntityRepo: ClaimEntityRepository,
+    private claimAnalysisRepo: ClaimAnalysisRepository,
+  ) {}
 
   /**
    * Aggregate all active claims for a person into entity fields.
@@ -53,11 +57,27 @@ export class ClaimAggregatorService {
     // Filter to active claims only
     const activeClaims = claims.filter((c) => c.status === 'active');
 
+    // Fetch analysis for all active claims
+    const claimIds = activeClaims.map((c) => c.id);
+    const analyses = await this.claimAnalysisRepo.findByClaimIds(
+      familyId,
+      claimIds,
+    );
+
+    // Join claims with analysis
+    const analysisMap = new Map(analyses.map((a) => [a.claimId, a]));
+    const claimsWithAnalysis: ClaimWithAnalysis[] = activeClaims.map(
+      (claim) => ({
+        ...claim,
+        analysis: analysisMap.get(claim.id),
+      }),
+    );
+
     const result: AggregatedPersonData = {};
 
     // Aggregate birth year
     const birthYearClaims = this.filterClaimsByType(
-      activeClaims,
+      claimsWithAnalysis,
       'date',
       (claimValue) => {
         if (typeof claimValue !== 'object' || claimValue === null) {
@@ -74,7 +94,7 @@ export class ClaimAggregatorService {
 
     // Aggregate death year
     const deathYearClaims = this.filterClaimsByType(
-      activeClaims,
+      claimsWithAnalysis,
       'date',
       (claimValue) => {
         if (typeof claimValue !== 'object' || claimValue === null) {
@@ -96,10 +116,10 @@ export class ClaimAggregatorService {
    * Filter claims by type and additional predicate.
    */
   private filterClaimsByType(
-    claims: Claim[],
+    claims: ClaimWithAnalysis[],
     claimType: string,
     predicate?: (claimValue: Record<string, unknown>) => boolean,
-  ): Claim[] {
+  ): ClaimWithAnalysis[] {
     return claims.filter((claim) => {
       if (claim.claimType !== claimType) {
         return false;
@@ -126,13 +146,13 @@ export class ClaimAggregatorService {
    * 5. Otherwise, use highest-strength claim (conflicting data)
    */
   private aggregateYearField(
-    claims: Claim[],
+    claims: ClaimWithAnalysis[],
     fieldName: string,
   ): FieldAggregationResult {
     // Extract year values and strengths
     type ValueGroup = {
       value: number;
-      claims: Claim[];
+      claims: ClaimWithAnalysis[];
       totalStrength: number;
     };
 
@@ -148,7 +168,7 @@ export class ClaimAggregatorService {
         continue;
       }
 
-      const strength = claim.claimStrength ?? 0.5; // Default to 0.5 if not calculated
+      const strength = claim.analysis?.claimStrength ?? 0.5; // Default to 0.5 if no analysis
 
       if (!valueGroups.has(year)) {
         valueGroups.set(year, {
@@ -236,12 +256,12 @@ export class ClaimAggregatorService {
    * 3. Confidence based on agreement level
    */
   aggregateStringField(
-    claims: Claim[],
+    claims: ClaimWithAnalysis[],
     fieldName: string,
   ): FieldAggregationResult | null {
     type ValueGroup = {
       value: string;
-      claims: Claim[];
+      claims: ClaimWithAnalysis[];
       totalStrength: number;
     };
 
@@ -257,7 +277,7 @@ export class ClaimAggregatorService {
         continue;
       }
 
-      const strength = claim.claimStrength ?? 0.5;
+      const strength = claim.analysis?.claimStrength ?? 0.5;
 
       if (!valueGroups.has(value)) {
         valueGroups.set(value, {

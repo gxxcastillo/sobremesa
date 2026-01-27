@@ -139,6 +139,104 @@ describe('InternAgent', () => {
       });
     });
 
+    describe('continuation messages (fast path)', () => {
+      it('should return relevant=true for messages starting with "and"', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'And then she moved to California',
+        });
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        expect(result.relevant).toBe(true);
+        expect(result.reason).toBe('Continuation (starts with conjunction)');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should return relevant=true for messages starting with "but"', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'But that was before the war',
+        });
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        expect(result.relevant).toBe(true);
+        expect(result.reason).toBe('Continuation (starts with conjunction)');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should return relevant=true for messages starting with "or"', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'Or maybe it was 1952',
+        });
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        expect(result.relevant).toBe(true);
+        expect(result.reason).toBe('Continuation (starts with conjunction)');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should return relevant=true for messages starting with "also"', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'Also uncle Bob was there',
+          conversationId: 'conv-123',
+        });
+        mockEventRepo.findRecent.mockResolvedValue([]);
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        expect(result.relevant).toBe(true);
+        expect(result.reason).toBe('Continuation (starts with conjunction)');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should be case-insensitive for conjunction detection', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'AND THEN HE LEFT',
+        });
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        expect(result.relevant).toBe(true);
+        expect(result.reason).toBe('Continuation (starts with conjunction)');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should not trigger on "and" in the middle of the message', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'My grandma and grandpa lived together',
+          conversationId: 'conv-123',
+        });
+        mockEventRepo.findRecent.mockResolvedValue([]);
+
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Family history"}',
+            100,
+            20,
+          ),
+        );
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        // Should call LLM since "and" is not at the start
+        expect(mockProviderComplete).toHaveBeenCalled();
+        expect(result.tokensUsed).toBe(120);
+      });
+    });
+
     describe('Haiku API calls', () => {
       beforeEach(() => {
         mockEventRepo.findById.mockResolvedValue({
@@ -347,6 +445,477 @@ describe('InternAgent', () => {
 
         expect(result.relevant).toBe(true);
         expect(result.reason).toContain('Filter error');
+      });
+    });
+  });
+
+  describe('route()', () => {
+    describe('edge cases', () => {
+      it('should return action=scribe if event is not found', async () => {
+        mockEventRepo.findById.mockResolvedValue(null);
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('scribe');
+        expect(result.reason).toContain('not found');
+        expect(mockLogger.warn).toHaveBeenCalled();
+      });
+    });
+
+    describe('command routing (deterministic)', () => {
+      it('should route /sobremesa to admin', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '/sobremesa',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('status');
+        expect(result.reason).toContain('Command');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should route /status to admin', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '/status',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('status');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should route /sobremesa@botname to admin', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '/sobremesa@familybot',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('status');
+      });
+
+      it('should ignore unknown commands', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '/unknown',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('ignore');
+        expect(result.reason).toContain('Unknown command');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should be case-insensitive for commands', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '/STATUS',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('status');
+      });
+
+      it('should handle commands with arguments', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '/status show details',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('status');
+      });
+    });
+
+    describe('bot mention routing (deterministic)', () => {
+      let internWithBotname: InternAgent;
+
+      beforeEach(() => {
+        internWithBotname = new InternAgent({
+          provider: mockProvider,
+          model: 'claude-3-5-haiku-20241022',
+          eventRepo: mockEventRepo as any,
+          imageRepo: mockImageRepo as any,
+          logger: mockLogger as any,
+          config: { botUsername: 'familybot' },
+        });
+      });
+
+      it('should route bot mention with question to historian', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '@familybot when was grandma born?',
+          conversationId: 'conv-123',
+        });
+
+        const result = await internWithBotname.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('historian');
+        expect(result.reason).toContain('Question directed at bot');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should route meta question about bot to admin', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '@familybot are you working?',
+          conversationId: 'conv-123',
+        });
+
+        const result = await internWithBotname.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('mention');
+        expect(result.reason).toContain('Meta question');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should route non-question mention to admin', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '@familybot thanks for the help',
+          conversationId: 'conv-123',
+        });
+
+        const result = await internWithBotname.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('mention');
+        expect(result.reason).toContain('Bot mentioned');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should not trigger on similar usernames without @', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'familybot is cool',
+          conversationId: 'conv-123',
+        });
+        mockEventRepo.findRecent.mockResolvedValue([]);
+
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Opinion about bot"}',
+            100,
+            20,
+          ),
+        );
+
+        const result = await internWithBotname.route('event-123', 'family-abc');
+
+        // Should go through filter since no @ mention
+        expect(mockProviderComplete).toHaveBeenCalled();
+        expect(result.action).toBe('scribe');
+      });
+    });
+
+    describe('private message routing (deterministic)', () => {
+      it('should route private messages to admin', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'Hello bot',
+          conversationId: 'conv-123',
+          metadata: { chatType: 'private' },
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('dm');
+        expect(result.reason).toBe('Private message (DM)');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should not route group messages as private', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'Hello everyone',
+          conversationId: 'conv-123',
+          metadata: { chatType: 'group' },
+        });
+        mockEventRepo.findRecent.mockResolvedValue([]);
+
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Greeting"}',
+            100,
+            20,
+          ),
+        );
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        // Should go through filter for group messages
+        expect(mockProviderComplete).toHaveBeenCalled();
+        expect(result.action).toBe('scribe');
+      });
+    });
+
+    describe('member event routing (deterministic)', () => {
+      it('should route join events to admin', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'join',
+          contentOriginal: 'Alice joined the group',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('member_event');
+        expect(result.reason).toContain('Member event: join');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should route leave events to admin', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'leave',
+          contentOriginal: 'Bob left the group',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('member_event');
+        expect(result.reason).toContain('Member event: leave');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('non-text event routing (deterministic)', () => {
+      it('should route photo events to scribe', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'photo',
+          contentOriginal: 'Photo caption',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('scribe');
+        expect(result.reason).toContain('Non-text event type: photo');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should route document events to scribe', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'document',
+          contentOriginal: '',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('scribe');
+        expect(result.reason).toContain('Non-text event type: document');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('AI-based routing (uses filter)', () => {
+      beforeEach(() => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'My grandmother was born in Nicaragua',
+          conversationId: 'conv-123',
+        });
+        mockEventRepo.findRecent.mockResolvedValue([]);
+      });
+
+      it('should route relevant messages to scribe', async () => {
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Family history content"}',
+            100,
+            20,
+          ),
+        );
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('scribe');
+        expect(result.reason).toBe('Family history content');
+        expect(result.tokensUsed).toBe(120);
+        expect(mockProviderComplete).toHaveBeenCalled();
+      });
+
+      it('should ignore irrelevant messages', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'What should I have for lunch?',
+          conversationId: 'conv-123',
+        });
+
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": false, "reason": "Off-topic question about food"}',
+            80,
+            15,
+          ),
+        );
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('ignore');
+        expect(result.reason).toBe('Off-topic question about food');
+        expect(result.tokensUsed).toBe(95);
+        expect(mockProviderComplete).toHaveBeenCalled();
+      });
+
+      it('should pass language through from filter', async () => {
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Family story", "language": "es"}',
+            100,
+            20,
+          ),
+        );
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('scribe');
+        expect(result.language).toBe('es');
+      });
+    });
+
+    describe('routing priority order', () => {
+      it('should check commands before bot mentions', async () => {
+        const internWithBotname = new InternAgent({
+          provider: mockProvider,
+          model: 'claude-3-5-haiku-20241022',
+          eventRepo: mockEventRepo as any,
+          imageRepo: mockImageRepo as any,
+          logger: mockLogger as any,
+          config: { botUsername: 'familybot' },
+        });
+
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '/status @familybot',
+          conversationId: 'conv-123',
+        });
+
+        const result = await internWithBotname.route('event-123', 'family-abc');
+
+        // Command should take precedence
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('status');
+        expect(result.reason).toContain('Command');
+      });
+
+      it('should check bot mentions before private message check', async () => {
+        const internWithBotname = new InternAgent({
+          provider: mockProvider,
+          model: 'claude-3-5-haiku-20241022',
+          eventRepo: mockEventRepo as any,
+          imageRepo: mockImageRepo as any,
+          logger: mockLogger as any,
+          config: { botUsername: 'familybot' },
+        });
+
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '@familybot hello',
+          conversationId: 'conv-123',
+          metadata: { chatType: 'private' },
+        });
+
+        const result = await internWithBotname.route('event-123', 'family-abc');
+
+        // Bot mention should take precedence over DM
+        expect(result.action).toBe('admin');
+        expect(result.adminSubtype).toBe('mention');
+      });
+
+      it('should check member events before filtering', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'join',
+          contentOriginal: 'User joined',
+          conversationId: 'conv-123',
+        });
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        // Member event should be handled without calling filter
+        expect(result.action).toBe('admin');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('error handling', () => {
+      it('should return action=scribe when filter has error', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'Some message',
+          conversationId: 'conv-123',
+        });
+        mockEventRepo.findRecent.mockRejectedValue(
+          new Error('Database connection failed'),
+        );
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        // When filter() has an error, it returns relevant=true with "Filter error: ..."
+        // route() passes this through and defaults to scribe
+        expect(result.action).toBe('scribe');
+        expect(result.reason).toContain('Filter error');
+        expect(mockLogger.error).toHaveBeenCalled();
+      });
+
+      it('should return action=scribe on route error', async () => {
+        // Trigger an error in route() itself, not in filter()
+        mockEventRepo.findById.mockRejectedValue(
+          new Error('Event repository error'),
+        );
+
+        const result = await intern.route('event-123', 'family-abc');
+
+        expect(result.action).toBe('scribe');
+        expect(result.reason).toContain('Routing error');
+        expect(result.reason).toContain('Event repository error');
+        expect(mockLogger.error).toHaveBeenCalled();
       });
     });
   });

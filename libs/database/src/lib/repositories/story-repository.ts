@@ -162,7 +162,7 @@ export class StoryRepository extends BaseRepository<Story> {
       throw new Error(`Story not found: ${storyId}`);
     }
 
-    // Append content only (source events tracked via story_source_events join table)
+    // Append content only (source events tracked via story_conversation_events join table)
     const updates = {
       content_original: existing.contentOriginal + '\n\n' + additionalContent,
     };

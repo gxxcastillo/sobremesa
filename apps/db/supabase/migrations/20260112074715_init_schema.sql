@@ -540,7 +540,7 @@ CREATE TABLE IF NOT EXISTS people (
 
   -- Primary identity
   name VARCHAR(255) NOT NULL,
-  aliases JSONB DEFAULT '[]',
+  aliases TEXT[] DEFAULT '{}',
 
   -- Placeholder flag (for unknown people in family tree, e.g., "unknown parent of Maria")
   is_placeholder BOOLEAN DEFAULT FALSE,
@@ -850,7 +850,7 @@ CREATE TABLE IF NOT EXISTS relationships (
 
   confidence VARCHAR(20) DEFAULT 'medium',
 
-  source_event_id UUID,
+  conversation_event_id UUID,
   claimed_by VARCHAR(255),
 
   description_original TEXT,
@@ -879,8 +879,8 @@ CREATE TABLE IF NOT EXISTS relationships (
     FOREIGN KEY (family_id, person_a_id) REFERENCES people(family_id, id) ON DELETE RESTRICT,
   CONSTRAINT fk_relationships_person_b
     FOREIGN KEY (family_id, person_b_id) REFERENCES people(family_id, id) ON DELETE RESTRICT,
-  CONSTRAINT fk_relationships_source_event
-    FOREIGN KEY (family_id, source_event_id) REFERENCES conversation_events(family_id, id) ON DELETE SET NULL
+  CONSTRAINT fk_relationships_conversation_event
+    FOREIGN KEY (family_id, conversation_event_id) REFERENCES conversation_events(family_id, id) ON DELETE SET NULL
 );
 
 COMMENT ON TABLE relationships IS 'Relationships between people. Parent+spouse form the family tree backbone; others are narrative relationships.';
@@ -993,7 +993,7 @@ CREATE TABLE IF NOT EXISTS events (
   place_id UUID,
 
   -- Source
-  source_event_id UUID,
+  conversation_event_id UUID,
   claimed_by VARCHAR(255),
 
   redacted BOOLEAN DEFAULT FALSE,
@@ -1015,8 +1015,8 @@ CREATE TABLE IF NOT EXISTS events (
     FOREIGN KEY (family_id, place_id)
     REFERENCES places(family_id, id)
     ON DELETE SET NULL,
-  CONSTRAINT fk_events_source_event
-    FOREIGN KEY (family_id, source_event_id)
+  CONSTRAINT fk_events_conversation_event
+    FOREIGN KEY (family_id, conversation_event_id)
     REFERENCES conversation_events(family_id, id)
     ON DELETE SET NULL,
   CONSTRAINT fk_events_superseded_by
@@ -1273,7 +1273,7 @@ CREATE TABLE IF NOT EXISTS claims (
   claim_value JSONB NOT NULL,                  -- flexible payload
 
   -- Provenance
-  source_event_id UUID NOT NULL,
+  conversation_event_id UUID NOT NULL,
   claimed_by VARCHAR(255) NOT NULL,
   claimed_by_source VARCHAR(20) NOT NULL DEFAULT 'direct', -- 'direct','attributed','hearsay'
   claimed_at TIMESTAMPTZ DEFAULT NOW(),
@@ -1288,17 +1288,7 @@ CREATE TABLE IF NOT EXISTS claims (
 
   -- Entity association (use claim_entities join table for all entity links)
 
-  -- Phase 1c: Claim inference and strength fields
-  inference_method VARCHAR(50),                -- 'direct', 'logical_inference', 'llm_inference'
-  claim_strength DECIMAL(3,2) DEFAULT 0.50,    -- 0.00 to 1.00
-  strength_factors JSONB,                      -- Complete breakdown for auditability
-  needs_llm_evaluation BOOLEAN DEFAULT FALSE,
-  llm_evaluated_at TIMESTAMPTZ,
-  llm_eval_locked_at TIMESTAMPTZ,              -- Lock/lease mechanism for distributed processing
-  llm_eval_locked_by TEXT,
-  llm_eval_attempts INTEGER DEFAULT 0,
-  llm_eval_last_error TEXT,
-
+  -- Lifecycle (operational necessity - only mutable field)
   status VARCHAR(20) DEFAULT 'active',         -- 'active','superseded','disputed','redacted'
 
   redacted_at TIMESTAMPTZ,
@@ -1312,8 +1302,8 @@ CREATE TABLE IF NOT EXISTS claims (
 
   -- Composite FK enforces tenant integrity
   CONSTRAINT uq_claims_family_id UNIQUE (family_id, id),
-  CONSTRAINT fk_claims_source_event
-    FOREIGN KEY (family_id, source_event_id) REFERENCES conversation_events(family_id, id) ON DELETE RESTRICT,
+  CONSTRAINT fk_claims_conversation_event
+    FOREIGN KEY (family_id, conversation_event_id) REFERENCES conversation_events(family_id, id) ON DELETE RESTRICT,
 
   -- Enum-like constraints
   CONSTRAINT valid_claim_type CHECK (
@@ -1327,16 +1317,11 @@ CREATE TABLE IF NOT EXISTS claims (
   ),
   CONSTRAINT valid_claimed_by_source CHECK (
     claimed_by_source IN ('direct', 'attributed', 'hearsay')
-  ),
-  CONSTRAINT valid_inference_method CHECK (
-    inference_method IS NULL OR inference_method IN ('direct', 'logical_inference', 'llm_inference')
-  ),
-  CONSTRAINT valid_claim_strength CHECK (
-    claim_strength IS NULL OR (claim_strength >= 0.00 AND claim_strength <= 1.00)
   )
 );
 
 COMMENT ON TABLE claims IS 'Atomic factual claims with full provenance (canonical truth layer).';
+COMMENT ON COLUMN claims.conversation_event_id IS 'Reference to the conversation event where this claim originated';
 
 DROP TRIGGER IF EXISTS update_claims_updated_at ON claims;
 CREATE TRIGGER update_claims_updated_at
@@ -1351,8 +1336,8 @@ CREATE INDEX IF NOT EXISTS idx_claims_family_subject
 
 -- Note: Entity associations now in claim_entities join table
 
-CREATE INDEX IF NOT EXISTS idx_claims_family_source
-  ON claims(family_id, source_event_id);
+CREATE INDEX IF NOT EXISTS idx_claims_family_conversation_event
+  ON claims(family_id, conversation_event_id);
 
 CREATE INDEX IF NOT EXISTS idx_claims_active
   ON claims(family_id, status)
@@ -1360,6 +1345,49 @@ CREATE INDEX IF NOT EXISTS idx_claims_active
 
 CREATE INDEX IF NOT EXISTS idx_claims_family_source_type
   ON claims(family_id, claimed_by_source);
+
+-- ============================================================================
+-- CLAIM ANALYSIS (System-computed metadata, separated from immutable provenance)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS claim_analysis (
+  claim_id UUID PRIMARY KEY REFERENCES claims(id) ON DELETE CASCADE,
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+
+  -- Analysis metadata
+  inference_method VARCHAR(50),                -- 'direct', 'logical_inference', 'llm_inference'
+  claim_strength DECIMAL(3,2) DEFAULT 0.50,    -- 0.00 to 1.00 (system confidence)
+  strength_factors JSONB,                      -- Complete breakdown for auditability
+  needs_llm_evaluation BOOLEAN DEFAULT FALSE,  -- Flag: should this be queued for LLM review?
+
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Constraints
+  CONSTRAINT valid_inference_method CHECK (
+    inference_method IS NULL OR inference_method IN ('direct', 'logical_inference', 'llm_inference')
+  ),
+  CONSTRAINT valid_claim_strength CHECK (
+    claim_strength IS NULL OR (claim_strength >= 0.00 AND claim_strength <= 1.00)
+  ),
+
+  -- Composite FK enforces tenant integrity
+  CONSTRAINT fk_claim_analysis_claim
+    FOREIGN KEY (family_id, claim_id) REFERENCES claims(family_id, id) ON DELETE CASCADE
+);
+
+COMMENT ON TABLE claim_analysis IS 'System-computed analysis for claims. Separated from immutable claim provenance. Can be recomputed without touching source claims.';
+
+DROP TRIGGER IF EXISTS update_claim_analysis_updated_at ON claim_analysis;
+CREATE TRIGGER update_claim_analysis_updated_at
+BEFORE UPDATE ON claim_analysis
+FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_claim_analysis_family
+  ON claim_analysis(family_id);
+
+CREATE INDEX IF NOT EXISTS idx_claim_analysis_needs_llm
+  ON claim_analysis(family_id, needs_llm_evaluation)
+  WHERE needs_llm_evaluation = TRUE;
 
 -- ============================================================================
 -- CLAIM CONFLICTS (Explicit preservation, graph-friendly)
@@ -1811,9 +1839,97 @@ CREATE INDEX IF NOT EXISTS idx_claim_relationships_related
   ON claim_relationships(family_id, related_claim_id);
 
 -- ============================================================================
+-- LLM EVALUATION QUEUE
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS llm_evaluation_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+
+  -- What to evaluate
+  evaluation_type VARCHAR(50) NOT NULL,  -- 'claim_strength', 'entity_match', 'conflict_resolution'
+  entity_type VARCHAR(50) NOT NULL,      -- 'claim', 'person', 'place', 'event', 'story'
+  entity_id UUID NOT NULL,               -- ID of the entity to evaluate
+
+  -- Priority and context
+  priority INTEGER DEFAULT 0,            -- Higher = more urgent (0-100)
+  context JSONB,                         -- Additional context needed for evaluation
+
+  -- Queue management
+  status VARCHAR(20) DEFAULT 'pending',  -- 'pending', 'locked', 'completed', 'failed', 'cancelled'
+  locked_at TIMESTAMPTZ,
+  locked_by TEXT,
+  locked_until TIMESTAMPTZ,              -- Lock expiration (auto-cleanup)
+  attempts INTEGER DEFAULT 0,
+  last_error TEXT,
+  max_attempts INTEGER DEFAULT 3,
+
+  -- Results
+  completed_at TIMESTAMPTZ,
+  processing_time_ms INTEGER,            -- Track performance
+  result JSONB,                          -- Evaluation result
+
+  -- Timestamps
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  CONSTRAINT valid_evaluation_type CHECK (
+    evaluation_type IN ('claim_strength', 'entity_match', 'conflict_resolution')
+  ),
+  CONSTRAINT valid_queue_status CHECK (
+    status IN ('pending', 'locked', 'completed', 'failed', 'cancelled')
+  ),
+  CONSTRAINT valid_priority CHECK (priority >= 0 AND priority <= 100)
+);
+
+COMMENT ON TABLE llm_evaluation_queue IS 'Queue for LLM evaluation tasks (claim strength, entity matching, conflict resolution). Supports prioritization, distributed processing with locks, and retry logic.';
+COMMENT ON COLUMN llm_evaluation_queue.priority IS '0-100, higher = more urgent. High-stakes claims (birth/death) get priority 100.';
+COMMENT ON COLUMN llm_evaluation_queue.locked_until IS 'Lock expiration time. Auto-cleanup via cleanup_expired_evaluation_locks() function.';
+
+-- Efficient query for workers to acquire pending items
+CREATE INDEX IF NOT EXISTS idx_llm_queue_pending
+  ON llm_evaluation_queue(family_id, status, priority DESC, created_at)
+  WHERE status = 'pending';
+
+-- Cleanup expired locks
+CREATE INDEX IF NOT EXISTS idx_llm_queue_expired_locks
+  ON llm_evaluation_queue(locked_until)
+  WHERE status = 'locked';
+
+-- Lookup by entity
+CREATE INDEX IF NOT EXISTS idx_llm_queue_entity
+  ON llm_evaluation_queue(entity_type, entity_id);
+
+-- Stats and monitoring
+CREATE INDEX IF NOT EXISTS idx_llm_queue_stats
+  ON llm_evaluation_queue(family_id, status, created_at);
+
+-- Auto-cleanup function for expired locks
+CREATE OR REPLACE FUNCTION cleanup_expired_evaluation_locks()
+RETURNS INTEGER AS $$
+DECLARE
+  rows_updated INTEGER;
+BEGIN
+  UPDATE llm_evaluation_queue
+  SET status = 'pending',
+      locked_at = NULL,
+      locked_by = NULL,
+      locked_until = NULL,
+      updated_at = NOW()
+  WHERE status = 'locked'
+    AND locked_until < NOW();
+
+  GET DIAGNOSTICS rows_updated = ROW_COUNT;
+  RETURN rows_updated;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION cleanup_expired_evaluation_locks IS 'Release expired locks and return claims to pending status. Run periodically (e.g., every minute) via cron or scheduler.';
+
+-- ============================================================================
 -- CLAIMS IMMUTABILITY (Core fields never change after creation)
 -- ============================================================================
--- Immutable fields: claim_type, subject, claim_value, source_event_id, claimed_by,
+-- Immutable fields: claim_type, subject, claim_value, conversation_event_id, claimed_by,
 --                   claimed_by_source, claimed_at, certainty_language, context_original,
 --                   language_original
 -- Mutable fields: status, confidence, updated_at
@@ -1826,7 +1942,7 @@ BEGIN
   IF OLD.claim_type IS DISTINCT FROM NEW.claim_type OR
      OLD.subject IS DISTINCT FROM NEW.subject OR
      OLD.claim_value IS DISTINCT FROM NEW.claim_value OR
-     OLD.source_event_id IS DISTINCT FROM NEW.source_event_id OR
+     OLD.conversation_event_id IS DISTINCT FROM NEW.conversation_event_id OR
      OLD.claimed_by IS DISTINCT FROM NEW.claimed_by OR
      OLD.claimed_by_source IS DISTINCT FROM NEW.claimed_by_source OR
      OLD.claimed_at IS DISTINCT FROM NEW.claimed_at OR
@@ -1899,7 +2015,7 @@ CREATE TABLE IF NOT EXISTS images (
   connected_people UUID[],
 
   -- Provenance
-  source_event_id UUID NOT NULL,
+  conversation_event_id UUID NOT NULL,
   shared_by VARCHAR(255),
 
   analyzed BOOLEAN DEFAULT FALSE,
@@ -1917,8 +2033,8 @@ CREATE TABLE IF NOT EXISTS images (
   CONSTRAINT uq_images_external_file UNIQUE(family_id, source, external_file_id),
 
   -- Composite FK enforces tenant integrity
-  CONSTRAINT fk_images_source_event
-    FOREIGN KEY (family_id, source_event_id) REFERENCES conversation_events(family_id, id) ON DELETE CASCADE,
+  CONSTRAINT fk_images_conversation_event
+    FOREIGN KEY (family_id, conversation_event_id) REFERENCES conversation_events(family_id, id) ON DELETE CASCADE,
 
   CONSTRAINT valid_image_source CHECK (
     source IN ('telegram', 'whatsapp', 'discord', 'slack', 'sms', 'email')
@@ -1934,8 +2050,8 @@ CREATE INDEX IF NOT EXISTS idx_images_family_analyzed
   ON images(family_id, analyzed)
   WHERE analyzed = FALSE;
 
-CREATE INDEX IF NOT EXISTS idx_images_family_source_event
-  ON images(family_id, source_event_id);
+CREATE INDEX IF NOT EXISTS idx_images_family_conversation_event
+  ON images(family_id, conversation_event_id);
 
 DROP TRIGGER IF EXISTS update_images_updated_at ON images;
 CREATE TRIGGER update_images_updated_at
@@ -2182,7 +2298,7 @@ CREATE TABLE IF NOT EXISTS event_log (
 
   event_data JSONB,
 
-  source_event_id UUID,
+  conversation_event_id UUID,
 
   session_id UUID,
   identity_id UUID REFERENCES identities(id) ON DELETE SET NULL,
@@ -2190,8 +2306,8 @@ CREATE TABLE IF NOT EXISTS event_log (
     CHECK (severity IN ('info', 'warning', 'error')),
 
   CONSTRAINT uq_event_log_family_id UNIQUE (family_id, id),
-  CONSTRAINT fk_event_log_source_event
-    FOREIGN KEY (family_id, source_event_id)
+  CONSTRAINT fk_event_log_conversation_event
+    FOREIGN KEY (family_id, conversation_event_id)
     REFERENCES conversation_events(family_id, id)
     ON DELETE SET NULL
 );
@@ -2436,8 +2552,7 @@ CREATE OR REPLACE VIEW active_claims
 WITH (security_invoker=true) AS
 SELECT *
 FROM claims
-WHERE redacted = FALSE
-  AND status = 'active';
+WHERE status = 'active';
 
 COMMENT ON VIEW active_claims IS 'Non-redacted active claims (canonical provenance layer). Order at query time.';
 
@@ -2456,7 +2571,7 @@ FROM claims c
 JOIN claim_conflicts cc
   ON cc.family_id = c.family_id
  AND cc.claim_id = c.id
-WHERE c.redacted = FALSE
+WHERE c.status <> 'redacted'
 GROUP BY c.family_id, c.id, c.subject, c.claim_type, c.claim_value, c.claimed_by, c.confidence;
 
 COMMENT ON VIEW conflicting_claims IS 'Claims with conflicts (preserved, not resolved).';

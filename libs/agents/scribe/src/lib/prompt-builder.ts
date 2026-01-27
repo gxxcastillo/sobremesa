@@ -36,6 +36,7 @@ export function buildUserMessage(
   messageContent: string,
   senderName: string,
   context: ScribeContext,
+  messageTimestamp?: Date,
 ): string {
   console.log('[Scribe] Context stats:', {
     recentMessageCount: context.recentMessages.length,
@@ -44,6 +45,17 @@ export function buildUserMessage(
   });
 
   const parts: string[] = [];
+
+  // Add current date context for resolving relative dates
+  const currentDate = messageTimestamp || new Date();
+  const dateStr = currentDate.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  });
+  parts.push(`TODAY: ${dateStr}`);
+  parts.push('');
 
   // Add recent messages for context
   if (context.recentMessages.length > 0) {

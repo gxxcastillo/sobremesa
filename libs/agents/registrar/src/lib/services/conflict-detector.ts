@@ -41,11 +41,15 @@ export class ConflictDetectorService {
    *
    * @param familyId - Family ID
    * @param newClaim - The new claim to check
+   * @param entityId - Optional entity ID to filter conflicts (only check claims about same entity)
+   * @param entityType - Optional entity type (e.g., 'person', 'place', 'event')
    * @returns Array of conflict results
    */
   async detectConflicts(
     familyId: string,
     newClaim: ExtractedClaim,
+    entityId?: string,
+    entityType?: string,
   ): Promise<ConflictResult[]> {
     // Only check for conflicts if the claim type can conflict
     if (!canClaimTypeConflict(newClaim.claimType)) {
@@ -58,9 +62,25 @@ export class ConflictDetectorService {
       newClaim.subject,
     );
 
+    // If entityId is provided, get claim IDs linked to that entity to filter
+    let entityClaimIds: Set<string> | undefined;
+    if (entityId && entityType) {
+      const entityClaims = await this.claimRepo.findByEntity(
+        familyId,
+        entityType,
+        entityId,
+      );
+      entityClaimIds = new Set(entityClaims.map((c) => c.id));
+    }
+
     const conflicts: ConflictResult[] = [];
 
     for (const existing of existingClaims) {
+      // If entityId is provided, skip claims not linked to the same entity
+      if (entityClaimIds && !entityClaimIds.has(existing.id)) {
+        continue;
+      }
+
       // Check if subjects match (same entity/topic)
       if (!subjectsMatch(existing.subject, newClaim.subject)) {
         continue;

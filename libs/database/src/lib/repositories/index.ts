@@ -9,6 +9,7 @@ export { PlaceRepository } from './place-repository';
 export { TimelineEventRepository } from './timeline-event-repository';
 export { StoryRepository } from './story-repository';
 export { ClaimRepository } from './claim-repository';
+export { ClaimAnalysisRepository } from './claim-analysis-repository';
 export { RelationshipRepository } from './relationship-repository';
 export { QuestionRepository } from './question-repository';
 export { ImageRepository } from './image-repository';
@@ -17,6 +18,11 @@ export { AllowedChatRepository } from './allowed-chat-repository';
 export { EntityMergeRepository } from './entity-merge-repository';
 export { ClaimEntityRepository } from './claim-entity-repository';
 export { ClaimRelationshipRepository } from './claim-relationship-repository';
+export {
+  LlmEvaluationQueueRepository,
+  type LlmEvaluationQueueItem,
+  type QueueStats,
+} from './llm-evaluation-queue-repository';
 // Phase 2: Type-specific join table repositories
 export { StoryPeopleRepository } from './story-people-repository';
 export { StoryPlacesRepository } from './story-places-repository';

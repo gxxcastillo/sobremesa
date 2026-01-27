@@ -5,6 +5,7 @@ import {
   TimelineEventRepository,
   StoryRepository,
   ClaimRepository,
+  ClaimAnalysisRepository,
   RelationshipRepository,
   EventLogRepository,
   ConversationEventRepository,
@@ -18,6 +19,7 @@ import {
   StoryConversationEventsRepository,
   EventPeopleRepository,
   EventPlacesRepository,
+  LlmEvaluationQueueRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
@@ -47,6 +49,8 @@ export interface RegistrarAgentOptions {
   storyRepo?: StoryRepository;
   /** Claim repository */
   claimRepo?: ClaimRepository;
+  /** Claim analysis repository (Phase 1c) */
+  claimAnalysisRepo?: ClaimAnalysisRepository;
   /** Relationship repository */
   relationshipRepo?: RelationshipRepository;
   /** Event log repository */
@@ -73,6 +77,8 @@ export interface RegistrarAgentOptions {
   eventPeopleRepo?: EventPeopleRepository;
   /** Event-places join table repository (Phase 2) */
   eventPlacesRepo?: EventPlacesRepository;
+  /** LLM evaluation queue repository (Phase 1c) */
+  llmQueueRepo?: LlmEvaluationQueueRepository;
   /** Logger instance */
   logger?: pino.Logger;
 }
@@ -103,6 +109,7 @@ export class RegistrarAgent {
   private eventRepo: TimelineEventRepository;
   private storyRepo: StoryRepository;
   private claimRepo: ClaimRepository;
+  private claimAnalysisRepo: ClaimAnalysisRepository;
   private relationshipRepo: RelationshipRepository;
   private eventLog: EventLogRepository;
   private conversationEventRepo: ConversationEventRepository;
@@ -110,6 +117,7 @@ export class RegistrarAgent {
   private entityMergeRepo: EntityMergeRepository;
   private claimEntityRepo: ClaimEntityRepository;
   private claimRelationshipRepo: ClaimRelationshipRepository;
+  private llmQueueRepo: LlmEvaluationQueueRepository;
   private logger: pino.Logger;
 
   // Phase 2: Join table repositories
@@ -133,6 +141,8 @@ export class RegistrarAgent {
     this.eventRepo = options.eventRepo || new TimelineEventRepository();
     this.storyRepo = options.storyRepo || new StoryRepository();
     this.claimRepo = options.claimRepo || new ClaimRepository();
+    this.claimAnalysisRepo =
+      options.claimAnalysisRepo || new ClaimAnalysisRepository();
     this.relationshipRepo =
       options.relationshipRepo || new RelationshipRepository();
     this.eventLog = options.eventLog || new EventLogRepository();
@@ -145,6 +155,8 @@ export class RegistrarAgent {
       options.claimEntityRepo || new ClaimEntityRepository();
     this.claimRelationshipRepo =
       options.claimRelationshipRepo || new ClaimRelationshipRepository();
+    this.llmQueueRepo =
+      options.llmQueueRepo || new LlmEvaluationQueueRepository();
     this.logger = options.logger || createLogger({ name: 'registrar' });
 
     // Phase 2: Join table repositories
@@ -481,7 +493,16 @@ export class RegistrarAgent {
         let entityType: 'person' | 'place' | 'event' | 'story' | undefined;
 
         // Try to resolve entity from subject
-        const subjectPersonId = personIdMap.get(claim.subject);
+        // First try exact match
+        let subjectPersonId = personIdMap.get(claim.subject);
+
+        // If no exact match, try extracting name from possessive subjects
+        // e.g., "Beth's birth" → "Beth", "Timothy's age" → "Timothy"
+        if (!subjectPersonId && claim.subject.includes("'s ")) {
+          const possessiveName = claim.subject.split("'s ")[0].trim();
+          subjectPersonId = personIdMap.get(possessiveName);
+        }
+
         if (subjectPersonId) {
           entityId = subjectPersonId;
           entityType = 'person';
@@ -648,9 +669,12 @@ export class RegistrarAgent {
         }
 
         // Check for conflicts using ConflictDetectorService
+        // Only check conflicts with claims about the same entity
         const conflicts = await this.conflictDetectorService.detectConflicts(
           familyId,
           claim,
+          entityId, // Pass resolved entity ID to filter conflicts
+          entityType, // Pass entity type to filter conflicts
         );
 
         // Skip duplicate claims (claims that don't conflict and don't refine)
@@ -698,14 +722,22 @@ export class RegistrarAgent {
         const existingClaimsForResolution =
           await this.claimRepo.findActiveBySubject(familyId, claim.subject);
 
+        // Fetch analysis for existing claims
+        const existingClaimIds = existingClaimsForResolution.map((c) => c.id);
+        const existingAnalyses = await this.claimAnalysisRepo.findByClaimIds(
+          familyId,
+          existingClaimIds,
+        );
+        const analysisMap = new Map(
+          existingAnalyses.map((a) => [a.claimId, a]),
+        );
+
         const conflictingClaimsWithStrength = contradictingConflicts
           .map((c) => {
-            const existingClaim = existingClaimsForResolution.find(
-              (ec) => ec.id === c.conflictingClaimId,
-            );
+            const analysis = analysisMap.get(c.conflictingClaimId!);
             return {
               claimId: c.conflictingClaimId!,
-              claimStrength: existingClaim?.claimStrength,
+              claimStrength: analysis?.claimStrength,
             };
           })
           .filter((c) => c.claimId);
@@ -748,19 +780,53 @@ export class RegistrarAgent {
           }
         }
 
-        // Create the new claim with strength metadata
+        // Create the new claim (immutable provenance)
         const newClaim = await this.claimRepo.createFromExtracted(
           familyId,
           claim,
           conversationEventId,
           claim.claimedBy,
-          {
-            inferenceMethod: 'direct',
-            claimStrength: strengthResult.score,
-            strengthFactors: strengthResult.factors,
-            needsLlmEvaluation: strengthResult.needsLlmEvaluation,
-          },
         );
+
+        // Create analysis record (mutable system metadata)
+        await this.claimAnalysisRepo.createForClaim(familyId, newClaim.id, {
+          inferenceMethod: 'direct',
+          claimStrength: strengthResult.score,
+          strengthFactors: strengthResult.factors,
+          needsLlmEvaluation: strengthResult.needsLlmEvaluation,
+        });
+
+        // Enqueue for LLM evaluation if needed
+        if (strengthResult.needsLlmEvaluation) {
+          const priority = isHighStakes ? 100 : 0;
+
+          await this.llmQueueRepo.enqueue(
+            familyId,
+            'claim_strength',
+            'claim',
+            newClaim.id,
+            {
+              priority,
+              context: {
+                claimType: claim.claimType,
+                subject: claim.subject,
+                algorithmScore: strengthResult.score,
+                triggers: strengthResult.factors.evaluationTriggered,
+                sourceEventId: conversationEventId,
+              },
+            },
+          );
+
+          this.logger.debug(
+            {
+              familyId,
+              claimId: newClaim.id,
+              priority,
+              triggers: strengthResult.factors.evaluationTriggered,
+            },
+            'Enqueued claim for LLM evaluation',
+          );
+        }
 
         // If resolution says to supersede existing claims
         if (resolution.action === 'supersede_existing') {

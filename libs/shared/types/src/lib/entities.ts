@@ -134,9 +134,21 @@ export interface Claim extends Omit<BaseEntity, 'redacted'> {
   languageOriginal?: LanguageCode;
   // Note: Entity associations now in claim_entities join table
 
-  // Phase 1c: Claim inference and strength evaluation
+  // Lifecycle (only mutable field - operational necessity)
+  status: 'active' | 'superseded' | 'disputed' | 'redacted';
+}
+
+/**
+ * System-computed analysis for a claim.
+ * Separated from immutable claim provenance - can be recomputed without touching source claims.
+ * Does not extend BaseEntity as it has no redaction concept (it's metadata, not data).
+ */
+export interface ClaimAnalysis {
+  id: string;
+  familyId: string;
+  claimId: string;
   inferenceMethod?: 'direct' | 'logical_inference' | 'llm_inference';
-  claimStrength?: number; // 0.0-1.0
+  claimStrength?: number; // 0.0-1.0 (system confidence)
   strengthFactors?: {
     algorithmScore: number;
     breakdown: Record<string, number>;
@@ -145,14 +157,16 @@ export interface Claim extends Omit<BaseEntity, 'redacted'> {
     final: number;
     evaluationTriggered?: string[];
   };
-  needsLlmEvaluation?: boolean;
-  llmEvaluatedAt?: Date;
-  llmEvalLockedAt?: Date;
-  llmEvalLockedBy?: string;
-  llmEvalAttempts?: number;
-  llmEvalLastError?: string;
+  needsLlmEvaluation?: boolean; // Flag: should this be queued for LLM review?
+  createdAt: Date;
+  updatedAt: Date;
+}
 
-  status: 'active' | 'superseded' | 'disputed' | 'redacted';
+/**
+ * Claim with analysis data joined (for services that need both).
+ */
+export interface ClaimWithAnalysis extends Claim {
+  analysis?: ClaimAnalysis;
 }
 
 /**

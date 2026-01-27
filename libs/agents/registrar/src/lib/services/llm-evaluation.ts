@@ -1,17 +1,17 @@
-import type { Claim } from '@sobremesa/shared-types';
+import type { ClaimWithAnalysis } from '@sobremesa/shared-types';
 
 /**
  * Request for LLM claim evaluation.
  */
 export interface LlmClaimEvaluationRequest {
-  claim: Claim;
+  claim: ClaimWithAnalysis;
   sourceContext: {
     conversationText: string;
     speaker: string;
     timestamp: Date;
   };
   conflicts?: {
-    claim: Claim;
+    claim: ClaimWithAnalysis;
     conflictType: 'contradicts' | 'refines' | 'supports';
   }[];
 }
@@ -83,7 +83,7 @@ ${request.conflicts
       `${i + 1}. "${c.claim.subject}": ${JSON.stringify(c.claim.claimValue)}
    - Source: ${c.claim.claimedBySource}
    - Certainty: "${c.claim.certaintyLanguage || 'not specified'}"
-   - Current strength: ${c.claim.claimStrength?.toFixed(2) || 'not calculated'}
+   - Current strength: ${c.claim.analysis?.claimStrength?.toFixed(2) || 'not calculated'}
    - Conflict type: ${c.conflictType}`,
   )
   .join('\n\n')}
@@ -196,7 +196,7 @@ Respond in JSON format:
   /**
    * Resolve complex conflict.
    */
-  resolveConflict: (claims: Claim[]): string => {
+  resolveConflict: (claims: ClaimWithAnalysis[]): string => {
     return `You are helping resolve a conflict between multiple claims in a family history database.
 
 ## Conflicting Claims
@@ -208,7 +208,7 @@ ${claims
 **Value**: ${JSON.stringify(c.claimValue, null, 2)}
 **Source**: ${c.claimedBySource} (${c.claimedBy})
 **Certainty**: "${c.certaintyLanguage || 'not specified'}"
-**Current strength**: ${c.claimStrength?.toFixed(2) || 'not calculated'}
+**Current strength**: ${c.analysis?.claimStrength?.toFixed(2) || 'not calculated'}
 **Date created**: ${c.createdAt?.toISOString()}
 `,
   )

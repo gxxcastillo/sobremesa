@@ -205,9 +205,105 @@ export class PersonRepository extends BaseRepository<Person> {
       firstMentionedEventId: conversationEventId,
       createdBy,
       redacted: false,
+      isPlaceholder: this.isDescriptiveName(extracted.name),
     };
 
     return await this.insert(record);
+  }
+
+  /**
+   * Check if a name is descriptive/relational rather than a real name.
+   * Supports multiple languages for international families.
+   *
+   * English examples: "Ralph's sister", "the neighbor", "someone"
+   * Spanish examples: "la hermana de Ralph", "el vecino", "alguien"
+   */
+  private isDescriptiveName(name: string): boolean {
+    const lowerName = name.toLowerCase();
+
+    // Pattern 1: English possessive relationships
+    // "Ralph's sister", "Timothy's son", "Eddie's ex-wife"
+    if (lowerName.includes("'s ")) {
+      return true;
+    }
+
+    // Pattern 2: Spanish possessive relationships
+    // "la hermana de Ralph", "el hijo de Timothy", "la ex-esposa de Eddie"
+    if (/\s+de\s+\w/i.test(name)) {
+      // Check if it contains relationship words before "de"
+      const spanishRelationships = [
+        'hermano',
+        'hermana', // brother, sister
+        'hijo',
+        'hija', // son, daughter
+        'padre',
+        'madre', // father, mother
+        'primo',
+        'prima', // cousin
+        'tío',
+        'tia',
+        'tío', // uncle, aunt
+        'abuelo',
+        'abuela', // grandfather, grandmother
+        'nieto',
+        'nieta', // grandson, granddaughter
+        'sobrino',
+        'sobrina', // nephew, niece
+        'esposo',
+        'esposa', // spouse
+        'ex-esposo',
+        'ex-esposa', // ex-spouse
+        'novio',
+        'novia', // boyfriend, girlfriend
+      ];
+
+      for (const rel of spanishRelationships) {
+        if (lowerName.includes(rel)) {
+          return true;
+        }
+      }
+    }
+
+    // Pattern 3: Generic descriptors (English)
+    // "the neighbor", "unknown man", "that friend", "someone"
+    const englishGenericPatterns = [
+      /^the\s+/i, // "the neighbor"
+      /^unknown\s+/i, // "unknown man"
+      /^that\s+/i, // "that friend"
+      /^someone$/i, // "someone"
+      /^somebody$/i, // "somebody"
+    ];
+
+    for (const pattern of englishGenericPatterns) {
+      if (pattern.test(name)) {
+        return true;
+      }
+    }
+
+    // Pattern 4: Generic descriptors (Spanish)
+    // "el vecino", "desconocido", "alguien"
+    const spanishGenericPatterns = [
+      /^el\s+/i, // "el vecino" (the male neighbor)
+      /^la\s+/i, // "la vecina" (the female neighbor)
+      /^un\s+/i, // "un hombre" (a man)
+      /^una\s+/i, // "una mujer" (a woman)
+      /^alguien$/i, // "alguien" (someone)
+      /^alguno$/i, // "alguno" (somebody)
+      /^alguna$/i, // "alguna" (somebody)
+      /^desconocid[ao]$/i, // "desconocido/a" (unknown)
+    ];
+
+    for (const pattern of spanishGenericPatterns) {
+      if (pattern.test(name)) {
+        return true;
+      }
+    }
+
+    // TODO: Add patterns for other languages as needed
+    // French: "la sœur de Ralph", "quelqu'un"
+    // Portuguese: "a irmã de Ralph", "alguém"
+
+    return false;
   }
 
   async findOrCreate(
