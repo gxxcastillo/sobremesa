@@ -116,7 +116,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
     familyId: string,
     extracted: ExtractedEvent,
     placeId: string | undefined,
-    sourceEventId: string,
+    conversationEventId: string,
     claimedBy?: string,
   ): Promise<TimelineEvent> {
     // Note: People associations removed - use EventPeopleRepository to link people
@@ -127,7 +127,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
       dateText: extracted.dateText,
       dateYear: extracted.dateYear,
       placeId,
-      sourceEventId,
+      conversationEventId,
       claimedBy,
       redacted: false,
     };

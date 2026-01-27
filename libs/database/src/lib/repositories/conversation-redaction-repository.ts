@@ -39,7 +39,7 @@ export class ConversationRedactionRepository {
       actor: params.actor,
       actorType: params.redactedByIdentityId ? 'user' : 'system',
       identityId: params.redactedByIdentityId,
-      sourceEventId: params.conversationEventId,
+      conversationEventId: params.conversationEventId,
       eventData: {
         reason: params.redactionReason,
         conversationEventId: params.conversationEventId,
@@ -98,7 +98,7 @@ export class ConversationRedactionRepository {
       actor: params.actor,
       actorType: params.unredactedByIdentityId ? 'user' : 'system',
       identityId: params.unredactedByIdentityId,
-      sourceEventId: params.conversationEventId,
+      conversationEventId: params.conversationEventId,
       eventData: {
         conversationEventId: params.conversationEventId,
         originalRedactionReason: existingRedaction.redactionReason,

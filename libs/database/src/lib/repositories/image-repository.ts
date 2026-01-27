@@ -47,13 +47,13 @@ export class ImageRepository extends BaseRepository<Image> {
    */
   async findBySourceEventId(
     familyId: string,
-    sourceEventId: string,
+    conversationEventId: string,
   ): Promise<Image[]> {
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
       .eq('family_id', familyId)
-      .eq('source_event_id', sourceEventId)
+      .eq('conversation_event_id', conversationEventId)
       .eq('redacted', false);
 
     if (error) {
@@ -151,13 +151,13 @@ export class ImageRepository extends BaseRepository<Image> {
 
     const eventIdList = eventIds.map((e) => e.id);
 
-    // Query images that have source_event_id in this conversation
+    // Query images that have conversation_event_id in this conversation
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
       .eq('family_id', familyId)
       .eq('redacted', false)
-      .in('source_event_id', eventIdList)
+      .in('conversation_event_id', eventIdList)
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -271,7 +271,7 @@ export class ImageRepository extends BaseRepository<Image> {
     familyId: string,
     imageId: string,
     context: string,
-    sourceEventId: string,
+    conversationEventId: string,
   ): Promise<Image> {
     const image = await this.findById(familyId, imageId);
     if (!image) {
@@ -282,12 +282,15 @@ export class ImageRepository extends BaseRepository<Image> {
     const existingAnalysis = (image.analysis || {}) as Record<string, unknown>;
     const existingContexts = (existingAnalysis.userContexts || []) as Array<{
       text: string;
-      sourceEventId: string;
+      conversationEventId: string;
     }>;
 
     const updatedAnalysis = {
       ...existingAnalysis,
-      userContexts: [...existingContexts, { text: context, sourceEventId }],
+      userContexts: [
+        ...existingContexts,
+        { text: context, conversationEventId },
+      ],
     };
 
     const { data, error } = await this.client
@@ -313,7 +316,7 @@ export class ImageRepository extends BaseRepository<Image> {
    */
   async createFromEvent(
     familyId: string,
-    sourceEventId: string,
+    conversationEventId: string,
     params: {
       source: string;
       externalFileId: string;
@@ -333,7 +336,7 @@ export class ImageRepository extends BaseRepository<Image> {
       fileSizeBytes: params.fileSizeBytes,
       captionOriginal: params.captionOriginal,
       languageOriginal: params.languageOriginal as Image['languageOriginal'],
-      sourceEventId,
+      conversationEventId,
       sharedBy: params.sharedBy,
       visibleText: [],
       connectedStories: [],

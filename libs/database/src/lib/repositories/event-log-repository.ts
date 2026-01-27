@@ -31,7 +31,7 @@ export class EventLogRepository {
     actor?: string;
     actorType?: ActorType;
     eventData?: Record<string, unknown>;
-    sourceEventId?: string;
+    conversationEventId?: string;
     sessionId?: string;
     identityId?: string;
     severity?: Severity;
@@ -45,7 +45,7 @@ export class EventLogRepository {
         actor: entry.actor,
         actor_type: entry.actorType,
         event_data: entry.eventData,
-        source_event_id: entry.sourceEventId,
+        conversation_event_id: entry.conversationEventId,
         session_id: entry.sessionId,
         identity_id: entry.identityId,
         severity: entry.severity || 'info',

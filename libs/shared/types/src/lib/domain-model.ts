@@ -104,7 +104,7 @@ export interface ImageReference {
  * Complete domain model output from Scribe.
  */
 export interface ScribeDomainModel {
-  sourceEventId: string;
+  conversationEventId: string;
   familyId: string;
   processedAt: Date;
 
@@ -134,7 +134,7 @@ export interface ScribeDomainModel {
  * Domain model output from Curator (image analysis).
  */
 export interface CuratorDomainModel {
-  sourceEventId: string;
+  conversationEventId: string;
   familyId: string;
   processedAt: Date;
 

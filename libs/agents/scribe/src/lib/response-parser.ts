@@ -90,7 +90,7 @@ function extractJson(text: string): string {
  */
 export function parseScribeResponse(
   rawText: string,
-  sourceEventId: string,
+  conversationEventId: string,
   familyId: string,
 ): ScribeDomainModel {
   let raw: RawScribeResponse;
@@ -104,7 +104,7 @@ export function parseScribeResponse(
         { error: parseResult.error.flatten(), rawText: rawText.slice(0, 500) },
         'Zod validation failed for Scribe response',
       );
-      return createEmptyDomainModel(sourceEventId, familyId);
+      return createEmptyDomainModel(conversationEventId, familyId);
     }
 
     raw = parseResult.data;
@@ -113,7 +113,7 @@ export function parseScribeResponse(
       { error, rawText: rawText.slice(0, 500) },
       'Failed to parse Scribe response JSON',
     );
-    return createEmptyDomainModel(sourceEventId, familyId);
+    return createEmptyDomainModel(conversationEventId, familyId);
   }
 
   // Parse people (confidence removed from schema, default to MEDIUM)
@@ -186,7 +186,7 @@ export function parseScribeResponse(
   }));
 
   return {
-    sourceEventId,
+    conversationEventId,
     familyId,
     processedAt: new Date(),
     people,
@@ -204,11 +204,11 @@ export function parseScribeResponse(
  * Create an empty domain model (used when parsing fails).
  */
 function createEmptyDomainModel(
-  sourceEventId: string,
+  conversationEventId: string,
   familyId: string,
 ): ScribeDomainModel {
   return {
-    sourceEventId,
+    conversationEventId,
     familyId,
     processedAt: new Date(),
     people: [],

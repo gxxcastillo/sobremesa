@@ -421,7 +421,7 @@ describe('InternAgent', () => {
         visibleText: [],
         connectedStories: [],
         connectedPeople: [],
-        sourceEventId: '',
+        conversationEventId: '',
         analyzed: false,
         redacted: false,
       };

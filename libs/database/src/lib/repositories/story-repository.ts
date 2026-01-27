@@ -118,7 +118,7 @@ export class StoryRepository extends BaseRepository<Story> {
       themes: string[];
       timeframe?: string;
     },
-    sourceEventId: string,
+    conversationEventId: string,
     language: LanguageCode,
     sharedBy?: string,
   ): Promise<Story> {
@@ -126,7 +126,7 @@ export class StoryRepository extends BaseRepository<Story> {
     // Note: Source provenance uses story_conversation_events join table
     const record: Omit<
       Story,
-      'id' | 'createdAt' | 'updatedAt' | 'sourceEventIds'
+      'id' | 'createdAt' | 'updatedAt' | 'conversationEventIds'
     > = {
       familyId,
       title: story.title,
@@ -142,8 +142,8 @@ export class StoryRepository extends BaseRepository<Story> {
 
     const created = await this.insert(record);
 
-    // Return with sourceEventIds populated for convenience (caller should also link via join table)
-    return { ...created, sourceEventIds: [sourceEventId] };
+    // Return with conversationEventIds populated for convenience (caller should also link via join table)
+    return { ...created, conversationEventIds: [conversationEventId] };
   }
 
   /**
@@ -154,7 +154,7 @@ export class StoryRepository extends BaseRepository<Story> {
     familyId: string,
     storyId: string,
     additionalContent: string,
-    sourceEventId: string,
+    conversationEventId: string,
   ): Promise<Story> {
     // First fetch the existing story
     const existing = await this.findById(familyId, storyId);
@@ -180,10 +180,13 @@ export class StoryRepository extends BaseRepository<Story> {
     }
 
     const updated = this.mapFromDb(data);
-    // Return with new sourceEventId appended for convenience (caller should also link via join table)
+    // Return with new conversationEventId appended for convenience (caller should also link via join table)
     return {
       ...updated,
-      sourceEventIds: [...(existing.sourceEventIds || []), sourceEventId],
+      conversationEventIds: [
+        ...(existing.conversationEventIds || []),
+        conversationEventId,
+      ],
     };
   }
 

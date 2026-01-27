@@ -124,7 +124,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
   async createFromExtracted(
     familyId: string,
     extracted: ExtractedClaim,
-    sourceEventId: string,
+    conversationEventId: string,
     claimedBy: string,
     options?: {
       // Phase 1c: Optional strength calculation fields
@@ -163,7 +163,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
       claimType: extracted.claimType,
       subject: extracted.subject,
       claimValue,
-      sourceEventId,
+      conversationEventId,
       claimedBy,
       claimedBySource: extracted.claimedBySource,
       claimedAt: new Date(),

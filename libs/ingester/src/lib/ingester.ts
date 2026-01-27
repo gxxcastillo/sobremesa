@@ -195,7 +195,7 @@ export class MessageIngester {
       eventCategory: 'user_action',
       actor: actor.username || actor.externalId,
       actorType: 'user',
-      sourceEventId: eventId,
+      conversationEventId: eventId,
       eventData: { messageType, ...eventData },
     });
   }

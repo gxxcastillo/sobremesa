@@ -109,7 +109,7 @@ export class RelationshipRepository {
       category?: RelationshipCategory;
       status?: RelationshipStatus;
       qualifier?: string;
-      sourceEventId?: string;
+      conversationEventId?: string;
       claimedBy?: string;
       confidence?: Confidence;
     },
@@ -143,7 +143,7 @@ export class RelationshipRepository {
       status: options?.status || 'active',
       qualifier: options?.qualifier,
       confidence: options?.confidence || Confidence.MEDIUM,
-      sourceEventId: options?.sourceEventId,
+      conversationEventId: options?.conversationEventId,
       claimedBy: options?.claimedBy,
     });
   }

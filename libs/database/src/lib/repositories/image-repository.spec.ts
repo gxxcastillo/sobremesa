@@ -204,7 +204,9 @@ describe('ImageRepository - addContext', () => {
       family_id: 'family-abc',
       analysis: {
         description: 'AI analysis of the image',
-        userContexts: [{ text: 'Previous context', sourceEventId: 'event-1' }],
+        userContexts: [
+          { text: 'Previous context', conversationEventId: 'event-1' },
+        ],
       },
       connected_people: [],
       connected_stories: [],
@@ -220,8 +222,11 @@ describe('ImageRepository - addContext', () => {
       analysis: {
         description: 'AI analysis of the image',
         userContexts: [
-          { text: 'Previous context', sourceEventId: 'event-1' },
-          { text: 'New context about the photo', sourceEventId: 'event-2' },
+          { text: 'Previous context', conversationEventId: 'event-1' },
+          {
+            text: 'New context about the photo',
+            conversationEventId: 'event-2',
+          },
         ],
       },
     };
@@ -250,8 +255,11 @@ describe('ImageRepository - addContext', () => {
         analysis: {
           description: 'AI analysis of the image',
           userContexts: [
-            { text: 'Previous context', sourceEventId: 'event-1' },
-            { text: 'New context about the photo', sourceEventId: 'event-2' },
+            { text: 'Previous context', conversationEventId: 'event-1' },
+            {
+              text: 'New context about the photo',
+              conversationEventId: 'event-2',
+            },
           ],
         },
       }),
@@ -276,7 +284,9 @@ describe('ImageRepository - addContext', () => {
       ...existingImage,
       analysis: {
         description: 'AI analysis',
-        userContexts: [{ text: 'First context', sourceEventId: 'event-1' }],
+        userContexts: [
+          { text: 'First context', conversationEventId: 'event-1' },
+        ],
       },
     };
 
@@ -303,7 +313,9 @@ describe('ImageRepository - addContext', () => {
       expect.objectContaining({
         analysis: {
           description: 'AI analysis',
-          userContexts: [{ text: 'First context', sourceEventId: 'event-1' }],
+          userContexts: [
+            { text: 'First context', conversationEventId: 'event-1' },
+          ],
         },
       }),
     );
@@ -327,7 +339,10 @@ describe('ImageRepository - addContext', () => {
       ...existingImage,
       analysis: {
         userContexts: [
-          { text: 'Context for unanalyzed image', sourceEventId: 'event-1' },
+          {
+            text: 'Context for unanalyzed image',
+            conversationEventId: 'event-1',
+          },
         ],
       },
     };
@@ -355,7 +370,10 @@ describe('ImageRepository - addContext', () => {
       expect.objectContaining({
         analysis: {
           userContexts: [
-            { text: 'Context for unanalyzed image', sourceEventId: 'event-1' },
+            {
+              text: 'Context for unanalyzed image',
+              conversationEventId: 'event-1',
+            },
           ],
         },
       }),
@@ -375,7 +393,7 @@ describe('ImageRepository - addContext', () => {
     ).rejects.toThrow('Image not found: nonexistent');
   });
 
-  it('should include sourceEventId for provenance tracking', async () => {
+  it('should include conversationEventId for provenance tracking', async () => {
     const existingImage = {
       id: 'img-123',
       family_id: 'family-abc',
@@ -411,7 +429,7 @@ describe('ImageRepository - addContext', () => {
     const updateCall = updateChain.update.mock.calls[0][0];
     expect(updateCall.analysis.userContexts[0]).toEqual({
       text: 'Wedding photo from 1962',
-      sourceEventId: 'source-event-xyz',
+      conversationEventId: 'source-event-xyz',
     });
   });
 });

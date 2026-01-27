@@ -80,7 +80,7 @@ export interface EventLogEntry {
   actor?: string;
   actorType?: ActorType;
   eventData?: Record<string, unknown>;
-  sourceEventId?: string;
+  conversationEventId?: string;
   sessionId?: string;
   identityId?: string;
   severity: Severity;

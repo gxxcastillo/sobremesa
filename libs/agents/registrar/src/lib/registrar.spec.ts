@@ -119,7 +119,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
   const createBaseDomainModel = (
     imageReferences: ImageReference[] = [],
   ): ScribeDomainModel => ({
-    sourceEventId: 'event-123',
+    conversationEventId: 'event-123',
     familyId: 'family-abc',
     processedAt: new Date(),
     people: [],

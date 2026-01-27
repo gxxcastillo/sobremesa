@@ -30,6 +30,7 @@ import {
   EntityMatcherService,
   ConflictDetectorService,
   MergeHandlerService,
+  StrengthCalculatorService,
 } from './services';
 
 /**
@@ -123,6 +124,7 @@ export class RegistrarAgent {
   private entityMatcherService: EntityMatcherService;
   private conflictDetectorService: ConflictDetectorService;
   private mergeHandlerService: MergeHandlerService;
+  private strengthCalculatorService: StrengthCalculatorService;
 
   constructor(options: RegistrarAgentOptions = {}) {
     // Repositories
@@ -175,6 +177,7 @@ export class RegistrarAgent {
       this.eventRepo,
       this.storyRepo,
     );
+    this.strengthCalculatorService = new StrengthCalculatorService();
   }
 
   /**
@@ -186,7 +189,7 @@ export class RegistrarAgent {
     familyId: string,
   ): Promise<void> {
     this.logger.info(
-      { familyId, sourceEventId: domainModel.sourceEventId },
+      { familyId, conversationEventId: domainModel.conversationEventId },
       'Registrar persist started',
     );
 
@@ -202,12 +205,12 @@ export class RegistrarAgent {
       imageReferencesProcessed: 0,
     };
 
-    const sourceEventId = domainModel.sourceEventId;
+    const conversationEventId = domainModel.conversationEventId;
 
     // Get the claimedBy from the source event
     const sourceEvent = await this.conversationEventRepo.findById(
       familyId,
-      sourceEventId,
+      conversationEventId,
     );
     const claimedBy =
       sourceEvent?.actorDisplayName || sourceEvent?.actorUsername || 'Unknown';
@@ -280,7 +283,7 @@ export class RegistrarAgent {
           const newPerson = await this.personRepo.createNew(
             familyId,
             person,
-            sourceEventId,
+            conversationEventId,
             claimedBy,
           );
 
@@ -306,7 +309,7 @@ export class RegistrarAgent {
         const dbPlace = await this.placeRepo.findOrCreate(
           familyId,
           place,
-          sourceEventId,
+          conversationEventId,
         );
         placeIdMap.set(place.name, dbPlace.id);
         if (new Date(dbPlace.createdAt).getTime() > Date.now() - 1000) {
@@ -327,7 +330,7 @@ export class RegistrarAgent {
           familyId,
           event,
           placeId,
-          sourceEventId,
+          conversationEventId,
           claimedBy,
         );
         createdEventIds.push(createdEvent.id);
@@ -369,7 +372,7 @@ export class RegistrarAgent {
               personBId,
               rel.relationshipType,
               {
-                sourceEventId,
+                conversationEventId,
                 claimedBy,
                 confidence: rel.confidence,
               },
@@ -385,7 +388,7 @@ export class RegistrarAgent {
         const createdStory = await this.storyRepo.createFromExtracted(
           familyId,
           domainModel.story,
-          sourceEventId,
+          conversationEventId,
           domainModel.detectedLanguage,
           claimedBy,
         );
@@ -429,7 +432,7 @@ export class RegistrarAgent {
         await this.storyConversationEventsRepo.create({
           familyId,
           storyId: createdStory.id,
-          conversationEventId: sourceEventId,
+          conversationEventId: conversationEventId,
         });
 
         result.storiesCreated++;
@@ -544,7 +547,7 @@ export class RegistrarAgent {
                   {
                     strategy: 'identity_claim',
                     confidence: 1.0,
-                    triggerEventId: sourceEventId,
+                    triggerEventId: conversationEventId,
                     reason: `Identity claim: "${claim.subject}" is "${realName}"`,
                   },
                 );
@@ -675,13 +678,105 @@ export class RegistrarAgent {
           }
         }
 
-        // Create the new claim
+        // Calculate claim strength using StrengthCalculatorService
+        const isHighStakes = this.strengthCalculatorService.isHighStakesClaim(
+          claim.claimType,
+          claim.claimValue,
+        );
+
+        const contradictingConflicts = conflicts.filter(
+          (c) => c.conflictType === 'contradicts',
+        );
+
+        const strengthResult = this.strengthCalculatorService.calculate(
+          claim,
+          contradictingConflicts.length,
+          isHighStakes,
+        );
+
+        // Get existing claims with their strengths for conflict resolution
+        const existingClaimsForResolution =
+          await this.claimRepo.findActiveBySubject(familyId, claim.subject);
+
+        const conflictingClaimsWithStrength = contradictingConflicts
+          .map((c) => {
+            const existingClaim = existingClaimsForResolution.find(
+              (ec) => ec.id === c.conflictingClaimId,
+            );
+            return {
+              claimId: c.conflictingClaimId!,
+              claimStrength: existingClaim?.claimStrength,
+            };
+          })
+          .filter((c) => c.claimId);
+
+        // Resolve conflicts (decide what to do)
+        const resolution = this.conflictDetectorService.resolveConflicts(
+          strengthResult.score,
+          conflictingClaimsWithStrength,
+        );
+
+        // Apply conflict resolution
+        if (resolution.action === 'mark_disputed') {
+          // Log that this claim is disputed but still create it
+          this.logger.info(
+            {
+              familyId,
+              subject: claim.subject,
+              newClaimStrength: strengthResult.score,
+              resolution: resolution.reasoning,
+            },
+            'Claim marked as disputed due to existing stronger or similar claims',
+          );
+
+          // If existing claim is significantly stronger, skip creating new claim
+          const maxExistingStrength = Math.max(
+            ...conflictingClaimsWithStrength.map((c) => c.claimStrength ?? 0.5),
+          );
+
+          if (strengthResult.score < maxExistingStrength - 0.2) {
+            this.logger.info(
+              {
+                familyId,
+                subject: claim.subject,
+                newClaimStrength: strengthResult.score,
+                maxExistingStrength,
+              },
+              'Skipping claim creation - existing claim is significantly stronger',
+            );
+            continue;
+          }
+        }
+
+        // Create the new claim with strength metadata
         const newClaim = await this.claimRepo.createFromExtracted(
           familyId,
           claim,
-          sourceEventId,
+          conversationEventId,
           claim.claimedBy,
+          {
+            inferenceMethod: 'direct',
+            claimStrength: strengthResult.score,
+            strengthFactors: strengthResult.factors,
+            needsLlmEvaluation: strengthResult.needsLlmEvaluation,
+          },
         );
+
+        // If resolution says to supersede existing claims
+        if (resolution.action === 'supersede_existing') {
+          for (const claimId of resolution.supersededClaimIds || []) {
+            await this.claimRepo.markSuperseded(familyId, claimId);
+            this.logger.info(
+              {
+                familyId,
+                supersededClaimId: claimId,
+                newClaimId: newClaim.id,
+                newClaimStrength: strengthResult.score,
+              },
+              'Superseded existing claim with stronger new claim',
+            );
+          }
+        }
 
         result.claimsCreated++;
 
@@ -911,7 +1006,7 @@ export class RegistrarAgent {
               familyId,
               imageRef.imageId,
               imageRef.contextProvided,
-              sourceEventId,
+              conversationEventId,
             );
             this.logger.debug(
               {
@@ -943,17 +1038,17 @@ export class RegistrarAgent {
         eventCategory: 'system_event',
         actor: 'registrar',
         actorType: 'system',
-        sourceEventId,
+        conversationEventId,
         eventData: result as unknown as Record<string, unknown>,
       });
 
       this.logger.info(
-        { familyId, sourceEventId, ...result },
+        { familyId, conversationEventId, ...result },
         'Registrar persist complete',
       );
     } catch (error) {
       this.logger.error(
-        { familyId, sourceEventId, error },
+        { familyId, conversationEventId, error },
         'Registrar persist failed',
       );
 
@@ -964,7 +1059,7 @@ export class RegistrarAgent {
         eventCategory: 'system_event',
         actor: 'registrar',
         actorType: 'system',
-        sourceEventId,
+        conversationEventId,
         severity: 'error',
         eventData: {
           error: error instanceof Error ? error.message : String(error),

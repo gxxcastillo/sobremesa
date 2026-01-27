@@ -166,7 +166,7 @@ export class HistorianAgent {
         eventCategory: 'bot_action',
         actor: 'historian',
         actorType: 'system',
-        sourceEventId: eventId,
+        conversationEventId: eventId,
         eventData: {
           questionType: parsedQuestion.type,
           dataPointsUsed,

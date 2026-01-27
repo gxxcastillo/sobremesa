@@ -191,7 +191,7 @@ export class PersonRepository extends BaseRepository<Person> {
   async createNew(
     familyId: string,
     extracted: ExtractedPerson,
-    sourceEventId: string,
+    conversationEventId: string,
     createdBy?: string,
   ): Promise<Person> {
     const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -202,7 +202,7 @@ export class PersonRepository extends BaseRepository<Person> {
       birthYearConfidence: extracted.confidence,
       deathYear: extracted.deathYear,
       deathYearConfidence: extracted.confidence,
-      firstMentionedEventId: sourceEventId,
+      firstMentionedEventId: conversationEventId,
       createdBy,
       redacted: false,
     };
@@ -213,7 +213,7 @@ export class PersonRepository extends BaseRepository<Person> {
   async findOrCreate(
     familyId: string,
     extracted: ExtractedPerson,
-    sourceEventId: string,
+    conversationEventId: string,
     createdBy?: string,
   ): Promise<Person> {
     // Try to find existing person
@@ -243,7 +243,12 @@ export class PersonRepository extends BaseRepository<Person> {
     }
 
     // Create new person
-    return await this.createNew(familyId, extracted, sourceEventId, createdBy);
+    return await this.createNew(
+      familyId,
+      extracted,
+      conversationEventId,
+      createdBy,
+    );
   }
 
   /**
@@ -334,14 +339,14 @@ export class PersonRepository extends BaseRepository<Person> {
    * @param familyId - The family this person belongs to
    * @param description - A description like "parent of Maria" or "parent of Juan and Maria's parents"
    * @param relatedToPersonIds - IDs of people this placeholder is related to (for potential future merging)
-   * @param sourceEventId - The conversation event that led to this placeholder's creation
+   * @param conversationEventId - The conversation event that led to this placeholder's creation
    * @param createdBy - Who created this placeholder
    */
   async createPlaceholder(
     familyId: string,
     description: string,
     relatedToPersonIds: string[],
-    sourceEventId?: string,
+    conversationEventId?: string,
     createdBy?: string,
   ): Promise<Person> {
     const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -352,7 +357,7 @@ export class PersonRepository extends BaseRepository<Person> {
         ...relatedToPersonIds.map((id) => `related-to:${id}`),
       ],
       isPlaceholder: true,
-      firstMentionedEventId: sourceEventId,
+      firstMentionedEventId: conversationEventId,
       createdBy,
       redacted: false,
     };
@@ -394,7 +399,7 @@ export class PersonRepository extends BaseRepository<Person> {
     familyId: string,
     description: string,
     relatedToPersonIds: string[],
-    sourceEventId?: string,
+    conversationEventId?: string,
     createdBy?: string,
   ): Promise<Person> {
     const existing = await this.findPlaceholderByDescription(
@@ -410,7 +415,7 @@ export class PersonRepository extends BaseRepository<Person> {
       familyId,
       description,
       relatedToPersonIds,
-      sourceEventId,
+      conversationEventId,
       createdBy,
     );
   }

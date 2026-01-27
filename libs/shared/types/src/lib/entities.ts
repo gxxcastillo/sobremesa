@@ -77,7 +77,7 @@ export interface TimelineEvent extends BaseEntity {
   dateYear?: number;
   // Note: People associations now in event_people join table
   placeId?: string;
-  sourceEventId?: string;
+  conversationEventId?: string;
   claimedBy?: string;
   // Phase 1b: Entity merge tracking
   /** ID of entity this was merged into */
@@ -100,7 +100,7 @@ export interface Story extends BaseEntity {
   // Note: Entity associations now in story_people/places/events join tables
   // Note: Source provenance now in story_conversation_events join table
   /** @deprecated Use story_conversation_events join table instead */
-  sourceEventIds?: string[];
+  conversationEventIds?: string[];
   sharedBy?: string;
   // Phase 1b: Entity merge tracking
   /** ID of entity this was merged into */
@@ -123,7 +123,7 @@ export interface Claim extends Omit<BaseEntity, 'redacted'> {
     | string;
   subject: string;
   claimValue: Record<string, unknown>;
-  sourceEventId: string;
+  conversationEventId: string;
   claimedBy: string;
   /** How the claim was attributed: direct (speaker), attributed (citing someone), hearsay (vague) */
   claimedBySource: ClaimSourceType;
@@ -217,7 +217,7 @@ export interface Relationship {
   /** Qualifier for nuance: half, step, adoptive, maternal, paternal, etc. */
   qualifier?: string;
   confidence: Confidence;
-  sourceEventId?: string;
+  conversationEventId?: string;
   claimedBy?: string;
   descriptionOriginal?: string;
   languageOriginal?: LanguageCode;
@@ -240,7 +240,7 @@ export interface Image extends BaseEntity {
   visibleText: string[];
   connectedStories: string[];
   connectedPeople: string[];
-  sourceEventId: string;
+  conversationEventId: string;
   sharedBy?: string;
   analyzed: boolean;
   analyzedAt?: Date;

@@ -398,7 +398,7 @@ export class MessageProcessor {
         eventCategory: 'system_event',
         actor: 'processor',
         actorType: 'system',
-        sourceEventId: eventId,
+        conversationEventId: eventId,
         eventData: { status: 'started', eventType: event.eventType },
       });
 
@@ -439,7 +439,7 @@ export class MessageProcessor {
           eventCategory: 'system_event',
           actor: 'router',
           actorType: 'system',
-          sourceEventId: eventId,
+          conversationEventId: eventId,
           eventData: {
             stage: 'routed',
             action: routing.action,
@@ -525,7 +525,7 @@ export class MessageProcessor {
         eventCategory: 'system_event',
         actor: 'processor',
         actorType: 'system',
-        sourceEventId: eventId,
+        conversationEventId: eventId,
         eventData: {
           status: 'completed',
           duration: Date.now() - startTime,
@@ -549,7 +549,7 @@ export class MessageProcessor {
         eventCategory: 'system_event',
         actor: 'processor',
         actorType: 'system',
-        sourceEventId: eventId,
+        conversationEventId: eventId,
         eventData: { error: errorMessage },
         severity: 'error',
       });
@@ -607,7 +607,7 @@ export class MessageProcessor {
           eventCategory: 'system_event',
           actor: 'filter',
           actorType: 'system',
-          sourceEventId: eventId,
+          conversationEventId: eventId,
           eventData: {
             relevant: false,
             reason: filterResult.reason,
@@ -693,7 +693,7 @@ export class MessageProcessor {
             eventCategory: 'system_event',
             actor: 'intern',
             actorType: 'system',
-            sourceEventId: eventId,
+            conversationEventId: eventId,
             eventData: {
               imageId: linkResult.imageId,
               referenceType: linkResult.referenceType,
@@ -846,7 +846,7 @@ export class MessageProcessor {
         eventCategory: 'bot_action',
         actor: 'processor',
         actorType: 'system',
-        sourceEventId: answerEventId,
+        conversationEventId: answerEventId,
         eventData: {
           questionId: question.id,
           questionContent: question.contentOriginal.slice(0, 100),

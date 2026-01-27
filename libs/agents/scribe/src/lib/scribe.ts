@@ -198,7 +198,7 @@ export class ScribeAgent {
     familyId: string,
   ): ScribeDomainModel {
     return {
-      sourceEventId: eventId,
+      conversationEventId: eventId,
       familyId,
       processedAt: new Date(),
       people: [],

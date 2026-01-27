@@ -81,6 +81,54 @@ export class ClaimEntityRepository {
   }
 
   /**
+   * Find all claims for an entity, including claims about merged predecessors.
+   * Uses the get_entity_merge_chain function to find all entity IDs in the merge chain.
+   *
+   * @param familyId - Family ID
+   * @param entityId - Entity ID (will include merged predecessors)
+   * @param entityType - Entity type ('person', 'place', 'event', 'story')
+   * @returns Array of claims with full claim data
+   */
+  async findClaimsForEntityIncludingMerged(
+    familyId: string,
+    entityId: string,
+    entityType: string,
+  ): Promise<any[]> {
+    // Call the database function to get merge chain
+    const { data: mergeChain, error: mergeError } = await this.client.rpc(
+      'get_entity_merge_chain',
+      {
+        p_entity_id: entityId,
+        p_entity_type: entityType,
+        p_family_id: familyId,
+      },
+    );
+
+    if (mergeError) {
+      throw new Error(`Failed to get merge chain: ${mergeError.message}`);
+    }
+
+    const entityIds = mergeChain?.map((row: any) => row.entity_id) || [
+      entityId,
+    ];
+
+    // Query claim_entities for all entity IDs in chain, join with claims
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('claims!inner(*)')
+      .eq('family_id', familyId)
+      .eq('entity_type', entityType)
+      .in('entity_id', entityIds);
+
+    if (error) {
+      throw new Error(`Failed to find claims for entity: ${error.message}`);
+    }
+
+    // Extract claims from the join result
+    return (data || []).map((row: any) => row.claims);
+  }
+
+  /**
    * Link a claim to an entity.
    */
   async link(

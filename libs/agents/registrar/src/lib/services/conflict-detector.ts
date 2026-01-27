@@ -17,6 +17,15 @@ export interface ConflictResult {
 }
 
 /**
+ * Result of conflict resolution.
+ */
+export interface ConflictResolutionResult {
+  action: 'create_new' | 'supersede_existing' | 'mark_disputed';
+  supersededClaimIds?: string[]; // Claims to mark as superseded
+  reasoning: string;
+}
+
+/**
  * Service for detecting conflicts between claims.
  * Uses value-based conflict detection with optional semantic analysis via LLM.
  */
@@ -152,6 +161,61 @@ export class ConflictDetectorService {
     }
 
     return hasAllExistingFields && hasAdditionalFields;
+  }
+
+  /**
+   * Resolve conflicts between new claim and existing claims.
+   *
+   * Resolution strategy:
+   * 1. If new claim has much higher strength (>0.2 difference): supersede existing
+   * 2. If strengths are close (<0.2 difference): mark both as disputed
+   * 3. If existing claim has much higher strength: don't create new claim
+   *
+   * @param newClaimStrength - Strength of the new claim (0.0-1.0)
+   * @param conflicts - Array of conflicting claims with their strengths
+   * @returns Resolution decision
+   */
+  resolveConflicts(
+    newClaimStrength: number,
+    conflicts: Array<{ claimId: string; claimStrength?: number }>,
+  ): ConflictResolutionResult {
+    if (conflicts.length === 0) {
+      return {
+        action: 'create_new',
+        reasoning: 'No conflicts detected',
+      };
+    }
+
+    // Find highest strength among conflicting claims
+    const maxExistingStrength = Math.max(
+      ...conflicts.map((c) => c.claimStrength ?? 0.5),
+    );
+
+    const strengthDiff = newClaimStrength - maxExistingStrength;
+
+    // Strategy 1: New claim is significantly stronger (>0.2 difference)
+    if (strengthDiff > 0.2) {
+      return {
+        action: 'supersede_existing',
+        supersededClaimIds: conflicts.map((c) => c.claimId),
+        reasoning: `New claim strength (${newClaimStrength.toFixed(2)}) significantly higher than existing claims (max: ${maxExistingStrength.toFixed(2)})`,
+      };
+    }
+
+    // Strategy 2: Existing claim is significantly stronger
+    if (strengthDiff < -0.2) {
+      // Don't create new claim - existing is more reliable
+      return {
+        action: 'mark_disputed',
+        reasoning: `Existing claim strength (${maxExistingStrength.toFixed(2)}) significantly higher than new claim (${newClaimStrength.toFixed(2)}) - consider this claim disputed`,
+      };
+    }
+
+    // Strategy 3: Strengths are close - mark both as disputed
+    return {
+      action: 'mark_disputed',
+      reasoning: `Claim strengths are similar (new: ${newClaimStrength.toFixed(2)}, existing max: ${maxExistingStrength.toFixed(2)}) - requires manual review or LLM evaluation`,
+    };
   }
 
   // TODO: Implement LLM-based semantic conflict detection
