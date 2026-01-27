@@ -132,20 +132,32 @@ export class ImageRepository extends BaseRepository<Image> {
     conversationId: string,
     limit = 5,
   ): Promise<Image[]> {
-    // Query images joined with their source events to filter by conversation
+    // First, get conversation event IDs for this conversation
+    const { data: eventIds, error: eventsError } = await this.client
+      .from('conversation_events')
+      .select('id')
+      .eq('family_id', familyId)
+      .eq('conversation_id', conversationId);
+
+    if (eventsError) {
+      throw new Error(
+        `Failed to find conversation events: ${eventsError.message}`,
+      );
+    }
+
+    if (!eventIds || eventIds.length === 0) {
+      return [];
+    }
+
+    const eventIdList = eventIds.map((e) => e.id);
+
+    // Query images that have source_event_id in this conversation
     const { data, error } = await this.client
       .from(this.tableName)
-      .select(
-        `
-        *,
-        conversation_events!source_event_id (
-          conversation_id
-        )
-      `,
-      )
+      .select('*')
       .eq('family_id', familyId)
       .eq('redacted', false)
-      .eq('conversation_events.conversation_id', conversationId)
+      .in('source_event_id', eventIdList)
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -155,15 +167,7 @@ export class ImageRepository extends BaseRepository<Image> {
       );
     }
 
-    // Map and filter out any that didn't match the join
-    return (data || [])
-      .filter((row) => row.conversation_events !== null)
-      .map((row) => {
-        // Remove the joined data before mapping
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { conversation_events: ignore, ...imageRow } = row;
-        return this.mapFromDb(imageRow);
-      });
+    return (data || []).map((row) => this.mapFromDb(row));
   }
 
   /**

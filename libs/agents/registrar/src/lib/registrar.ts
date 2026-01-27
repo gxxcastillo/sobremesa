@@ -9,6 +9,15 @@ import {
   EventLogRepository,
   ConversationEventRepository,
   ImageRepository,
+  EntityMergeRepository,
+  ClaimEntityRepository,
+  ClaimRelationshipRepository,
+  StoryPeopleRepository,
+  StoryPlacesRepository,
+  StoryEventsRepository,
+  StoryConversationEventsRepository,
+  EventPeopleRepository,
+  EventPlacesRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
@@ -17,6 +26,11 @@ import {
   subjectsMatch,
   canClaimTypeConflict,
 } from './conflict-detector';
+import {
+  EntityMatcherService,
+  ConflictDetectorService,
+  MergeHandlerService,
+} from './services';
 
 /**
  * Options for creating a RegistrarAgent.
@@ -40,6 +54,24 @@ export interface RegistrarAgentOptions {
   conversationEventRepo?: ConversationEventRepository;
   /** Image repository (for linking people to images) */
   imageRepo?: ImageRepository;
+  /** Entity merge repository (Phase 1c) */
+  entityMergeRepo?: EntityMergeRepository;
+  /** Claim entity repository (Phase 1c) */
+  claimEntityRepo?: ClaimEntityRepository;
+  /** Claim relationship repository (Phase 1c) */
+  claimRelationshipRepo?: ClaimRelationshipRepository;
+  /** Story-people join table repository (Phase 2) */
+  storyPeopleRepo?: StoryPeopleRepository;
+  /** Story-places join table repository (Phase 2) */
+  storyPlacesRepo?: StoryPlacesRepository;
+  /** Story-events join table repository (Phase 2) */
+  storyEventsRepo?: StoryEventsRepository;
+  /** Story-conversation events join table repository (Phase 2) */
+  storyConversationEventsRepo?: StoryConversationEventsRepository;
+  /** Event-people join table repository (Phase 2) */
+  eventPeopleRepo?: EventPeopleRepository;
+  /** Event-places join table repository (Phase 2) */
+  eventPlacesRepo?: EventPlacesRepository;
   /** Logger instance */
   logger?: pino.Logger;
 }
@@ -62,6 +94,7 @@ export interface PersistResult {
 /**
  * The Registrar agent persists extracted data to the database.
  * It handles deduplication, conflict detection, and provenance tracking.
+ * Refactored to use service layer (Phase 1c).
  */
 export class RegistrarAgent {
   private personRepo: PersonRepository;
@@ -73,9 +106,26 @@ export class RegistrarAgent {
   private eventLog: EventLogRepository;
   private conversationEventRepo: ConversationEventRepository;
   private imageRepo: ImageRepository;
+  private entityMergeRepo: EntityMergeRepository;
+  private claimEntityRepo: ClaimEntityRepository;
+  private claimRelationshipRepo: ClaimRelationshipRepository;
   private logger: pino.Logger;
 
+  // Phase 2: Join table repositories
+  private storyPeopleRepo: StoryPeopleRepository;
+  private storyPlacesRepo: StoryPlacesRepository;
+  private storyEventsRepo: StoryEventsRepository;
+  private storyConversationEventsRepo: StoryConversationEventsRepository;
+  private eventPeopleRepo: EventPeopleRepository;
+  private eventPlacesRepo: EventPlacesRepository;
+
+  // Service layer
+  private entityMatcherService: EntityMatcherService;
+  private conflictDetectorService: ConflictDetectorService;
+  private mergeHandlerService: MergeHandlerService;
+
   constructor(options: RegistrarAgentOptions = {}) {
+    // Repositories
     this.personRepo = options.personRepo || new PersonRepository();
     this.placeRepo = options.placeRepo || new PlaceRepository();
     this.eventRepo = options.eventRepo || new TimelineEventRepository();
@@ -87,7 +137,44 @@ export class RegistrarAgent {
     this.conversationEventRepo =
       options.conversationEventRepo || new ConversationEventRepository();
     this.imageRepo = options.imageRepo || new ImageRepository();
+    this.entityMergeRepo =
+      options.entityMergeRepo || new EntityMergeRepository();
+    this.claimEntityRepo =
+      options.claimEntityRepo || new ClaimEntityRepository();
+    this.claimRelationshipRepo =
+      options.claimRelationshipRepo || new ClaimRelationshipRepository();
     this.logger = options.logger || createLogger({ name: 'registrar' });
+
+    // Phase 2: Join table repositories
+    this.storyPeopleRepo =
+      options.storyPeopleRepo || new StoryPeopleRepository();
+    this.storyPlacesRepo =
+      options.storyPlacesRepo || new StoryPlacesRepository();
+    this.storyEventsRepo =
+      options.storyEventsRepo || new StoryEventsRepository();
+    this.storyConversationEventsRepo =
+      options.storyConversationEventsRepo ||
+      new StoryConversationEventsRepository();
+    this.eventPeopleRepo =
+      options.eventPeopleRepo || new EventPeopleRepository();
+    // Note: EventPlacesRepository initialized for future use - events currently use single placeId field
+    this.eventPlacesRepo =
+      options.eventPlacesRepo || new EventPlacesRepository();
+    void this.eventPlacesRepo; // Mark as intentionally unused for now
+
+    // Services
+    this.entityMatcherService = new EntityMatcherService(
+      this.personRepo,
+      this.placeRepo,
+    );
+    this.conflictDetectorService = new ConflictDetectorService(this.claimRepo);
+    this.mergeHandlerService = new MergeHandlerService(
+      this.entityMergeRepo,
+      this.personRepo,
+      this.placeRepo,
+      this.eventRepo,
+      this.storyRepo,
+    );
   }
 
   /**
@@ -130,20 +217,24 @@ export class RegistrarAgent {
     const placeIdMap = new Map<string, string>();
 
     try {
-      // 1. Process People (with smart matching)
+      // 1. Process People (using EntityMatcherService)
       for (const person of domainModel.people) {
-        const matchResult = await this.personRepo.findBestMatch(
+        const matchResult = await this.entityMatcherService.matchPerson(
           familyId,
-          person.name,
-          person.aliases,
+          person,
         );
 
-        if (matchResult) {
-          const {
-            person: existingPerson,
-            confidence,
-            matchReason,
-          } = matchResult;
+        if (matchResult.matched && matchResult.existingEntityId) {
+          const existingPerson = await this.personRepo.findById(
+            familyId,
+            matchResult.existingEntityId,
+          );
+
+          if (!existingPerson) {
+            throw new Error(
+              `Matched person ${matchResult.existingEntityId} not found`,
+            );
+          }
 
           this.logger.debug(
             {
@@ -151,31 +242,29 @@ export class RegistrarAgent {
               extractedName: person.name,
               matchedName: existingPerson.name,
               matchedId: existingPerson.id,
-              confidence,
-              matchReason,
+              confidence: matchResult.confidence,
+              matchReason: matchResult.matchReason,
             },
             'Person matched to existing',
           );
 
-          // Add the extracted name as an alias if it's not already there
-          const existingAliases = new Set(
-            (existingPerson.aliases || []).map((a) => a.toLowerCase()),
-          );
-          const newAliases = [person.name, ...person.aliases].filter(
-            (a) =>
-              !existingAliases.has(a.toLowerCase()) &&
-              a.toLowerCase() !== existingPerson.name.toLowerCase(),
-          );
-
-          if (newAliases.length > 0) {
+          // Add suggested aliases
+          if (
+            matchResult.suggestedAliases &&
+            matchResult.suggestedAliases.length > 0
+          ) {
             await this.personRepo.updateAliases(familyId, existingPerson.id, [
               ...existingPerson.aliases,
-              ...newAliases,
+              ...matchResult.suggestedAliases,
             ]);
             result.peopleUpdated++;
 
             this.logger.debug(
-              { familyId, personId: existingPerson.id, newAliases },
+              {
+                familyId,
+                personId: existingPerson.id,
+                newAliases: matchResult.suggestedAliases,
+              },
               'Added aliases to existing person',
             );
           }
@@ -185,8 +274,10 @@ export class RegistrarAgent {
             personIdMap.set(alias, existingPerson.id);
           }
         } else {
-          // No match found - create new person
-          const newPerson = await this.personRepo.findOrCreate(
+          // No match found - create new person without additional matching
+          // Note: We use createNew() instead of findOrCreate() because EntityMatcher
+          // already determined there's no match (possibly due to biographical conflicts)
+          const newPerson = await this.personRepo.createNew(
             familyId,
             person,
             sourceEventId,
@@ -224,25 +315,38 @@ export class RegistrarAgent {
       }
 
       // 3. Process Events
+      const createdEventIds: string[] = [];
       for (const event of domainModel.events) {
-        // Resolve people IDs
-        const peopleIds = event.peopleInvolved
-          .map((name) => personIdMap.get(name))
-          .filter((id): id is string => !!id);
-
         // Resolve place ID
         const placeId = event.placeName
           ? placeIdMap.get(event.placeName)
           : undefined;
 
-        await this.eventRepo.createFromExtracted(
+        // Create event without people associations
+        const createdEvent = await this.eventRepo.createFromExtracted(
           familyId,
           event,
-          peopleIds,
           placeId,
           sourceEventId,
           claimedBy,
         );
+        createdEventIds.push(createdEvent.id);
+
+        // Link people via event_people join table
+        const peopleIds = event.peopleInvolved
+          .map((name) => personIdMap.get(name))
+          .filter((id): id is string => !!id);
+
+        if (peopleIds.length > 0) {
+          await this.eventPeopleRepo.createMany(
+            peopleIds.map((personId) => ({
+              familyId,
+              eventId: createdEvent.id,
+              personId,
+            })),
+          );
+        }
+
         result.eventsCreated++;
       }
 
@@ -277,19 +381,57 @@ export class RegistrarAgent {
 
       // 5. Process Story (if present)
       if (domainModel.story) {
-        const peopleIds = [...personIdMap.values()];
-        const placeIds = [...placeIdMap.values()];
-
-        await this.storyRepo.createFromExtracted(
+        // Create story without entity associations
+        const createdStory = await this.storyRepo.createFromExtracted(
           familyId,
           domainModel.story,
-          peopleIds,
-          placeIds,
-          [], // eventIds - would need to track created event IDs
           sourceEventId,
           domainModel.detectedLanguage,
           claimedBy,
         );
+
+        // Link people via story_people join table
+        const peopleIds = [...personIdMap.values()];
+        if (peopleIds.length > 0) {
+          await this.storyPeopleRepo.createMany(
+            peopleIds.map((personId) => ({
+              familyId,
+              storyId: createdStory.id,
+              personId,
+            })),
+          );
+        }
+
+        // Link places via story_places join table
+        const placeIds = [...placeIdMap.values()];
+        if (placeIds.length > 0) {
+          await this.storyPlacesRepo.createMany(
+            placeIds.map((placeId) => ({
+              familyId,
+              storyId: createdStory.id,
+              placeId,
+            })),
+          );
+        }
+
+        // Link events via story_events join table
+        if (createdEventIds.length > 0) {
+          await this.storyEventsRepo.createMany(
+            createdEventIds.map((eventId) => ({
+              familyId,
+              storyId: createdStory.id,
+              eventId,
+            })),
+          );
+        }
+
+        // Link source conversation event via story_conversation_events join table
+        await this.storyConversationEventsRepo.create({
+          familyId,
+          storyId: createdStory.id,
+          conversationEventId: sourceEventId,
+        });
+
         result.storiesCreated++;
       }
 
@@ -315,6 +457,22 @@ export class RegistrarAgent {
           continue;
         }
 
+        // Skip claims with invalid types (database constraint)
+        const validClaimTypes = [
+          'date',
+          'location',
+          'relationship',
+          'detail',
+          'identity',
+        ];
+        if (!validClaimTypes.includes(claim.claimType)) {
+          this.logger.warn(
+            { familyId, claimType: claim.claimType, subject: claim.subject },
+            'Skipping claim with invalid type (not in database constraint)',
+          );
+          continue;
+        }
+
         // Find entity ID if we can resolve it
         let entityId: string | undefined;
         let entityType: 'person' | 'place' | 'event' | 'story' | undefined;
@@ -326,20 +484,37 @@ export class RegistrarAgent {
           entityType = 'person';
         }
 
-        // Handle identity claims - merge descriptive name with real name
+        // Handle identity claims - merge descriptive name with real name (using MergeHandlerService)
+        // NOTE: This section will be created BEFORE the claim is persisted, so we can link entities properly
+        let identityMerge:
+          | { descriptiveId: string; canonicalId: string; mergeId?: string }
+          | undefined;
+
         if (claim.claimType === 'identity' && claim.claimValue) {
-          // claimValue is now a string - try to parse it or extract name
+          // claimValue can be a string or Record - handle both cases
           let realName: string | undefined;
-          try {
-            const parsed = JSON.parse(claim.claimValue);
-            realName =
-              typeof parsed === 'object' && parsed?.real_name
-                ? String(parsed.real_name)
-                : undefined;
-          } catch {
-            // If not JSON, the claimValue string itself might be the real name
-            realName = claim.claimValue;
+
+          if (typeof claim.claimValue === 'string') {
+            try {
+              const parsed = JSON.parse(claim.claimValue);
+              realName =
+                typeof parsed === 'object' && parsed?.real_name
+                  ? String(parsed.real_name)
+                  : undefined;
+            } catch {
+              // If not JSON, the claimValue string itself might be the real name
+              realName = claim.claimValue;
+            }
+          } else if (
+            typeof claim.claimValue === 'object' &&
+            claim.claimValue !== null
+          ) {
+            // claimValue is already an object
+            realName = claim.claimValue.real_name
+              ? String(claim.claimValue.real_name)
+              : undefined;
           }
+
           if (realName && claim.subject) {
             // Find the person with the descriptive name (e.g., "Dexter's ex-wife")
             const descriptivePerson = await this.personRepo.findByFuzzyMatch(
@@ -360,7 +535,20 @@ export class RegistrarAgent {
                 realNamePerson &&
                 realNamePerson.id !== descriptivePerson.id
               ) {
-                // Both exist - merge the descriptive one into the real one
+                // Both exist - merge using MergeHandlerService
+                const merge = await this.mergeHandlerService.mergeEntities(
+                  familyId,
+                  descriptivePerson.id,
+                  realNamePerson.id,
+                  'person',
+                  {
+                    strategy: 'identity_claim',
+                    confidence: 1.0,
+                    triggerEventId: sourceEventId,
+                    reason: `Identity claim: "${claim.subject}" is "${realName}"`,
+                  },
+                );
+
                 // Add the descriptive name as an alias to the real person
                 const newAliases = [
                   ...(realNamePerson.aliases || []),
@@ -381,14 +569,11 @@ export class RegistrarAgent {
                   personIdMap.set(alias, realNamePerson.id);
                 }
 
-                // Mark the descriptive person as merged (if it's a placeholder)
-                if (descriptivePerson.isPlaceholder) {
-                  await this.personRepo.mergePlaceholderIntoPerson(
-                    familyId,
-                    descriptivePerson.id,
-                    realNamePerson.id,
-                  );
-                }
+                identityMerge = {
+                  descriptiveId: descriptivePerson.id,
+                  canonicalId: realNamePerson.id,
+                  mergeId: merge.id,
+                };
 
                 this.logger.info(
                   {
@@ -396,6 +581,7 @@ export class RegistrarAgent {
                     descriptiveName: claim.subject,
                     realName,
                     mergedIntoId: realNamePerson.id,
+                    mergeId: merge.id,
                   },
                   'Merged descriptive person into real person via identity claim',
                 );
@@ -413,6 +599,11 @@ export class RegistrarAgent {
                   personIdMap.set(realName, descriptivePerson.id);
                   personIdMap.set(claim.subject, descriptivePerson.id);
 
+                  identityMerge = {
+                    descriptiveId: descriptivePerson.id,
+                    canonicalId: descriptivePerson.id,
+                  };
+
                   this.logger.info(
                     {
                       familyId,
@@ -428,16 +619,16 @@ export class RegistrarAgent {
                     'Failed to update person name from identity claim',
                   );
                 }
+              } else {
+                // Both point to same person - just track the identity
+                identityMerge = {
+                  descriptiveId: descriptivePerson.id,
+                  canonicalId: realNamePerson.id,
+                };
               }
             }
           }
         }
-
-        // Check for conflicts with existing claims
-        const existingClaims = await this.claimRepo.findActiveBySubject(
-          familyId,
-          claim.subject,
-        );
 
         // Log attribution if it differs from sender
         if (claim.claimedBy !== claimedBy) {
@@ -453,19 +644,35 @@ export class RegistrarAgent {
           );
         }
 
-        // Skip duplicate claims (same type, subject, value already exists)
-        const isDuplicate = existingClaims.some(
-          (existing) =>
-            existing.claimType === claim.claimType &&
-            subjectsMatch(existing.subject, claim.subject) &&
-            !detectClaimConflict(existing.claimValue, claim.claimValue),
+        // Check for conflicts using ConflictDetectorService
+        const conflicts = await this.conflictDetectorService.detectConflicts(
+          familyId,
+          claim,
         );
+
+        // Skip duplicate claims (claims that don't conflict and don't refine)
+        const isDuplicate =
+          conflicts.length === 0 && canClaimTypeConflict(claim.claimType);
         if (isDuplicate) {
-          this.logger.debug(
-            { familyId, claimType: claim.claimType, subject: claim.subject },
-            'Skipping duplicate claim',
+          // Check if exact same claim already exists
+          const existingClaims = await this.claimRepo.findActiveBySubject(
+            familyId,
+            claim.subject,
           );
-          continue;
+          const exactDuplicate = existingClaims.some(
+            (existing) =>
+              existing.claimType === claim.claimType &&
+              subjectsMatch(existing.subject, claim.subject) &&
+              !detectClaimConflict(existing.claimValue, claim.claimValue),
+          );
+
+          if (exactDuplicate) {
+            this.logger.debug(
+              { familyId, claimType: claim.claimType, subject: claim.subject },
+              'Skipping duplicate claim',
+            );
+            continue;
+          }
         }
 
         // Create the new claim
@@ -474,35 +681,174 @@ export class RegistrarAgent {
           claim,
           sourceEventId,
           claim.claimedBy,
-          entityId,
-          entityType,
         );
+
         result.claimsCreated++;
 
-        // Check for conflicts and create links
-        // Only singular claim types (date, location, identity) can conflict
-        // Additive types (detail, fact, note) are complementary, not conflicting
-        for (const existing of existingClaims) {
+        // Special handling for identity claims - create claim_entities links
+        if (claim.claimType === 'identity' && identityMerge) {
+          // Extract names from claimValue for metadata
+          const descriptiveName = claim.subject;
+          let canonicalName: string | undefined;
+
           if (
-            canClaimTypeConflict(claim.claimType) &&
-            existing.claimType === claim.claimType &&
-            subjectsMatch(existing.subject, claim.subject) &&
-            detectClaimConflict(existing.claimValue, claim.claimValue)
+            typeof claim.claimValue === 'object' &&
+            claim.claimValue !== null
           ) {
+            canonicalName = claim.claimValue.real_name
+              ? String(claim.claimValue.real_name)
+              : undefined;
+          } else if (typeof claim.claimValue === 'string') {
+            try {
+              const parsed = JSON.parse(claim.claimValue);
+              canonicalName =
+                typeof parsed === 'object' && parsed?.real_name
+                  ? String(parsed.real_name)
+                  : claim.claimValue;
+            } catch {
+              canonicalName = claim.claimValue;
+            }
+          }
+
+          // Link identity_source (descriptive name)
+          await this.claimEntityRepo.link(
+            familyId,
+            newClaim.id,
+            identityMerge.descriptiveId,
+            'person',
+            {
+              role: 'identity_source',
+              resolved: !!identityMerge.mergeId,
+              entityMergeId: identityMerge.mergeId,
+              relationshipMetadata: {
+                descriptive_name: descriptiveName,
+              },
+            },
+          );
+
+          // Link identity_target (canonical name)
+          await this.claimEntityRepo.link(
+            familyId,
+            newClaim.id,
+            identityMerge.canonicalId,
+            'person',
+            {
+              role: 'identity_target',
+              resolved: !!identityMerge.mergeId,
+              entityMergeId: identityMerge.mergeId,
+              relationshipMetadata: {
+                canonical_name: canonicalName,
+              },
+            },
+          );
+
+          this.logger.debug(
+            {
+              familyId,
+              claimId: newClaim.id,
+              descriptiveId: identityMerge.descriptiveId,
+              canonicalId: identityMerge.canonicalId,
+              resolved: !!identityMerge.mergeId,
+            },
+            'Created identity claim entity links',
+          );
+        } else {
+          // Regular claims - create claim-entity links using ClaimEntityRepository
+          if (entityId && entityType) {
+            await this.claimEntityRepo.link(
+              familyId,
+              newClaim.id,
+              entityId,
+              entityType as any,
+              {
+                role: 'subject',
+              },
+            );
+          }
+        }
+
+        // Link referenced people and places
+        if (claim.referencedPeople) {
+          for (const personName of claim.referencedPeople) {
+            const personId = personIdMap.get(personName);
+            if (personId) {
+              await this.claimEntityRepo.link(
+                familyId,
+                newClaim.id,
+                personId,
+                'person',
+                {
+                  role: 'related',
+                },
+              );
+            }
+          }
+        }
+
+        if (claim.referencedPlaces) {
+          for (const placeName of claim.referencedPlaces) {
+            const placeId = placeIdMap.get(placeName);
+            if (placeId) {
+              await this.claimEntityRepo.link(
+                familyId,
+                newClaim.id,
+                placeId,
+                'place',
+                {
+                  role: 'location',
+                },
+              );
+            }
+          }
+        }
+
+        // Create claim relationships using ClaimRelationshipRepository
+        for (const conflict of conflicts) {
+          if (!conflict.conflictingClaimId) continue;
+
+          if (conflict.hasConflict && conflict.conflictType === 'contradicts') {
+            // Create conflict link in claim_conflicts table (legacy)
             await this.claimRepo.addConflict(
               familyId,
               newClaim.id,
-              existing.id,
+              conflict.conflictingClaimId,
             );
+
+            // Also create relationship in claim_relationships table (new)
+            await this.claimRelationshipRepo.create(
+              familyId,
+              newClaim.id,
+              conflict.conflictingClaimId,
+              'contradicts',
+            );
+
             result.conflictsDetected++;
             this.logger.info(
               {
                 familyId,
                 subject: claim.subject,
                 newClaimId: newClaim.id,
-                existingClaimId: existing.id,
+                existingClaimId: conflict.conflictingClaimId,
+                reasoning: conflict.reasoning,
               },
               'Conflict detected between claims',
+            );
+          } else if (conflict.conflictType === 'refines') {
+            // Create refinement relationship
+            await this.claimRelationshipRepo.create(
+              familyId,
+              newClaim.id,
+              conflict.conflictingClaimId,
+              'refines',
+            );
+
+            this.logger.debug(
+              {
+                familyId,
+                newClaimId: newClaim.id,
+                existingClaimId: conflict.conflictingClaimId,
+              },
+              'Claim refines existing claim',
             );
           }
         }

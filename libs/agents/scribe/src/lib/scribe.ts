@@ -116,7 +116,15 @@ export class ScribeAgent {
     );
 
     // Call AI provider
-    this.logger.debug({ eventId, model: this.model }, 'Calling AI provider');
+    this.logger.debug(
+      {
+        eventId,
+        model: this.model,
+        systemPromptLength: systemPrompt.length,
+        userMessageLength: userMessage.length,
+      },
+      'Calling AI provider',
+    );
     const startTime = Date.now();
 
     try {
@@ -133,7 +141,13 @@ export class ScribeAgent {
 
       const duration = Date.now() - startTime;
       this.logger.info(
-        { eventId, duration, tokens: response.usage.totalTokens },
+        {
+          eventId,
+          duration,
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+          totalTokens: response.usage.totalTokens,
+        },
         'AI provider response received',
       );
 

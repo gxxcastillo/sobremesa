@@ -49,7 +49,7 @@ export type ClaimSourceType = 'direct' | 'attributed' | 'hearsay';
 export interface ExtractedClaim {
   claimType: string;
   subject: string;
-  claimValue: string;
+  claimValue: string | Record<string, unknown>;
   confidence: Confidence;
   certaintyLanguage?: string;
   contextOriginal?: string;
@@ -57,6 +57,11 @@ export interface ExtractedClaim {
   claimedBy: string;
   /** How the claim was attributed: direct (speaker), attributed (citing someone), hearsay (vague) */
   claimedBySource: ClaimSourceType;
+
+  /** Names of people referenced in this claim */
+  referencedPeople?: string[];
+  /** Names of places referenced in this claim */
+  referencedPlaces?: string[];
 }
 
 /**

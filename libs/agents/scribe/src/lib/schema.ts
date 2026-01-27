@@ -61,8 +61,8 @@ const ClaimSchema = z.object({
   ]),
   subject: z.string(),
   claim_value: z.string(),
-  certainty_language: z.string().optional(), // "definitely", "I think", etc.
-  claimed_by: z.string(), // sender name or attributed person
+  certainty_language: z.string().optional(),
+  claimed_by: z.string(),
   claimed_by_source: z.enum(['direct', 'attributed', 'hearsay']),
 });
 

@@ -22,7 +22,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
       .from(this.tableName)
       .select('*')
       .eq('family_id', familyId)
-      .eq('redacted', false)
+      .neq('status', 'redacted')
       .ilike('subject', `%${subject}%`)
       .order('claimed_at', { ascending: false });
 
@@ -44,7 +44,6 @@ export class ClaimRepository extends BaseRepository<Claim> {
       .from(this.tableName)
       .select('*')
       .eq('family_id', familyId)
-      .eq('redacted', false)
       .eq('status', 'active')
       .ilike('subject', `%${subject}%`)
       .order('claimed_at', { ascending: false });
@@ -66,20 +65,21 @@ export class ClaimRepository extends BaseRepository<Claim> {
     entityType: string,
     entityId: string,
   ): Promise<Claim[]> {
+    // Query via claim_entities join table
     const { data, error } = await this.client
-      .from(this.tableName)
-      .select('*')
+      .from('claim_entities')
+      .select('claims!inner(*)')
       .eq('family_id', familyId)
-      .eq('redacted', false)
       .eq('entity_type', entityType)
       .eq('entity_id', entityId)
-      .order('claimed_at', { ascending: false });
+      .neq('claims.status', 'redacted')
+      .order('claims.claimed_at', { ascending: false });
 
     if (error) {
       throw new Error(`Failed to find claims by entity: ${error.message}`);
     }
 
-    return (data || []).map((row) => this.mapFromDb(row));
+    return (data || []).map((row: any) => this.mapFromDb(row.claims));
   }
 
   /**
@@ -126,8 +126,20 @@ export class ClaimRepository extends BaseRepository<Claim> {
     extracted: ExtractedClaim,
     sourceEventId: string,
     claimedBy: string,
-    entityId?: string,
-    entityType?: 'person' | 'place' | 'event' | 'story',
+    options?: {
+      // Phase 1c: Optional strength calculation fields
+      inferenceMethod?: 'direct' | 'logical_inference' | 'llm_inference';
+      claimStrength?: number;
+      strengthFactors?: {
+        algorithmScore: number;
+        breakdown: Record<string, number>;
+        llmScore?: number;
+        llmReasoning?: string;
+        final: number;
+        evaluationTriggered?: string[];
+      };
+      needsLlmEvaluation?: boolean;
+    },
   ): Promise<Claim> {
     // Convert string claimValue to Record for storage
     // Try to parse as JSON first, otherwise wrap in { value: string }
@@ -158,10 +170,15 @@ export class ClaimRepository extends BaseRepository<Claim> {
       confidence: extracted.confidence,
       certaintyLanguage: extracted.certaintyLanguage,
       contextOriginal: extracted.contextOriginal,
-      entityId,
-      entityType,
+      // Note: Entity associations now via claim_entities join table
+
+      // Phase 1c: Include strength fields if provided
+      inferenceMethod: options?.inferenceMethod,
+      claimStrength: options?.claimStrength,
+      strengthFactors: options?.strengthFactors,
+      needsLlmEvaluation: options?.needsLlmEvaluation,
+
       status: 'active',
-      redacted: false,
     };
 
     return await this.insert(record);
@@ -243,7 +260,6 @@ export class ClaimRepository extends BaseRepository<Claim> {
       .from(this.tableName)
       .select('*')
       .eq('family_id', familyId)
-      .eq('redacted', false)
       .eq('status', 'active')
       .order('claimed_at', { ascending: false });
 
@@ -252,6 +268,163 @@ export class ClaimRepository extends BaseRepository<Claim> {
     }
 
     return (data || []).map((row) => this.mapFromDb(row));
+  }
+
+  /**
+   * Find claims that need LLM evaluation (Phase 1c).
+   * Returns claims where needs_llm_evaluation is true and not currently locked.
+   */
+  async findNeedingLlmEvaluation(
+    familyId: string,
+    limit = 10,
+  ): Promise<Claim[]> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('needs_llm_evaluation', true)
+      .is('llm_eval_locked_at', null) // Not currently locked
+      .order('created_at', { ascending: true }) // Oldest first
+      .limit(limit);
+
+    if (error) {
+      throw new Error(
+        `Failed to find claims needing LLM evaluation: ${error.message}`,
+      );
+    }
+
+    return (data || []).map((row) => this.mapFromDb(row));
+  }
+
+  /**
+   * Acquire a lock on a claim for LLM evaluation (Phase 1c).
+   * Uses optimistic locking to prevent concurrent processing.
+   */
+  async acquireLlmEvalLock(
+    familyId: string,
+    claimId: string,
+    lockBy: string,
+    lockDurationMinutes = 10,
+  ): Promise<boolean> {
+    const lockExpiry = new Date();
+    lockExpiry.setMinutes(lockExpiry.getMinutes() + lockDurationMinutes);
+
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .update({
+        llm_eval_locked_at: lockExpiry.toISOString(),
+        llm_eval_locked_by: lockBy,
+      })
+      .eq('family_id', familyId)
+      .eq('id', claimId)
+      .is('llm_eval_locked_at', null) // Only lock if not already locked
+      .select();
+
+    if (error) {
+      throw new Error(`Failed to acquire LLM eval lock: ${error.message}`);
+    }
+
+    return (data?.length ?? 0) > 0;
+  }
+
+  /**
+   * Release LLM evaluation lock (Phase 1c).
+   */
+  async releaseLlmEvalLock(familyId: string, claimId: string): Promise<void> {
+    const { error } = await this.client
+      .from(this.tableName)
+      .update({
+        llm_eval_locked_at: null,
+        llm_eval_locked_by: null,
+      })
+      .eq('family_id', familyId)
+      .eq('id', claimId);
+
+    if (error) {
+      throw new Error(`Failed to release LLM eval lock: ${error.message}`);
+    }
+  }
+
+  /**
+   * Update claim with LLM evaluation results (Phase 1c).
+   */
+  async updateLlmEvaluation(
+    familyId: string,
+    claimId: string,
+    result: {
+      llmScore: number;
+      llmReasoning: string;
+      finalStrength: number;
+      strengthFactors: {
+        algorithmScore: number;
+        breakdown: Record<string, number>;
+        llmScore: number;
+        llmReasoning: string;
+        final: number;
+        evaluationTriggered?: string[];
+      };
+    },
+  ): Promise<Claim> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .update({
+        claim_strength: result.finalStrength,
+        strength_factors: result.strengthFactors,
+        needs_llm_evaluation: false,
+        llm_evaluated_at: new Date().toISOString(),
+        llm_eval_locked_at: null,
+        llm_eval_locked_by: null,
+      })
+      .eq('family_id', familyId)
+      .eq('id', claimId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update LLM evaluation: ${error.message}`);
+    }
+
+    return this.mapFromDb(data);
+  }
+
+  /**
+   * Record LLM evaluation failure (Phase 1c).
+   */
+  async recordLlmEvalFailure(
+    familyId: string,
+    claimId: string,
+    errorMessage: string,
+  ): Promise<void> {
+    // First get the current attempts count
+    const { data: current, error: fetchError } = await this.client
+      .from(this.tableName)
+      .select('llm_eval_attempts')
+      .eq('family_id', familyId)
+      .eq('id', claimId)
+      .single();
+
+    if (fetchError) {
+      throw new Error(
+        `Failed to fetch current eval attempts: ${fetchError.message}`,
+      );
+    }
+
+    const currentAttempts = (current?.llm_eval_attempts as number) ?? 0;
+
+    const { error } = await this.client
+      .from(this.tableName)
+      .update({
+        llm_eval_attempts: currentAttempts + 1,
+        llm_eval_last_error: errorMessage,
+        llm_eval_locked_at: null,
+        llm_eval_locked_by: null,
+      })
+      .eq('family_id', familyId)
+      .eq('id', claimId);
+
+    if (error) {
+      throw new Error(`Failed to record LLM eval failure: ${error.message}`);
+    }
   }
 
   /**

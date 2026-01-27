@@ -10,13 +10,22 @@ export function buildSystemPrompt(config: ScribeConfig): string {
       ? config.culturalTerms.join(', ')
       : '(none configured)';
 
-  return loadPrompt('scribe', {
+  const prompt = loadPrompt('scribe', {
     SCRIBE_NAME: config.scribeName,
     CULTURAL_TERMS: culturalTermsStr,
     THOROUGHNESS: config.thoroughness,
     CONFIDENCE: config.confidence,
     PRIMARY_LANGUAGE: config.primaryLanguage,
   });
+
+  console.log(
+    '[Scribe] System prompt length:',
+    prompt.length,
+    'chars, estimated tokens:',
+    Math.ceil(prompt.length / 4),
+  );
+
+  return prompt;
 }
 
 /**
@@ -28,6 +37,12 @@ export function buildUserMessage(
   senderName: string,
   context: ScribeContext,
 ): string {
+  console.log('[Scribe] Context stats:', {
+    recentMessageCount: context.recentMessages.length,
+    recentImageCount: context.recentImages?.length || 0,
+    messageContentLength: messageContent.length,
+  });
+
   const parts: string[] = [];
 
   // Add recent messages for context
@@ -68,6 +83,16 @@ export function buildUserMessage(
   parts.push(
     'Extract from this MESSAGE. CRITICAL: Replace all pronouns (he/she/they) with actual names from CONTEXT. Never output a pronoun as subject. Short follow-ups like "and beets" contain information—use context to interpret.',
   );
+
+  const finalMessage = parts.join('\n');
+  console.log(
+    '[Scribe] Final user message length:',
+    finalMessage.length,
+    'chars, estimated tokens:',
+    Math.ceil(finalMessage.length / 4),
+  );
+
+  return finalMessage;
 
   return parts.join('\n');
 }

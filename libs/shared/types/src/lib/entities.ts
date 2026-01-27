@@ -33,6 +33,11 @@ export interface Person extends BaseEntity {
   createdBy?: string;
   /** True if this person is a placeholder for an unknown individual in the family tree. */
   isPlaceholder?: boolean;
+  // Phase 1b: Entity merge tracking
+  /** ID of entity this was merged into */
+  supersededBy?: string;
+  /** When this entity was merged */
+  supersededAt?: Date;
 }
 
 /**
@@ -47,6 +52,11 @@ export interface Place extends BaseEntity {
   contextOriginal?: string;
   languageOriginal?: LanguageCode;
   firstMentionedEventId?: string;
+  // Phase 1b: Entity merge tracking
+  /** ID of entity this was merged into */
+  supersededBy?: string;
+  /** When this entity was merged */
+  supersededAt?: Date;
 }
 
 /**
@@ -65,10 +75,15 @@ export interface TimelineEvent extends BaseEntity {
   descriptionLanguage?: LanguageCode;
   dateText?: string;
   dateYear?: number;
-  peopleInvolved: string[];
+  // Note: People associations now in event_people join table
   placeId?: string;
   sourceEventId?: string;
   claimedBy?: string;
+  // Phase 1b: Entity merge tracking
+  /** ID of entity this was merged into */
+  supersededBy?: string;
+  /** When this entity was merged */
+  supersededAt?: Date;
 }
 
 /**
@@ -82,18 +97,30 @@ export interface Story extends BaseEntity {
   timeframe?: string;
   completeness: 'partial' | 'complete' | 'fragmentary';
   confidence: Confidence;
-  people: string[];
-  places: string[];
-  events: string[];
-  sourceEventIds: string[];
+  // Note: Entity associations now in story_people/places/events join tables
+  // Note: Source provenance now in story_conversation_events join table
+  /** @deprecated Use story_conversation_events join table instead */
+  sourceEventIds?: string[];
   sharedBy?: string;
+  // Phase 1b: Entity merge tracking
+  /** ID of entity this was merged into */
+  supersededBy?: string;
+  /** When this entity was merged */
+  supersededAt?: Date;
 }
 
 /**
  * An atomic factual claim with provenance.
+ * Note: Claim uses `status: 'redacted'` instead of the boolean `redacted` field.
  */
-export interface Claim extends BaseEntity {
-  claimType: 'date' | 'location' | 'relationship' | 'fact' | string;
+export interface Claim extends Omit<BaseEntity, 'redacted'> {
+  claimType:
+    | 'date'
+    | 'location'
+    | 'relationship'
+    | 'detail'
+    | 'identity'
+    | string;
   subject: string;
   claimValue: Record<string, unknown>;
   sourceEventId: string;
@@ -105,8 +132,26 @@ export interface Claim extends BaseEntity {
   certaintyLanguage?: string;
   contextOriginal?: string;
   languageOriginal?: LanguageCode;
-  entityId?: string;
-  entityType?: 'person' | 'place' | 'event' | 'story';
+  // Note: Entity associations now in claim_entities join table
+
+  // Phase 1c: Claim inference and strength evaluation
+  inferenceMethod?: 'direct' | 'logical_inference' | 'llm_inference';
+  claimStrength?: number; // 0.0-1.0
+  strengthFactors?: {
+    algorithmScore: number;
+    breakdown: Record<string, number>;
+    llmScore?: number;
+    llmReasoning?: string;
+    final: number;
+    evaluationTriggered?: string[];
+  };
+  needsLlmEvaluation?: boolean;
+  llmEvaluatedAt?: Date;
+  llmEvalLockedAt?: Date;
+  llmEvalLockedBy?: string;
+  llmEvalAttempts?: number;
+  llmEvalLastError?: string;
+
   status: 'active' | 'superseded' | 'disputed' | 'redacted';
 }
 
@@ -228,4 +273,126 @@ export interface Question {
   storyContext?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * Entity merge record (active merges, deletable to undo).
+ */
+export interface EntityMerge {
+  id: string;
+  familyId: string;
+  /** Entity being merged away */
+  sourceEntityId: string;
+  sourceEntityType: 'person' | 'place' | 'event' | 'story';
+  /** Entity being kept */
+  targetEntityId: string;
+  targetEntityType: 'person' | 'place' | 'event' | 'story';
+  /** How merge was determined */
+  mergeStrategy?: 'fuzzy_match' | 'identity_claim' | 'manual' | 'llm_resolved';
+  /** Merge confidence 0.00-1.00 */
+  confidence?: number;
+  /** Event that triggered this merge */
+  triggerEventId?: string;
+  /** Who performed the merge */
+  mergedBy?: 'registrar' | 'curator' | 'admin' | 'llm_resolver';
+  /** Human-readable explanation */
+  mergeReason?: string;
+  createdAt: Date;
+}
+
+/**
+ * Many-to-many claim-entity relationship with identity resolution support.
+ */
+export interface ClaimEntity {
+  id: string;
+  familyId: string;
+  claimId: string;
+  entityId: string;
+  entityType: 'person' | 'place' | 'event' | 'story' | 'relationship';
+  /** Entity role: subject, related, identity_source, identity_target, location, witness */
+  role?: string;
+  /** For identity claims: whether identity has been resolved */
+  resolved?: boolean;
+  /** Links to merge decision for identity claims */
+  entityMergeId?: string;
+  /** Extended metadata (JSONB) - for identity: descriptive_name, canonical_name */
+  relationshipMetadata?: Record<string, unknown>;
+  createdAt: Date;
+}
+
+/**
+ * Relationship between claims (supports, contradicts, refines, supersedes, derived_from).
+ */
+export interface ClaimRelationship {
+  familyId: string;
+  claimId: string;
+  relatedClaimId: string;
+  /** Type: supports, contradicts, refines, supersedes, derived_from */
+  relationshipType:
+    | 'supports'
+    | 'contradicts'
+    | 'refines'
+    | 'supersedes'
+    | 'derived_from';
+  createdAt: Date;
+}
+
+/**
+ * Story People - Many-to-many: stories ↔ people
+ */
+export interface StoryPerson {
+  familyId: string;
+  storyId: string;
+  personId: string;
+  createdAt: Date;
+}
+
+/**
+ * Story Places - Many-to-many: stories ↔ places
+ */
+export interface StoryPlace {
+  familyId: string;
+  storyId: string;
+  placeId: string;
+  createdAt: Date;
+}
+
+/**
+ * Story Events - Many-to-many: stories ↔ events
+ */
+export interface StoryEvent {
+  familyId: string;
+  storyId: string;
+  eventId: string;
+  createdAt: Date;
+}
+
+/**
+ * Event People - Many-to-many: events ↔ people
+ */
+export interface EventPerson {
+  familyId: string;
+  eventId: string;
+  personId: string;
+  createdAt: Date;
+}
+
+/**
+ * Event Places - Many-to-many: events ↔ places
+ */
+export interface EventPlace {
+  familyId: string;
+  eventId: string;
+  placeId: string;
+  createdAt: Date;
+}
+
+/**
+ * Story Conversation Events - Many-to-many: stories ↔ conversation_events (provenance)
+ */
+export interface StoryConversationEvent {
+  familyId: string;
+  storyId: string;
+  conversationEventId: string;
+  createdAt: Date;
 }

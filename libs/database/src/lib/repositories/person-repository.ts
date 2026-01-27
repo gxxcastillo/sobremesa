@@ -184,6 +184,32 @@ export class PersonRepository extends BaseRepository<Person> {
   /**
    * Find or create a person, merging aliases if already exists.
    */
+  /**
+   * Create a new person without checking for existing matches.
+   * Use this when entity matching has already been performed.
+   */
+  async createNew(
+    familyId: string,
+    extracted: ExtractedPerson,
+    sourceEventId: string,
+    createdBy?: string,
+  ): Promise<Person> {
+    const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
+      familyId,
+      name: extracted.name,
+      aliases: extracted.aliases,
+      birthYear: extracted.birthYear,
+      birthYearConfidence: extracted.confidence,
+      deathYear: extracted.deathYear,
+      deathYearConfidence: extracted.confidence,
+      firstMentionedEventId: sourceEventId,
+      createdBy,
+      redacted: false,
+    };
+
+    return await this.insert(record);
+  }
+
   async findOrCreate(
     familyId: string,
     extracted: ExtractedPerson,
@@ -217,20 +243,7 @@ export class PersonRepository extends BaseRepository<Person> {
     }
 
     // Create new person
-    const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
-      familyId,
-      name: extracted.name,
-      aliases: extracted.aliases,
-      birthYear: extracted.birthYear,
-      birthYearConfidence: extracted.confidence,
-      deathYear: extracted.deathYear,
-      deathYearConfidence: extracted.confidence,
-      firstMentionedEventId: sourceEventId,
-      createdBy,
-      redacted: false,
-    };
-
-    return await this.insert(record);
+    return await this.createNew(familyId, extracted, sourceEventId, createdBy);
   }
 
   /**

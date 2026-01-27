@@ -65,24 +65,26 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
 
   /**
    * Find events involving a specific person.
+   * Uses the event_people join table.
    */
   async findByPerson(
     familyId: string,
     personId: string,
   ): Promise<TimelineEvent[]> {
+    // Query via event_people join table
     const { data, error } = await this.client
-      .from(this.tableName)
-      .select('*')
+      .from('event_people')
+      .select('events!inner(*)')
       .eq('family_id', familyId)
-      .eq('redacted', false)
-      .contains('people_involved', [personId])
-      .order('date_year', { ascending: true });
+      .eq('person_id', personId)
+      .eq('events.redacted', false)
+      .order('events.date_year', { ascending: true });
 
     if (error) {
       throw new Error(`Failed to find events by person: ${error.message}`);
     }
 
-    return (data || []).map((row) => this.mapFromDb(row));
+    return (data || []).map((row: any) => this.mapFromDb(row.events));
   }
 
   /**
@@ -113,18 +115,17 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
   async createFromExtracted(
     familyId: string,
     extracted: ExtractedEvent,
-    peopleIds: string[],
     placeId: string | undefined,
     sourceEventId: string,
     claimedBy?: string,
   ): Promise<TimelineEvent> {
+    // Note: People associations removed - use EventPeopleRepository to link people
     const record: Omit<TimelineEvent, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,
       title: extracted.title,
       eventType: extracted.eventType,
       dateText: extracted.dateText,
       dateYear: extracted.dateYear,
-      peopleInvolved: peopleIds,
       placeId,
       sourceEventId,
       claimedBy,

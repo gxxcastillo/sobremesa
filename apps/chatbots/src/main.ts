@@ -134,6 +134,9 @@ async function main() {
       processor.setRouter((eventId, familyId, context) =>
         intern.route(eventId, familyId, context),
       );
+      processor.setFilter((eventId, familyId, context) =>
+        intern.filter(eventId, familyId, context),
+      );
       processor.setImageLinker((eventId, familyId, context) =>
         intern.linkToImage(eventId, familyId, context),
       );

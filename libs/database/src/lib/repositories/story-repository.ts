@@ -57,50 +57,58 @@ export class StoryRepository extends BaseRepository<Story> {
 
   /**
    * Find stories involving a specific person.
+   * Uses the story_people join table.
    */
   async findByPerson(familyId: string, personId: string): Promise<Story[]> {
+    // Query via story_people join table
     const { data, error } = await this.client
-      .from(this.tableName)
-      .select('*')
+      .from('story_people')
+      .select('stories!inner(*)')
       .eq('family_id', familyId)
-      .eq('redacted', false)
-      .contains('people', [personId])
-      .order('created_at', { ascending: false });
+      .eq('person_id', personId)
+      .eq('stories.redacted', false)
+      .order('stories.created_at', { ascending: false });
 
     if (error) {
       throw new Error(`Failed to find stories by person: ${error.message}`);
     }
 
-    return (data || []).map((row) => this.mapFromDb(row));
+    return (data || []).map((row: any) => this.mapFromDb(row.stories));
   }
 
   /**
-   * Find a story by source event ID.
+   * Find a story by conversation event ID.
+   * Uses the story_conversation_events join table.
    */
-  async findBySourceEvent(
+  async findByConversationEvent(
     familyId: string,
-    sourceEventId: string,
+    conversationEventId: string,
   ): Promise<Story | null> {
+    // Query via story_conversation_events join table
     const { data, error } = await this.client
-      .from(this.tableName)
-      .select('*')
+      .from('story_conversation_events')
+      .select('stories!inner(*)')
       .eq('family_id', familyId)
-      .eq('redacted', false)
-      .contains('source_event_ids', [sourceEventId])
-      .single();
+      .eq('conversation_event_id', conversationEventId)
+      .eq('stories.redacted', false)
+      .maybeSingle();
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        return null;
-      }
-      throw new Error(`Failed to find story by source event: ${error.message}`);
+      throw new Error(
+        `Failed to find story by conversation event: ${error.message}`,
+      );
     }
 
-    return this.mapFromDb(data);
+    if (!data) {
+      return null;
+    }
+
+    return this.mapFromDb((data as any).stories);
   }
 
   /**
    * Create a story from extracted data.
+   * Note: After creating, use StoryConversationEventsRepository to link conversation events.
    */
   async createFromExtracted(
     familyId: string,
@@ -110,14 +118,16 @@ export class StoryRepository extends BaseRepository<Story> {
       themes: string[];
       timeframe?: string;
     },
-    peopleIds: string[],
-    placeIds: string[],
-    eventIds: string[],
     sourceEventId: string,
     language: LanguageCode,
     sharedBy?: string,
   ): Promise<Story> {
-    const record: Omit<Story, 'id' | 'createdAt' | 'updatedAt'> = {
+    // Note: Entity associations use join tables (story_people, story_places, story_events)
+    // Note: Source provenance uses story_conversation_events join table
+    const record: Omit<
+      Story,
+      'id' | 'createdAt' | 'updatedAt' | 'sourceEventIds'
+    > = {
       familyId,
       title: story.title,
       contentOriginal: story.content,
@@ -126,19 +136,19 @@ export class StoryRepository extends BaseRepository<Story> {
       timeframe: story.timeframe,
       completeness: 'partial',
       confidence: 'medium' as Confidence,
-      people: peopleIds,
-      places: placeIds,
-      events: eventIds,
-      sourceEventIds: [sourceEventId],
       sharedBy,
       redacted: false,
     };
 
-    return await this.insert(record);
+    const created = await this.insert(record);
+
+    // Return with sourceEventIds populated for convenience (caller should also link via join table)
+    return { ...created, sourceEventIds: [sourceEventId] };
   }
 
   /**
    * Append additional content to an existing story.
+   * Note: After appending, use StoryConversationEventsRepository to link the new conversation event.
    */
   async appendToStory(
     familyId: string,
@@ -152,10 +162,9 @@ export class StoryRepository extends BaseRepository<Story> {
       throw new Error(`Story not found: ${storyId}`);
     }
 
-    // Append content and source event
+    // Append content only (source events tracked via story_source_events join table)
     const updates = {
       content_original: existing.contentOriginal + '\n\n' + additionalContent,
-      source_event_ids: [...existing.sourceEventIds, sourceEventId],
     };
 
     const { data, error } = await this.client
@@ -170,7 +179,12 @@ export class StoryRepository extends BaseRepository<Story> {
       throw new Error(`Failed to append to story: ${error.message}`);
     }
 
-    return this.mapFromDb(data);
+    const updated = this.mapFromDb(data);
+    // Return with new sourceEventId appended for convenience (caller should also link via join table)
+    return {
+      ...updated,
+      sourceEventIds: [...(existing.sourceEventIds || []), sourceEventId],
+    };
   }
 
   /**

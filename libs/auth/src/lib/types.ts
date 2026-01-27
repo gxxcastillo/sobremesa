@@ -107,6 +107,8 @@ export interface TelegramChatAdmin {
   adminTitle: string | null;
   canManageChat: boolean;
   canDeleteMessages: boolean;
+  permissions: Record<string, boolean>;
+  providerUserId: string;
   lastSyncedAt: Date;
   createdAt: Date;
   updatedAt: Date;

@@ -1,8 +1,8 @@
 /**
  * TelegramChatAdmin Repository
  *
- * Manages telegram_chat_admins table operations for caching
- * Telegram chat admin status
+ * Manages chat_admins table operations for caching
+ * Telegram chat admin status (queries with source='telegram')
  */
 
 import { getServiceClient, mapRowToCamelCase } from '@sobremesa/database';
@@ -28,18 +28,19 @@ export class TelegramChatAdminRepository {
     const client = getServiceClient();
 
     const { data, error } = await client
-      .from('telegram_chat_admins')
+      .from('chat_admins')
       .select('*')
       .eq('family_id', familyId)
+      .eq('source', 'telegram')
       .eq('chat_id', chatId)
-      .eq('telegram_user_id', telegramUserId)
+      .eq('provider_user_id', telegramUserId.toString())
       .single();
 
     if (error || !data) {
       return null;
     }
 
-    return mapRowToCamelCase(data) as TelegramChatAdmin;
+    return this.mapToTelegramChatAdmin(data);
   }
 
   /**
@@ -49,9 +50,10 @@ export class TelegramChatAdminRepository {
     const client = getServiceClient();
 
     const { data, error } = await client
-      .from('telegram_chat_admins')
+      .from('chat_admins')
       .select('*')
       .eq('family_id', familyId)
+      .eq('source', 'telegram')
       .eq('is_admin', true)
       .order('last_synced_at', { ascending: false });
 
@@ -59,7 +61,7 @@ export class TelegramChatAdminRepository {
       return [];
     }
 
-    return data.map((row) => mapRowToCamelCase(row) as TelegramChatAdmin);
+    return data.map((row) => this.mapToTelegramChatAdmin(row));
   }
 
   /**
@@ -72,9 +74,10 @@ export class TelegramChatAdminRepository {
     const client = getServiceClient();
 
     const { data, error } = await client
-      .from('telegram_chat_admins')
+      .from('chat_admins')
       .select('*')
       .eq('family_id', familyId)
+      .eq('source', 'telegram')
       .eq('chat_id', chatId)
       .eq('is_admin', true)
       .order('last_synced_at', { ascending: false });
@@ -83,7 +86,7 @@ export class TelegramChatAdminRepository {
       return [];
     }
 
-    return data.map((row) => mapRowToCamelCase(row) as TelegramChatAdmin);
+    return data.map((row) => this.mapToTelegramChatAdmin(row));
   }
 
   /**
@@ -96,10 +99,11 @@ export class TelegramChatAdminRepository {
     const client = getServiceClient();
 
     const { data, error } = await client
-      .from('telegram_chat_admins')
+      .from('chat_admins')
       .select('id')
       .eq('family_id', familyId)
-      .eq('telegram_user_id', telegramUserId)
+      .eq('source', 'telegram')
+      .eq('provider_user_id', telegramUserId.toString())
       .eq('is_admin', true)
       .limit(1);
 
@@ -120,21 +124,29 @@ export class TelegramChatAdminRepository {
   ): Promise<TelegramChatAdmin> {
     const client = getServiceClient();
 
+    const permissions: Record<string, boolean> = {};
+    if (adminInfo.canManageChat !== undefined) {
+      permissions.can_manage_chat = adminInfo.canManageChat;
+    }
+    if (adminInfo.canDeleteMessages !== undefined) {
+      permissions.can_delete_messages = adminInfo.canDeleteMessages;
+    }
+
     const { data, error } = await client
-      .from('telegram_chat_admins')
+      .from('chat_admins')
       .upsert(
         {
           family_id: familyId,
+          source: 'telegram',
           chat_id: chatId,
-          telegram_user_id: adminInfo.telegramUserId,
+          provider_user_id: adminInfo.telegramUserId.toString(),
           is_admin: adminInfo.isAdmin,
           admin_title: adminInfo.adminTitle || null,
-          can_manage_chat: adminInfo.canManageChat || false,
-          can_delete_messages: adminInfo.canDeleteMessages || false,
+          permissions,
           last_synced_at: new Date().toISOString(),
         },
         {
-          onConflict: 'family_id,chat_id,telegram_user_id',
+          onConflict: 'family_id,source,chat_id,provider_user_id',
         },
       )
       .select()
@@ -144,7 +156,7 @@ export class TelegramChatAdminRepository {
       throw new Error(`Failed to upsert admin status: ${error.message}`);
     }
 
-    return mapRowToCamelCase(data) as TelegramChatAdmin;
+    return this.mapToTelegramChatAdmin(data);
   }
 
   /**
@@ -160,13 +172,14 @@ export class TelegramChatAdminRepository {
 
     // Get all current users in this chat
     const { data: currentRecords } = await client
-      .from('telegram_chat_admins')
-      .select('telegram_user_id')
+      .from('chat_admins')
+      .select('provider_user_id')
       .eq('family_id', familyId)
+      .eq('source', 'telegram')
       .eq('chat_id', chatId);
 
     const currentUserIds = new Set(
-      currentRecords?.map((r) => r.telegram_user_id) || [],
+      currentRecords?.map((r) => parseInt(r.provider_user_id, 10)) || [],
     );
     const newUserIds = new Set(admins.map((a) => a.telegramUserId));
 
@@ -193,9 +206,10 @@ export class TelegramChatAdminRepository {
     const client = getServiceClient();
 
     const { error } = await client
-      .from('telegram_chat_admins')
+      .from('chat_admins')
       .delete()
-      .eq('family_id', familyId);
+      .eq('family_id', familyId)
+      .eq('source', 'telegram');
 
     return !error;
   }
@@ -207,11 +221,26 @@ export class TelegramChatAdminRepository {
     const client = getServiceClient();
 
     const { error } = await client
-      .from('telegram_chat_admins')
+      .from('chat_admins')
       .delete()
       .eq('family_id', familyId)
+      .eq('source', 'telegram')
       .eq('chat_id', chatId);
 
     return !error;
+  }
+
+  /**
+   * Map database row to TelegramChatAdmin type
+   */ // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private mapToTelegramChatAdmin(row: any): TelegramChatAdmin {
+    const mapped = mapRowToCamelCase<TelegramChatAdmin>(row);
+    const perms = mapped.permissions || {};
+    return {
+      ...mapped,
+      telegramUserId: parseInt(mapped.providerUserId, 10),
+      canManageChat: perms.can_manage_chat || false,
+      canDeleteMessages: perms.can_delete_messages || false,
+    } as TelegramChatAdmin;
   }
 }

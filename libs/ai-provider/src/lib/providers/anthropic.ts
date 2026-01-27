@@ -138,6 +138,13 @@ export class AnthropicProvider implements AIProvider {
     const useNativeStructuredOutputs =
       hasJsonSchemaFormat && this.supportsStructuredOutputs(model);
 
+    // Log structured output mode for debugging
+    if (hasJsonSchemaFormat) {
+      console.log(
+        `[Anthropic Provider] Model: ${model}, Using native structured outputs: ${useNativeStructuredOutputs}`,
+      );
+    }
+
     // Build system prompt, potentially with JSON schema for unsupported models
     let systemPrompt = request.system || '';
     if (
@@ -151,6 +158,9 @@ export class AnthropicProvider implements AIProvider {
         request.responseFormat.json_schema.schema,
         null,
         2,
+      );
+      console.log(
+        `[Anthropic Provider] Embedding schema in system prompt (${schemaJson.length} chars)`,
       );
       systemPrompt = systemPrompt
         ? `${systemPrompt}\n\n## Required JSON Schema\n\nYou MUST respond with valid JSON that conforms exactly to this schema. Use these exact field names:\n\n\`\`\`json\n${schemaJson}\n\`\`\`\n\nRespond ONLY with the JSON object, no additional text.`
