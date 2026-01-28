@@ -2,6 +2,8 @@ import {
   QuestionRepository,
   FamilyRepository,
   EventLogRepository,
+  FamilyAccessRepository,
+  PersonRepository,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type { AIProvider } from '@sobremesa/ai-provider';
@@ -39,6 +41,10 @@ export interface FacilitatorAgentOptions {
   familyRepo?: FamilyRepository;
   /** Event log repository */
   eventLog?: EventLogRepository;
+  /** Family access repository (for participant checks) */
+  familyAccessRepo?: FamilyAccessRepository;
+  /** Person repository (for name lookups) */
+  personRepo?: PersonRepository;
   /** Logger instance */
   logger?: pino.Logger;
   /** Minimum minutes between questions to same family */
@@ -96,6 +102,8 @@ export class FacilitatorAgent {
   private questionRepo: QuestionRepository;
   private familyRepo: FamilyRepository;
   private eventLog: EventLogRepository;
+  private familyAccessRepo: FamilyAccessRepository;
+  private personRepo: PersonRepository;
   private logger: pino.Logger;
   private minMinutesBetweenQuestions: number;
 
@@ -106,6 +114,9 @@ export class FacilitatorAgent {
     this.questionRepo = options.questionRepo || new QuestionRepository();
     this.familyRepo = options.familyRepo || new FamilyRepository();
     this.eventLog = options.eventLog || new EventLogRepository();
+    this.familyAccessRepo =
+      options.familyAccessRepo || new FamilyAccessRepository();
+    this.personRepo = options.personRepo || new PersonRepository();
     this.logger = options.logger || createLogger({ name: 'facilitator' });
     this.minMinutesBetweenQuestions = options.minMinutesBetweenQuestions ?? 60; // Default 1 hour
   }
@@ -215,9 +226,19 @@ export class FacilitatorAgent {
       return NaN;
     } else if (this.provider) {
       try {
-        message = await this.formatWithWarmth(family, question);
+        // Check if target person is a verified participant
+        const isTargetParticipant = await this.checkTargetParticipant(
+          family,
+          question,
+        );
+
+        message = await this.formatWithWarmth(
+          family,
+          question,
+          isTargetParticipant,
+        );
         this.logger.debug(
-          { questionId: question.id },
+          { questionId: question.id, isTargetParticipant },
           'Applied warmth formula via AI',
         );
       } catch (error) {
@@ -244,19 +265,82 @@ export class FacilitatorAgent {
   }
 
   /**
+   * Check if the question's target person is a verified participant in the chat.
+   * Returns:
+   *   - true: Person is verified to be in the chat (address them directly)
+   *   - false: Person is NOT in the chat (mentioned in story only)
+   *   - undefined: No target person, or lookup failed
+   */
+  private async checkTargetParticipant(
+    family: Family,
+    question: Question,
+  ): Promise<boolean | undefined> {
+    if (!question.targetPerson || !family.chatId) {
+      return undefined;
+    }
+
+    try {
+      // Look up person by name
+      const matchResult = await this.personRepo.findBestMatch(
+        family.id,
+        question.targetPerson,
+        [],
+      );
+
+      if (!matchResult?.person) {
+        this.logger.debug(
+          { familyId: family.id, targetPerson: question.targetPerson },
+          'Target person not found in family',
+        );
+        return false;
+      }
+
+      // Check if person is a participant in the conversation
+      const isParticipant = await this.familyAccessRepo.isPersonParticipant(
+        family.id,
+        family.chatId,
+        matchResult.person.id,
+      );
+
+      this.logger.debug(
+        {
+          familyId: family.id,
+          targetPerson: question.targetPerson,
+          personId: matchResult.person.id,
+          isParticipant,
+        },
+        'Checked target person participation',
+      );
+
+      return isParticipant;
+    } catch (error) {
+      this.logger.warn(
+        { familyId: family.id, targetPerson: question.targetPerson, error },
+        'Failed to check target participant, defaulting to group addressing',
+      );
+      return undefined;
+    }
+  }
+
+  /**
    * Apply the warmth formula to a question using AI.
    * Uses a fast model for cheap transformation.
+   *
+   * @param family - The family configuration
+   * @param question - The question to transform
+   * @param isTargetParticipant - Whether target person is verified participant
    */
   private async formatWithWarmth(
     family: Family,
     question: Question,
+    isTargetParticipant?: boolean,
   ): Promise<string> {
     if (!this.provider) {
       throw new Error('No AI provider available for warmth formatting');
     }
 
     const systemPrompt = buildSystemPrompt(family.config);
-    const userPrompt = buildUserPrompt(question);
+    const userPrompt = buildUserPrompt(question, isTargetParticipant);
 
     const response = await this.provider.complete({
       model: this.model,

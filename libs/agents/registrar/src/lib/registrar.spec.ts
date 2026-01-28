@@ -10,6 +10,7 @@ import { Confidence } from '@sobremesa/shared-types';
 const mockPersonRepo = {
   findBestMatch: vi.fn(),
   findOrCreate: vi.fn(),
+  createNew: vi.fn(),
   updateAliases: vi.fn(),
 };
 
@@ -82,6 +83,10 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         ...person,
       }),
     );
+    mockPersonRepo.createNew.mockImplementation(async (_familyId, person) => ({
+      id: `person-${person.name.toLowerCase().replace(/\s+/g, '-')}`,
+      ...person,
+    }));
 
     mockPlaceRepo.findOrCreate.mockImplementation(async (_familyId, place) => ({
       id: `place-${place.name.toLowerCase().replace(/\s+/g, '-')}`,

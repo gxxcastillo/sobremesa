@@ -13,6 +13,9 @@
       "options": {
         "command": "eslint libs/agents/facilitator"
       }
+    },
+    "test": {
+      "executor": "@nx/vitest:test"
     }
   }
 }

@@ -1,6 +1,14 @@
 export { ConversationEventRepository } from './conversation-event-repository';
 export { ConversationRedactionRepository } from './conversation-redaction-repository';
 export { FamilyRepository } from './family-repository';
+export {
+  FamilyAccessRepository,
+  type ConversationParticipant,
+  type ParticipantWithContext,
+  type ParticipantRelationship,
+  type ParticipantMatch,
+  type SubjectType,
+} from './family-access-repository';
 export { EventLogRepository } from './event-log-repository';
 export { ProcessingQueueRepository } from './processing-queue-repository';
 export { PersonRepository, type PersonMatchResult } from './person-repository';

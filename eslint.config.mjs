@@ -8,6 +8,7 @@ export default [
     ignores: [
       '**/dist',
       '**/build',
+      '**/out-tsc',
       '**/vite.config.*.timestamp*',
       '**/vitest.config.*.timestamp*',
     ],

@@ -48,9 +48,16 @@ export function buildSystemPrompt(config: FamilyConfig): string {
  * Build the user prompt for transforming a question with warmth.
  *
  * @param question - The question to transform
+ * @param isTargetParticipant - Whether the target person is a verified conversation participant.
+ *   - true: Person is verified to be in the chat (address them directly)
+ *   - false: Person is NOT in the chat (mentioned in story only)
+ *   - undefined: Unknown / verification failed (default to group addressing)
  * @returns The user prompt with question context
  */
-export function buildUserPrompt(question: Question): string {
+export function buildUserPrompt(
+  question: Question,
+  isTargetParticipant?: boolean,
+): string {
   const parts: string[] = [];
 
   parts.push('Please apply the warmth formula to this question:');
@@ -58,7 +65,17 @@ export function buildUserPrompt(question: Question): string {
   parts.push(`**Question:** ${question.contentOriginal}`);
 
   if (question.targetPerson) {
-    parts.push(`**Who to ask:** ${question.targetPerson}`);
+    if (isTargetParticipant === true) {
+      // ONLY include "Who to ask" if VERIFIED participant
+      parts.push(`**Who to ask:** ${question.targetPerson}`);
+    } else {
+      // Either false or undefined - don't address directly
+      parts.push(
+        `**Note:** This question relates to ${question.targetPerson} ` +
+          `(mentioned in story; not confirmed present in chat). ` +
+          `Ask the group warmly without addressing them by name.`,
+      );
+    }
   }
 
   if (question.storyContext) {

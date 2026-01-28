@@ -3120,5 +3120,239 @@ CREATE POLICY "event_places_select" ON event_places
 -- Note: INSERT/UPDATE/DELETE for join tables via service-role only (managed by Registrar/Historian)
 
 -- ============================================================================
+-- PARTICIPANT VERIFICATION FUNCTIONS
+-- ============================================================================
+
+-- Check if a person's linked identity has sent messages in a conversation
+CREATE OR REPLACE FUNCTION is_person_participant(
+  p_family_id UUID,
+  p_conversation_id TEXT,
+  p_person_id UUID
+) RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM conversation_events ce
+    JOIN identities i ON i.provider = ce.source
+      AND i.provider_user_id = ce.actor_external_id
+    JOIN family_access fa ON fa.identity_id = i.id
+      AND fa.family_id = ce.family_id
+    WHERE ce.family_id = p_family_id
+      AND ce.conversation_id = p_conversation_id
+      AND fa.person_id = p_person_id
+      AND fa.status = 'active'
+    LIMIT 1
+  );
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+COMMENT ON FUNCTION is_person_participant IS
+  'Check if a person is a verified conversation participant (their identity has sent messages).';
+
+-- Get all verified participants in a conversation
+CREATE OR REPLACE FUNCTION get_conversation_participants(
+  p_family_id UUID,
+  p_conversation_id TEXT
+) RETURNS TABLE (
+  person_id UUID,
+  person_name TEXT,
+  identity_id UUID,
+  identity_display_name TEXT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT DISTINCT
+    p.id AS person_id,
+    p.name AS person_name,
+    i.id AS identity_id,
+    i.display_name AS identity_display_name
+  FROM conversation_events ce
+  JOIN identities i ON i.provider = ce.source
+    AND i.provider_user_id = ce.actor_external_id
+  JOIN family_access fa ON fa.identity_id = i.id
+    AND fa.family_id = ce.family_id
+  JOIN people p ON p.id = fa.person_id
+    AND p.family_id = fa.family_id
+  WHERE ce.family_id = p_family_id
+    AND ce.conversation_id = p_conversation_id
+    AND fa.status = 'active'
+    AND fa.person_id IS NOT NULL
+    AND p.redacted = false
+  ORDER BY p.name;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+COMMENT ON FUNCTION get_conversation_participants IS
+  'Get all verified participants (people whose identities have sent messages).';
+
+-- Get participants with their family relationships (for question targeting context)
+CREATE OR REPLACE FUNCTION get_participants_with_relationships(
+  p_family_id UUID,
+  p_conversation_id TEXT
+) RETURNS TABLE (
+  person_id UUID,
+  person_name TEXT,
+  relationship_type TEXT,
+  related_person_id UUID,
+  related_person_name TEXT
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH participants AS (
+    SELECT DISTINCT p.id AS participant_id, p.name AS participant_name
+    FROM conversation_events ce
+    JOIN identities i ON i.provider = ce.source
+      AND i.provider_user_id = ce.actor_external_id
+    JOIN family_access fa ON fa.identity_id = i.id
+      AND fa.family_id = ce.family_id
+    JOIN people p ON p.id = fa.person_id
+      AND p.family_id = fa.family_id
+    WHERE ce.family_id = p_family_id
+      AND ce.conversation_id = p_conversation_id
+      AND fa.status = 'active'
+      AND fa.person_id IS NOT NULL
+      AND p.redacted = false
+  )
+  SELECT
+    pt.participant_id AS person_id,
+    pt.participant_name AS person_name,
+    -- Relationship type from participant's perspective
+    CASE
+      WHEN r.person_a_id = pt.participant_id THEN
+        CASE r.relationship_type WHEN 'parent' THEN 'parent' ELSE r.relationship_type END
+      WHEN r.person_b_id = pt.participant_id THEN
+        CASE r.relationship_type WHEN 'parent' THEN 'child' ELSE r.relationship_type END
+      ELSE NULL
+    END AS relationship_type,
+    CASE
+      WHEN r.person_a_id = pt.participant_id THEN r.person_b_id
+      WHEN r.person_b_id = pt.participant_id THEN r.person_a_id
+      ELSE NULL
+    END AS related_person_id,
+    rp.name AS related_person_name
+  FROM participants pt
+  LEFT JOIN relationships r ON r.family_id = p_family_id
+    AND (r.person_a_id = pt.participant_id OR r.person_b_id = pt.participant_id)
+    AND r.status = 'active'
+  LEFT JOIN people rp ON rp.family_id = p_family_id
+    AND rp.id = CASE
+      WHEN r.person_a_id = pt.participant_id THEN r.person_b_id
+      WHEN r.person_b_id = pt.participant_id THEN r.person_a_id
+    END
+    AND rp.redacted = false
+  ORDER BY pt.participant_name, rp.name;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+COMMENT ON FUNCTION get_participants_with_relationships IS
+  'Get participants with family relationships (one row per relationship, includes participants without relationships).';
+
+-- Find participants connected to a specific subject (person/event/place/story)
+CREATE OR REPLACE FUNCTION get_participants_related_to_subject(
+  p_family_id UUID,
+  p_conversation_id TEXT,
+  p_subject_type TEXT,  -- 'person', 'event', 'place', 'story'
+  p_subject_id UUID
+) RETURNS TABLE (
+  person_id UUID,
+  person_name TEXT,
+  connection_reason TEXT,
+  connection_type TEXT
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH verified_participants AS (
+    SELECT DISTINCT p.id AS participant_id, p.name AS participant_name
+    FROM conversation_events ce
+    JOIN identities i ON i.provider = ce.source
+      AND i.provider_user_id = ce.actor_external_id
+    JOIN family_access fa ON fa.identity_id = i.id
+      AND fa.family_id = ce.family_id
+    JOIN people p ON p.id = fa.person_id
+      AND p.family_id = fa.family_id
+    WHERE ce.family_id = p_family_id
+      AND ce.conversation_id = p_conversation_id
+      AND fa.status = 'active'
+      AND fa.person_id IS NOT NULL
+      AND p.redacted = false
+  )
+  SELECT * FROM (
+    -- Subject is PERSON: find participants with relationships
+    SELECT
+      vp.participant_id AS person_id,
+      vp.participant_name AS person_name,
+      CASE
+        WHEN r.person_a_id = vp.participant_id THEN
+          CASE r.relationship_type
+            WHEN 'parent' THEN 'parent of ' ELSE r.relationship_type || ' of '
+          END || subject_person.name
+        ELSE
+          CASE r.relationship_type
+            WHEN 'parent' THEN 'child of ' ELSE r.relationship_type || ' of '
+          END || subject_person.name
+      END AS connection_reason,
+      'relationship'::TEXT AS connection_type
+    FROM verified_participants vp
+    JOIN relationships r ON r.family_id = p_family_id
+      AND (r.person_a_id = vp.participant_id OR r.person_b_id = vp.participant_id)
+      AND (r.person_a_id = p_subject_id OR r.person_b_id = p_subject_id)
+      AND r.person_a_id != r.person_b_id
+      AND r.status = 'active'
+    JOIN people subject_person ON subject_person.id = p_subject_id
+      AND subject_person.family_id = p_family_id
+    WHERE p_subject_type = 'person'
+      AND vp.participant_id != p_subject_id
+
+    UNION ALL
+
+    -- Subject is PERSON: include if participant IS the subject (direct match)
+    SELECT vp.participant_id, vp.participant_name,
+      'is this person'::TEXT, 'direct'::TEXT
+    FROM verified_participants vp
+    WHERE p_subject_type = 'person' AND vp.participant_id = p_subject_id
+
+    UNION ALL
+
+    -- Subject is EVENT: find participants involved
+    SELECT vp.participant_id, vp.participant_name,
+      'involved in event: ' || e.name, 'event_participant'::TEXT
+    FROM verified_participants vp
+    JOIN event_people ep ON ep.family_id = p_family_id
+      AND ep.person_id = vp.participant_id AND ep.event_id = p_subject_id
+    JOIN events e ON e.id = p_subject_id AND e.family_id = p_family_id
+    WHERE p_subject_type = 'event'
+
+    UNION ALL
+
+    -- Subject is PLACE: find participants via events at that place
+    SELECT DISTINCT vp.participant_id, vp.participant_name,
+      'connected via event: ' || e.name, 'event_participant'::TEXT
+    FROM verified_participants vp
+    JOIN event_people ep ON ep.family_id = p_family_id
+      AND ep.person_id = vp.participant_id
+    JOIN event_places epl ON epl.family_id = p_family_id
+      AND epl.event_id = ep.event_id AND epl.place_id = p_subject_id
+    JOIN events e ON e.id = ep.event_id AND e.family_id = p_family_id
+    WHERE p_subject_type = 'place'
+
+    UNION ALL
+
+    -- Subject is STORY: find participants mentioned
+    SELECT vp.participant_id, vp.participant_name,
+      'mentioned in story: ' || s.title, 'story_mention'::TEXT
+    FROM verified_participants vp
+    JOIN story_people sp ON sp.family_id = p_family_id
+      AND sp.person_id = vp.participant_id AND sp.story_id = p_subject_id
+    JOIN stories s ON s.id = p_subject_id AND s.family_id = p_family_id
+    WHERE p_subject_type = 'story'
+  ) combined
+  ORDER BY person_name;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+COMMENT ON FUNCTION get_participants_related_to_subject IS
+  'Find participants connected to a subject (person/event/place/story) for focused question targeting.';
+
+-- ============================================================================
 -- END OF SCHEMA
 -- ============================================================================
