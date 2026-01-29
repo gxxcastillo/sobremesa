@@ -125,6 +125,72 @@ export interface PublicStats {
 }
 
 // ============================================================================
+// Identity Types
+// ============================================================================
+
+export interface PersonSuggestion {
+  id: string;
+  name: string;
+  aliases: string[];
+  birthYear: number | null;
+  deathYear: number | null;
+  confidence: 'high' | 'medium' | 'low' | null;
+  matchReason: string | null;
+  notes?: string | null;
+}
+
+export interface IdentityResponse {
+  currentClaim: PersonSuggestion | null;
+  suggestion: PersonSuggestion | null;
+  topPeople: PersonSuggestion[];
+  displayName: string | null;
+}
+
+export interface ClaimIdentityResponse {
+  success: boolean;
+  claimed: {
+    personId: string;
+    personName: string;
+  };
+}
+
+export interface FamilyPerson {
+  id: string;
+  name: string;
+  aliases: string[];
+  birthYear: number | null;
+  deathYear: number | null;
+}
+
+export interface ListPeopleResponse {
+  people: FamilyPerson[];
+}
+
+export interface CreatePersonRequest {
+  name: string;
+  aliases?: string[];
+  birthYear?: number;
+  notes?: string;
+}
+
+export interface CreatePersonResponse {
+  success: boolean;
+  person: FamilyPerson;
+}
+
+export interface UpdatePersonRequest {
+  name?: string;
+  aliases?: string[];
+  birthYear?: number | null;
+  notes?: string;
+}
+
+export interface UpdatePersonResponse {
+  success: boolean;
+  person: FamilyPerson & { notes: string | null };
+}
+
+// ============================================================================
 // API Client
 // ============================================================================
 
@@ -323,6 +389,107 @@ export class StudioApiClient {
     }
 
     return response.blob();
+  }
+
+  // ============================================================================
+  // Identity Methods
+  // ============================================================================
+
+  /**
+   * Get current identity claim and suggestions for a family
+   * @param familyId The family ID
+   * @returns Identity info including current claim, suggestion, and top people
+   */
+  async getIdentity(familyId: string): Promise<IdentityResponse> {
+    return this.request<IdentityResponse>(`/family/${familyId}/identity`);
+  }
+
+  /**
+   * Claim a person as your identity in a family
+   * @param familyId The family ID
+   * @param personId The person ID to claim
+   * @returns The claimed person info
+   */
+  async claimIdentity(
+    familyId: string,
+    personId: string,
+  ): Promise<ClaimIdentityResponse> {
+    return this.request<ClaimIdentityResponse>(
+      `/family/${familyId}/identity/claim`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ personId }),
+      },
+    );
+  }
+
+  /**
+   * Remove your identity claim in a family
+   * @param familyId The family ID
+   */
+  async unclaimIdentity(familyId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(
+      `/family/${familyId}/identity/claim`,
+      {
+        method: 'DELETE',
+      },
+    );
+  }
+
+  /**
+   * List all people in a family for manual selection
+   * @param familyId The family ID
+   * @param search Optional search filter
+   * @returns List of people
+   */
+  async listPeople(familyId: string, search?: string): Promise<FamilyPerson[]> {
+    const query = search ? `?search=${encodeURIComponent(search)}` : '';
+    const response = await this.request<ListPeopleResponse>(
+      `/family/${familyId}/people${query}`,
+    );
+    return response.people;
+  }
+
+  /**
+   * Create a new person record (self-registration)
+   * @param familyId The family ID
+   * @param data The person data to create
+   * @returns The created person
+   */
+  async createPerson(
+    familyId: string,
+    data: CreatePersonRequest,
+  ): Promise<FamilyPerson> {
+    const response = await this.request<CreatePersonResponse>(
+      `/family/${familyId}/people`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+    );
+    return response.person;
+  }
+
+  /**
+   * Update your claimed person record
+   * @param familyId The family ID
+   * @param personId The person ID to update (must be your claimed identity)
+   * @param data The fields to update
+   * @returns The updated person
+   */
+  async updatePerson(
+    familyId: string,
+    personId: string,
+    data: UpdatePersonRequest,
+  ): Promise<FamilyPerson & { notes: string | null }> {
+    const response = await this.request<UpdatePersonResponse>(
+      `/family/${familyId}/people/${personId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+    );
+    return response.person;
   }
 
   // ============================================================================

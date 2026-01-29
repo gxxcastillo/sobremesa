@@ -238,10 +238,21 @@ export const authRoutes = new Elysia({ prefix: '/api/auth' })
           identity = existingIdentity;
           // Update last login
           await authIdentityRepo.updateLastLogin(identity.id);
-          // Get associated user
+          // Get associated user (may not exist for old identities)
           user = await authIdentityRepo.getUser(identity.id);
           if (!user) {
-            throw new Error('User not found for existing identity');
+            // Identity exists but has no user - create one and link
+            console.log('[Auth] Identity has no user, creating one...');
+            const result = await authIdentityRepo.findOrCreateFromProvider(
+              pass.provider,
+              pass.providerUserId,
+              identity.providerUsername,
+              identity.displayName,
+              identity.avatarUrl,
+            );
+            user = result.user;
+            identity = result.authIdentity;
+            console.log('[Auth] Created and linked user:', user.id);
           }
         }
 

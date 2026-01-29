@@ -302,29 +302,38 @@ export class ChatbotHandler implements BotHandler {
     // Check if already registered
     const existingFamily = await this.familyRepo.findByChatId(chatId);
     if (existingFamily) {
-      // Handle language code argument (e.g., /sobremesa en, /sobremesa es)
-      if (isLanguageCode(args)) {
-        try {
-          await this.familyRepo.updateConfigPath(
-            existingFamily.id,
-            ['languages', 'primary'],
-            args,
+      // Handle language code argument (e.g., /sobremesa lang:en, /sobremesa lang:es)
+      const langMatch = args.match(/^lang:(\w+)$/);
+      if (langMatch) {
+        const langCode = langMatch[1];
+        if (isLanguageCode(langCode)) {
+          try {
+            await this.familyRepo.updateConfigPath(
+              existingFamily.id,
+              ['languages', 'primary'],
+              langCode,
+            );
+            const langNames: Record<LanguageCode, string> = {
+              en: 'English',
+              es: 'Español',
+              pt: 'Português',
+              fr: 'Français',
+              de: 'Deutsch',
+            };
+            await ctx.reply(`Language set to ${langNames[langCode]}.`);
+            this.logger.info(
+              { familyId: existingFamily.id, language: langCode },
+              'Language updated via /sobremesa command',
+            );
+          } catch (error) {
+            this.logger.error({ error }, 'Failed to update language');
+            await ctx.reply('Failed to update language. Please try again.');
+          }
+        } else {
+          await ctx.reply(
+            `Unknown language code: ${langCode}\n\n` +
+              `Supported languages: ${SUPPORTED_LANGUAGES.join(', ')}`,
           );
-          const langNames: Record<LanguageCode, string> = {
-            en: 'English',
-            es: 'Español',
-            pt: 'Português',
-            fr: 'Français',
-            de: 'Deutsch',
-          };
-          await ctx.reply(`Language set to ${langNames[args]}.`);
-          this.logger.info(
-            { familyId: existingFamily.id, language: args },
-            'Language updated via /sobremesa command',
-          );
-        } catch (error) {
-          this.logger.error({ error }, 'Failed to update language');
-          await ctx.reply('Failed to update language. Please try again.');
         }
         return;
       }
@@ -439,11 +448,11 @@ export class ChatbotHandler implements BotHandler {
             `*/sobremesa studio-link* - Get a link to access Studio\n` +
             `*/sobremesa pause* - Pause message processing\n` +
             `*/sobremesa resume* - Resume message processing\n` +
-            `*/sobremesa en* - Set language to English\n` +
-            `*/sobremesa es* - Set language to Español\n` +
-            `*/sobremesa pt* - Set language to Português\n` +
-            `*/sobremesa fr* - Set language to Français\n` +
-            `*/sobremesa de* - Set language to Deutsch\n` +
+            `*/sobremesa lang:en* - Set language to English\n` +
+            `*/sobremesa lang:es* - Set language to Español\n` +
+            `*/sobremesa lang:pt* - Set language to Português\n` +
+            `*/sobremesa lang:fr* - Set language to Français\n` +
+            `*/sobremesa lang:de* - Set language to Deutsch\n` +
             `*/sobremesa help* - Show this help message`,
           { parse_mode: 'Markdown' },
         );

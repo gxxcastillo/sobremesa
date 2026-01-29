@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/Login';
 import { AccessPass } from './pages/AccessPass';
 import { SelectFamily } from './pages/SelectFamily';
+import { IdentitySettings } from './pages/IdentitySettings';
 import App from './app/App';
 import './styles.css';
 
@@ -32,6 +33,14 @@ if (root) {
             component={() => (
               <ProtectedRoute requireFamily>
                 <App />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/family/:familyId/identity"
+            component={() => (
+              <ProtectedRoute requireFamily>
+                <IdentitySettings />
               </ProtectedRoute>
             )}
           />

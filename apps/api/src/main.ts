@@ -8,6 +8,7 @@ import {
 } from '@sobremesa/database';
 import { authPlugin, hasAccessToFamily } from '@sobremesa/auth';
 import { authRoutes } from './routes/auth';
+import { identityRoutes } from './routes/identity';
 
 /**
  * Validate required environment variables on startup
@@ -48,6 +49,7 @@ const app = new Elysia()
   .use(cors())
   .use(authPlugin)
   .use(authRoutes)
+  .use(identityRoutes)
   .get(
     '/health',
     () => ({
@@ -150,6 +152,7 @@ const app = new Elysia()
           .select('name, aliases, birth_year, death_year, notes_original')
           .eq('family_id', family.id)
           .eq('redacted', false)
+          .or('is_placeholder.is.null,is_placeholder.eq.false')
           .order('created_at', { ascending: true }),
 
         client
@@ -259,6 +262,7 @@ const app = new Elysia()
           .select('name, aliases, birth_year, death_year, notes_original')
           .eq('family_id', familyId)
           .eq('redacted', false)
+          .or('is_placeholder.is.null,is_placeholder.eq.false')
           .order('created_at', { ascending: true }),
 
         client

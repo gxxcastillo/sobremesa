@@ -123,6 +123,13 @@ export default function App() {
     navigate('/select-family');
   };
 
+  const handleIdentitySettings = () => {
+    const familyId = params.familyId || auth.state.currentFamily?.familyId;
+    if (familyId) {
+      navigate('/family/' + familyId + '/identity');
+    }
+  };
+
   // Load data on mount
   onMount(() => {
     loadFamilySummary();
@@ -150,6 +157,13 @@ export default function App() {
                 auth.state.user?.providerUsername}
             </span>
           </Show>
+          <button
+            class="btn-secondary btn-small"
+            onClick={handleIdentitySettings}
+            title="Identity Settings"
+          >
+            Identity
+          </button>
           <Show when={auth.state.families.length > 1}>
             <button
               class="btn-secondary btn-small"

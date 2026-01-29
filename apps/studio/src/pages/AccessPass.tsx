@@ -2,12 +2,14 @@
  * Access Pass Redemption Page
  *
  * Handles /pass/:token route to redeem access passes.
+ * Shows WelcomeModal to new participants to confirm their identity.
  */
 
 import { type Component, createSignal, onMount, Show } from 'solid-js';
 import { useParams, useNavigate } from '@solidjs/router';
 import { StudioApiClient } from '@sobremesa/api-client';
 import { useAuth } from '../context/AuthContext';
+import { WelcomeModal } from '../components/WelcomeModal';
 
 export const AccessPass: Component = () => {
   const params = useParams<{ token: string }>();
@@ -18,6 +20,18 @@ export const AccessPass: Component = () => {
   const [isLoading, setIsLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [success, setSuccess] = createSignal(false);
+
+  // Welcome modal state
+  const [showWelcomeModal, setShowWelcomeModal] = createSignal(false);
+  const [grantedFamilyId, setGrantedFamilyId] = createSignal<string | null>(
+    null,
+  );
+  const [grantedFamilyName, setGrantedFamilyName] = createSignal<string | null>(
+    null,
+  );
+  const [userDisplayName, setUserDisplayName] = createSignal<string | null>(
+    null,
+  );
 
   onMount(async () => {
     if (!params.token) {
@@ -32,12 +46,40 @@ export const AccessPass: Component = () => {
       // Log in with the returned token
       auth.login(response.token, response.user, response.families);
 
+      // Store info for welcome modal
+      setGrantedFamilyId(response.grantedFamilyId);
+      setUserDisplayName(response.user.displayName);
+
+      // Find the family name
+      const family = response.families.find(
+        (f) => f.familyId === response.grantedFamilyId,
+      );
+      setGrantedFamilyName(family?.familyName || 'your family');
+
       setSuccess(true);
 
-      // Navigate to the granted family after a short delay
-      setTimeout(() => {
-        navigate('/family/' + response.grantedFamilyId);
-      }, 2000);
+      // Check if user needs to set up their identity
+      // Fetch identity info to see if they already have a claim
+      try {
+        client.setAuthToken(response.token);
+        const identityInfo = await client.getIdentity(response.grantedFamilyId);
+
+        if (!identityInfo.currentClaim) {
+          // No existing claim - show welcome modal
+          setShowWelcomeModal(true);
+        } else {
+          // Already has identity - go directly to family page
+          setTimeout(() => {
+            navigate('/family/' + response.grantedFamilyId);
+          }, 2000);
+        }
+      } catch (identityErr) {
+        // If identity check fails, just navigate to family page
+        console.error('Failed to check identity:', identityErr);
+        setTimeout(() => {
+          navigate('/family/' + response.grantedFamilyId);
+        }, 2000);
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to redeem access pass',
@@ -47,6 +89,42 @@ export const AccessPass: Component = () => {
       setIsLoading(false);
     }
   });
+
+  const handleConfirmIdentity = (personId: string, personName: string) => {
+    setShowWelcomeModal(false);
+    // Navigate to family page
+    const fId = grantedFamilyId();
+    if (fId) {
+      navigate('/family/' + fId);
+    }
+  };
+
+  const handleDenyIdentity = () => {
+    setShowWelcomeModal(false);
+    // Navigate to identity settings for manual setup
+    const fId = grantedFamilyId();
+    if (fId) {
+      navigate('/family/' + fId + '/identity');
+    }
+  };
+
+  const handleSkipIdentity = () => {
+    setShowWelcomeModal(false);
+    // Navigate to family page without setting identity
+    const fId = grantedFamilyId();
+    if (fId) {
+      navigate('/family/' + fId);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowWelcomeModal(false);
+    // Navigate to family page
+    const fId = grantedFamilyId();
+    if (fId) {
+      navigate('/family/' + fId);
+    }
+  };
 
   return (
     <div class="access-pass-page">
@@ -65,9 +143,9 @@ export const AccessPass: Component = () => {
               </div>
             </Show>
 
-            <Show when={success()}>
+            <Show when={success() && !showWelcomeModal()}>
               <div class="success-container">
-                <div class="success-icon">✓</div>
+                <div class="success-icon">&#x2713;</div>
                 <h2>Access Granted!</h2>
                 <p>Welcome to your family's Studio. Redirecting...</p>
               </div>
@@ -75,7 +153,7 @@ export const AccessPass: Component = () => {
 
             <Show when={error()}>
               <div class="error-container">
-                <div class="error-icon">✗</div>
+                <div class="error-icon">&#x2717;</div>
                 <h2>Access Denied</h2>
                 <p class="error-message">{error()}</p>
                 <p class="error-help">
@@ -91,6 +169,19 @@ export const AccessPass: Component = () => {
           </div>
         </main>
       </div>
+
+      {/* Welcome Modal for new participants */}
+      <Show when={showWelcomeModal() && grantedFamilyId()}>
+        <WelcomeModal
+          familyId={grantedFamilyId()!}
+          familyName={grantedFamilyName() || 'your family'}
+          displayName={userDisplayName()}
+          onConfirm={handleConfirmIdentity}
+          onDeny={handleDenyIdentity}
+          onSkip={handleSkipIdentity}
+          onClose={handleCloseModal}
+        />
+      </Show>
     </div>
   );
 };
