@@ -5,14 +5,43 @@ on:
     workflows: ['CI']
     types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_ci:
+        description: 'Run CI checks'
+        type: boolean
+        default: true
 
 permissions:
   actions: read
   contents: read
 
 jobs:
+  ci:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - uses: nrwl/nx-set-shas@v4
+
+      - name: Run CI
+        run: npx nx affected -t lint test build types
+
   check-affected:
-    if: github.event.workflow_run.conclusion == 'success'
+    needs: [ci]
+    if: |
+      always() &&
+      (needs.ci.result == 'success' || needs.ci.result == 'skipped') &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     outputs:
       api: ${{ steps.affected.outputs.api }}
