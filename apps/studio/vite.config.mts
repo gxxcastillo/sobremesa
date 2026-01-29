@@ -5,20 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import selfsigned from 'selfsigned';
 
-export default defineConfig(({ mode }) => {
-  const missing: string[] = [];
-  if (!process.env.VITE_TELEGRAM_BOT_NAME) {
-    missing.push('VITE_TELEGRAM_BOT_NAME');
-  }
-
-  if (missing.length > 0) {
-    console.error(
-      '❌ Missing required environment variables:',
-      missing.join(', '),
-    );
-    process.exit(1);
-  }
-
+export default defineConfig(() => {
   return {
     root: import.meta.dirname,
     cacheDir: 'node_modules/.vite',

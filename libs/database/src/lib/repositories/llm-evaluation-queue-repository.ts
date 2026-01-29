@@ -365,10 +365,7 @@ export class LlmEvaluationQueueRepository {
   /**
    * Retry a failed item by resetting it to pending.
    */
-  async retry(
-    queueItemId: string,
-    resetAttempts = false,
-  ): Promise<void> {
+  async retry(queueItemId: string, resetAttempts = false): Promise<void> {
     const updates: Record<string, unknown> = {
       status: 'pending',
       last_error: null,
