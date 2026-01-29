@@ -246,6 +246,71 @@ For unknown people in the family tree:
 }
 ```
 
+#### Entity Merges
+
+**When entities are merged** (e.g., "Maria G." identified as "Maria Garcia"):
+
+**`entity_merges` table structure:**
+
+- `source_entity_id` - Entity being merged away
+- `target_entity_id` - Entity being kept
+- `source_entity_type`, `target_entity_type` - Entity types (person, place, event, story)
+- `merge_strategy` - How merge was determined (`fuzzy_match`, `identity_claim`, `manual`)
+- `confidence` - Merge confidence (0.0-1.0)
+- `trigger_event_id` - Source conversation event
+- `merged_by` - Agent or user who performed merge
+- `merge_reason` - Explanation
+
+**Denormalized fields on entity tables:**
+
+- `superseded_by` - ID of entity this was merged into
+- `superseded_at` - When merge occurred
+
+**Merge chains:**
+
+When entity A is merged into B, and later B is merged into C:
+
+```
+A (superseded_by: B)
+  ↓
+B (superseded_by: C)
+  ↓
+C (current entity)
+```
+
+**Query helper `get_entity_merge_chain()`:**
+
+```sql
+-- Returns all entity IDs in the chain (A, B, C)
+SELECT entity_id FROM get_entity_merge_chain(
+  'C-uuid',      -- Current entity
+  'person',      -- Entity type
+  'family-uuid'  -- Family ID
+);
+```
+
+**Query pattern - Find all claims about entity including merged predecessors:**
+
+```sql
+SELECT DISTINCT c.*
+FROM claims c
+JOIN claim_entities ce ON c.id = ce.claim_id
+WHERE c.family_id = :familyId
+  AND ce.entity_type = 'person'
+  AND ce.entity_id IN (
+    SELECT entity_id FROM get_entity_merge_chain(:personId, 'person', :familyId)
+  );
+```
+
+**Undo capability:**
+
+- Delete `entity_merges` record
+- Clear `superseded_by` on source entity
+- Claims remain intact (provenance preserved)
+- For identity claims: Update `claim_entities` to `resolved = FALSE`
+
+See [ADR-025](adr/025-claims-based-data-architecture.md) for architecture decision.
+
 ---
 
 ## Common Queries
@@ -362,6 +427,91 @@ INSERT INTO event_log (
   conversation_event_id
 );
 ```
+
+#### Claim Strength and Quality
+
+**Hybrid scoring approach** - Two-tier system:
+
+**Phase 1: Algorithmic scoring (all claims, $0 cost):**
+
+- Base score by source: direct (1.0), attributed (0.8), hearsay (0.5)
+- Certainty modifier: "definitely" (1.0), "probably" (0.9), "I think" (0.7), "might" (0.6)
+- Conflict penalty: 0.8 per contradicting claim (multiplicative)
+- Final = baseScore × certaintyModifier × conflictPenalty
+
+**Phase 2: LLM evaluation (5-10% of claims, selective cost):**
+
+Triggered when ANY of:
+
+- Has conflicts (contradicting claims exist)
+- Uncertainty language detected
+- Hearsay source
+- High-stakes claim (birth/death dates, legal relationships)
+- Low algorithmic score (< 0.6)
+
+**Phase 3: Score blending:**
+
+- If LLM evaluated: `final = (algorithmic × 0.4) + (llm × 0.6)`
+- If not evaluated: `final = algorithmic`
+
+**Storage in `claims` table:**
+
+```sql
+{
+  claim_strength: 0.775,              -- Final blended score
+  strength_factors: {                 -- Complete breakdown
+    algorithmScore: 0.7,
+    breakdown: {
+      sourceTypeScore: 1.0,
+      certaintyModifier: 0.9,
+      conflictPenalty: 0.8
+    },
+    llmScore: 0.85,
+    llmReasoning: "Despite hearsay, specific ship name suggests reliability",
+    final: 0.775,
+    evaluationTriggered: ["hasConflicts", "hearsay"]
+  },
+  needs_llm_evaluation: false,        -- Flag for queue
+  llm_evaluated_at: '2026-01-26'      -- When LLM evaluation completed
+}
+```
+
+**Conflict resolution using strength scores:**
+
+When new claim conflicts with existing:
+
+```typescript
+if (newStrength > existingStrength + 0.2) {
+  // Supersede existing with stronger new claim
+  markSuperseded(existingClaimId);
+} else if (existingStrength > newStrength + 0.2) {
+  // Skip creating new claim (existing much stronger)
+  skip();
+} else {
+  // Similar strength → mark disputed, needs review
+  createBoth();
+  markDisputed([newClaim, existingClaim]);
+}
+```
+
+**Entity-aware conflict detection:**
+
+Only checks claims linked to the same entity via `claim_entities` join table. Prevents false conflicts between different people with the same name.
+
+```sql
+-- Find conflicts for new claim about specific person
+SELECT c.*
+FROM claims c
+JOIN claim_entities ce ON c.id = ce.claim_id
+WHERE c.family_id = :familyId
+  AND c.subject = :newClaimSubject
+  AND c.claim_type = :newClaimType
+  AND ce.entity_id = :personId        -- Only claims about this specific person
+  AND ce.entity_type = 'person'
+  AND c.status = 'active';
+```
+
+See [ADR-027](adr/027-hybrid-claim-strength-scoring.md) for scoring approach and [ADR-028](adr/028-data-quality-extraction-rules.md) for extraction quality rules.
 
 ---
 

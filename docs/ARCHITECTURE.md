@@ -174,6 +174,38 @@ Benefits:
 - Multiple claims about same thing
 - Audit trail
 
+#### Claims and Entity Resolution
+
+**Entity merge tracking** via `entity_merges` table:
+
+- Records when entities are merged (e.g., "Maria G." → "Maria Garcia")
+- Tracks merge strategy (`fuzzy_match`, `identity_claim`, `manual`, `llm_resolved`)
+- Deletable to undo merges (provenance preserved in claims)
+- Denormalized `superseded_by` columns on entity tables for query performance
+
+**Claim-entity relationships** via `claim_entities` join table:
+
+- Many-to-many: Claims can reference multiple entities
+- Bidirectional: Efficient "show all claims about Maria" queries
+- Role metadata: `subject`, `related`, `location`, `witness`
+- Identity resolution support: `resolved`, `entity_merge_id` fields
+
+**Query helper `get_entity_merge_chain()`:**
+
+- Finds all predecessors of an entity (entities that were merged into it)
+- Enables "all claims about Maria including claims originally about merged predecessors"
+- Ensures consistency even if denormalized columns temporarily out of sync
+
+**Service extraction pattern:**
+
+- `EntityMatcherService` - Entity deduplication with fuzzy matching
+- `ConflictDetectorService` - Detects contradicting claims
+- `StrengthCalculatorService` - Hybrid scoring (algorithmic + LLM)
+- `MergeHandlerService` - Entity merge operations
+- `DataRetrieverService` - Shared data retrieval patterns
+
+See [ADR-025](adr/025-claims-based-data-architecture.md) for detailed architecture decision and [SERVICES.md](SERVICES.md) for service layer patterns.
+
 ### 4. Coaching Module with Real-Time Levers
 
 **Two-tier control system:**
@@ -228,6 +260,56 @@ CREATE TABLE event_log (
   event_data JSONB
 );
 ```
+
+#### LLM Evaluation Queue
+
+**Async processing for uncertain claims:**
+
+The system uses a dedicated `llm_evaluation_queue` table for selective LLM evaluation of complex or uncertain claims, rather than processing every claim through expensive LLM calls.
+
+**Queue structure:**
+
+- Priority-based (0-100, high-stakes claims get priority 100)
+- Multiple evaluation types: `claim_strength`, `entity_match`, `conflict_resolution`
+- Context JSONB for additional evaluation data
+- Status workflow: `pending` → `locked` → `completed`/`failed`
+- Automatic lock expiration and cleanup (15-minute locks)
+
+**Worker processing:**
+
+- Background workers acquire batches using optimistic locking (`FOR UPDATE SKIP LOCKED`)
+- High-priority items processed first
+- Failed items retry with exponential backoff
+- Performance tracking (`processing_time_ms`)
+
+**When LLM evaluation is triggered:**
+
+- Has conflicts (contradicting claims exist)
+- Uncertainty language ("think", "maybe", "probably")
+- Hearsay source
+- High-stakes claim (birth/death dates, legal relationships)
+- Low algorithmic score (< 0.6)
+
+**Integration:**
+
+```typescript
+// Registrar enqueues after creating claim
+if (strengthResult.needsLlmEvaluation) {
+  await llmQueueRepo.enqueue(familyId, 'claim_strength', 'claim', claimId, {
+    priority: isHighStakes ? 100 : 0,
+    context: { algorithmScore, triggers },
+  });
+}
+
+// Background worker processes queue
+const items = await queueRepo.acquireBatch(workerId, 10, 15);
+for (const item of items) {
+  const result = await evaluateWithLLM(item);
+  await queueRepo.complete(item.id, result, processingTime);
+}
+```
+
+See [ADR-026](adr/026-llm-evaluation-queue.md) for detailed architecture decision.
 
 ### 8. Redaction System
 

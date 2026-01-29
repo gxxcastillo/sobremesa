@@ -18,122 +18,33 @@ How Sobremesa handles failures gracefully.
 
 ### 1. Claude API Failures
 
-**Causes:**
+**Retry strategy:**
 
-- Rate limit exceeded
-- Network timeout
-- API outage
-- Invalid response
+- Max 3 retries with exponential backoff (1s, 2s, 4s)
+- Retry on: Rate limits (429), timeouts, server errors (5xx), network errors
+- Don't retry: Client errors (4xx), invalid prompts
+- Log all failures to event_log
 
-**Strategy:**
+**Fallback:**
 
-```typescript
-class ClaudeClient {
-  async callClaude(
-    prompt: string,
-    options: ClaudeOptions,
-  ): Promise<ClaudeResponse> {
-    const maxRetries = 3;
-    const baseDelay = 1000; // 1 second
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await this.anthropic.messages.create({
-          model: 'claude-3-5-sonnet-20241022',
-          max_tokens: options.maxTokens,
-          messages: [{ role: 'user', content: prompt }],
-        });
-
-        return response;
-      } catch (error) {
-        const isRetryable = this.isRetryableError(error);
-
-        if (!isRetryable || attempt === maxRetries) {
-          // Log failure
-          await this.logError({
-            error,
-            prompt: prompt.substring(0, 100), // Don't log full prompt
-            attempt,
-            familyId: options.familyId,
-          });
-
-          throw new ClaudeAPIError(
-            `Claude API failed after ${attempt} attempts`,
-            error,
-          );
-        }
-
-        // Exponential backoff
-        const delay = baseDelay * Math.pow(2, attempt - 1);
-        await this.sleep(delay);
-      }
-    }
-  }
-
-  private isRetryableError(error: any): boolean {
-    // Rate limit (429) - retry
-    if (error.status === 429) return true;
-
-    // Timeout - retry
-    if (error.code === 'ETIMEDOUT') return true;
-
-    // Server error (5xx) - retry
-    if (error.status >= 500) return true;
-
-    // Client error (4xx) - don't retry
-    if (error.status >= 400 && error.status < 500) return false;
-
-    // Network error - retry
-    if (error.code === 'ECONNREFUSED') return true;
-
-    return false;
-  }
-}
-```
-
-**Fallback Behavior:**
+- Mark message as `processing_failed`
+- Add to retry queue for later processing
+- Continue with other messages (don't block)
 
 ```typescript
-async function processMessageWithFallback(message: Message, familyId: string) {
+async function processWithRetry(message: Message) {
   try {
-    // Try Scribe processing
-    const domainModel = await scribe.process(message);
-    await registrar.save(domainModel);
+    return await scribe.process(message); // Retries internally
   } catch (error) {
     if (error instanceof ClaudeAPIError) {
-      // Claude failed - save message as "processing_failed"
-      await db
-        .from('messages')
-        .update({
-          processing_status: 'failed',
-          processing_error: error.message,
-        })
-        .eq('id', message.id);
-
-      // Add to retry queue (process later when Claude recovers)
+      await markFailed(message.id);
       await retryQueue.add({
         messageId: message.id,
-        familyId,
-        retryAfter: Date.now() + 60000, // 1 minute
+        retryAfter: Date.now() + 60000,
       });
-
-      // Log to event_log
-      await logEvent({
-        familyId,
-        eventType: 'processing_failed',
-        actor: 'scribe',
-        eventData: {
-          messageId: message.id,
-          error: error.message,
-          willRetry: true,
-        },
-      });
-
-      // DON'T throw - continue processing other messages
-      return;
+      return; // Don't throw - graceful degradation
     }
-
-    throw error; // Re-throw non-API errors
+    throw error;
   }
 }
 ```
@@ -142,321 +53,119 @@ async function processMessageWithFallback(message: Message, familyId: string) {
 
 ### 2. Database Write Failures
 
-**Causes:**
-
-- Connection lost
-- Constraint violation
-- Supabase outage
-
 **Strategy:**
 
+- Wrap in transactions where atomicity required
+- Retry transient errors (connection lost, deadlock)
+- Don't retry permanent errors (constraint violations)
+- Log failure, preserve data for manual recovery
+
+**Constraint violations:**
+
+- Unique constraint → Entity already exists, safe to ignore
+- Foreign key → Referenced entity missing, log and skip
+- Check constraint → Data validation failed, log for review
+
 ```typescript
-class Registrar {
-  async save(domainModel: DomainModel): Promise<void> {
-    const maxRetries = 3;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        // Use transaction for atomicity
-        await this.db.rpc('begin');
-
-        try {
-          // Save all entities
-          await this.savePeople(domainModel.entities.people);
-          await this.savePlaces(domainModel.entities.places);
-          await this.saveClaims(domainModel.claims);
-
-          // Commit transaction
-          await this.db.rpc('commit');
-
-          return; // Success
-        } catch (innerError) {
-          // Rollback on error
-          await this.db.rpc('rollback');
-          throw innerError;
-        }
-      } catch (error) {
-        const isRetryable = this.isRetryableDBError(error);
-
-        if (!isRetryable || attempt === maxRetries) {
-          // Log failure
-          await this.logDatabaseError({
-            error,
-            domainModel: domainModel.metadata,
-            attempt,
-          });
-
-          throw new DatabaseError(
-            `Database write failed after ${attempt} attempts`,
-            error,
-          );
-        }
-
-        // Wait before retry
-        await this.sleep(1000 * attempt);
-      }
+async function saveWithRetry(data: DomainModel) {
+  try {
+    await db.transaction(async (tx) => {
+      await savePeople(tx, data.entities.people);
+      await saveClaims(tx, data.claims);
+      await saveQuestions(tx, data.questions);
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      logger.info('Entity already exists, skipping');
+      return;
     }
-  }
-
-  private isRetryableDBError(error: any): boolean {
-    // Connection error - retry
-    if (error.code === 'ECONNREFUSED') return true;
-    if (error.code === 'ETIMEDOUT') return true;
-
-    // Deadlock - retry
-    if (error.code === '40P01') return true;
-
-    // Constraint violation - don't retry
-    if (error.code === '23505') return false; // Unique violation
-    if (error.code === '23503') return false; // Foreign key violation
-
-    return false;
-  }
-}
-```
-
-**Constraint Violations:**
-
-```typescript
-async function handleConstraintViolation(error: PostgresError) {
-  if (error.code === '23505') {
-    // Unique constraint - likely duplicate insert
-    // This is OKAY for idempotent operations
-    logger.warn({ error }, 'Duplicate insert attempted (likely retry)');
-    return; // Don't fail
-  }
-
-  if (error.code === '23503') {
-    // Foreign key violation - data integrity issue
-    logger.error({ error }, 'Foreign key violation');
-    throw new DataIntegrityError('Referenced entity does not exist');
+    if (isForeignKeyViolation(error)) {
+      logger.error('Referenced entity missing', { error, data });
+      await saveToDeadLetterQueue(data);
+      return;
+    }
+    throw error; // Re-throw unexpected errors
   }
 }
 ```
 
 ---
 
-### 3. Queue Processing Failures
+### 3. Telegram API Failures
 
-**Causes:**
+**Rate limits:**
 
-- Queue service down (Redis)
-- Message processing timeout
-- Corrupted message
+- Respect 30 messages/second global limit
+- Use token bucket algorithm
+- Queue messages, don't drop them
 
-**Strategy:**
+**Network failures:**
+
+- Retry message sends (3 attempts)
+- Log unsent messages
+- Admin notification if failures persist
+
+**Webhook failures:**
+
+- Return 200 immediately (acknowledge receipt)
+- Process asynchronously
+- Telegram will retry if we don't respond within 60s
 
 ```typescript
-class MessageQueue {
-  async process(familyId: string): Promise<void> {
-    const messageId = await this.dequeue(familyId);
-
-    if (!messageId) return; // Queue empty
-
+async function handleWebhook(update: TelegramUpdate) {
+  // Acknowledge immediately
+  setImmediate(async () => {
     try {
-      // Load message
-      const message = await this.loadMessage(messageId);
-
-      if (!message) {
-        throw new Error(`Message ${messageId} not found`);
-      }
-
-      // Process with timeout
-      await this.processWithTimeout(message, familyId, 30000); // 30s timeout
-
-      // Mark as processed
-      await this.markProcessed(messageId);
+      await processUpdate(update);
     } catch (error) {
-      // Log error
-      await this.logProcessingError({
-        messageId,
-        familyId,
-        error,
-      });
-
-      // Move to dead letter queue after 5 failures
-      const failureCount = await this.getFailureCount(messageId);
-
-      if (failureCount >= 5) {
-        await this.moveToDeadLetter(messageId);
-        await this.alertAdmin({
-          messageId,
-          familyId,
-          reason: 'Max retries exceeded',
-        });
-      } else {
-        // Re-queue for retry (with exponential backoff)
-        const delay = Math.pow(2, failureCount) * 60000; // Minutes
-        await this.requeue(messageId, familyId, delay);
-      }
+      await logError(error, { update });
+      // Don't throw - already acknowledged
     }
-  }
-
-  async processWithTimeout(
-    message: Message,
-    familyId: string,
-    timeout: number,
-  ): Promise<void> {
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Processing timeout')), timeout);
-    });
-
-    const processingPromise = processMessage(message, familyId);
-
-    await Promise.race([processingPromise, timeoutPromise]);
-  }
-}
-```
-
-**Dead Letter Queue:**
-
-```typescript
-// Messages that failed after max retries
-CREATE TABLE dead_letter_queue (
-  id UUID PRIMARY KEY,
-  family_id UUID NOT NULL,
-  message_id UUID NOT NULL,
-  failure_count INTEGER,
-  last_error TEXT,
-  original_timestamp TIMESTAMPTZ,
-  moved_to_dlq_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-// Admin can inspect and manually retry
-async function inspectDeadLetterQueue(familyId: string) {
-  return db
-    .from('dead_letter_queue')
-    .select('*')
-    .eq('family_id', familyId)
-    .order('moved_to_dlq_at', { ascending: false });
-}
-```
-
----
-
-### 4. Translation Failures
-
-**Causes:**
-
-- Translation API down
-- Unsupported language
-
-**Strategy:**
-
-```typescript
-async function translateContent(
-  content: string,
-  from: string,
-  to: string,
-  familyId: string,
-): Promise<string | null> {
-  try {
-    const translated = await translationClient.translate(content, from, to);
-    return translated;
-  } catch (error) {
-    // Log but don't fail entire processing
-    await logEvent({
-      familyId,
-      eventType: 'translation_failed',
-      actor: 'translation_service',
-      eventData: {
-        from,
-        to,
-        error: error.message,
-      },
-    });
-
-    // Return null - Registrar will store original only
-    return null;
-  }
-}
-
-// In Registrar
-async function saveMessage(message: Message, domainModel: DomainModel) {
-  const { originalContent, originalLanguage, translations } =
-    domainModel.translations[0];
-
-  await db.from('messages').insert({
-    family_id: message.familyId,
-    content_original: originalContent,
-    language_original: originalLanguage,
-
-    // These might be null if translation failed
-    content_en: translations.find((t) => t.language === 'en')
-      ?.translatedContent,
-    content_es: translations.find((t) => t.language === 'es')
-      ?.translatedContent,
-
-    translation_status: translations.length > 0 ? 'complete' : 'failed',
   });
+
+  return { statusCode: 200 }; // Acknowledge receipt
 }
 ```
 
 ---
 
-### 5. Facilitator Decision Failures
+### 4. Queue Processing Failures
 
-**Causes:**
+**Stuck messages:**
 
-- Real-time lever data missing
-- Facilitator rules corrupted
-- Claude API failure
+- Timeout after 5 minutes processing
+- Release lock, allow retry
+- Dead letter queue after 3 failures
 
-**Strategy:**
+**Worker crashes:**
+
+- Use heartbeat mechanism
+- Release locks if worker stops heartbeat
+- Auto-restart workers
+
+**Poison messages:**
+
+- Messages that always fail (bad data, logic error)
+- After 3 failures, move to dead letter queue
+- Alert for manual review
 
 ```typescript
-async function facilitatorDecision(
-  question: Question,
-  familyId: string,
-): Promise<boolean> {
+async function processQueueItem(item: QueueItem) {
+  const maxAttempts = 3;
+
   try {
-    // Load rules with fallbacks
-    const rules = await this.loadRulesWithFallback(familyId);
-    const levers = await this.loadLeversWithFallback(familyId);
-
-    // Make decision
-    const shouldAsk = await this.evaluateQuestion(question, rules, levers);
-
-    return shouldAsk;
+    await processMessage(item.messageId);
+    await queue.complete(item.id);
   } catch (error) {
-    // Log error
-    await logEvent({
-      familyId,
-      eventType: 'facilitator_decision_error',
-      actor: 'facilitator',
-      eventData: {
-        questionId: question.id,
-        error: error.message,
-      },
-    });
+    item.attempts += 1;
 
-    // CONSERVATIVE FALLBACK: Don't ask if error
-    // Better to be silent than to spam on error
-    return false;
-  }
-}
-
-async function loadRulesWithFallback(
-  familyId: string,
-): Promise<FacilitatorRules> {
-  try {
-    const rules = await db
-      .from('facilitator_rules')
-      .select('*')
-      .eq('family_id', familyId)
-      .single();
-
-    return rules.data;
-  } catch (error) {
-    logger.warn({ familyId }, 'Failed to load rules, using defaults');
-
-    // Return safe defaults
-    return {
-      maxQuestionsPerWindow: 1, // Conservative
-      minimumWaitAfterQuestion: 48, // Long wait
-      currentSignal: 'hold_back', // Don't ask
-      windowSizeHours: 24,
-    };
+    if (item.attempts >= maxAttempts) {
+      await deadLetterQueue.add(item);
+      await queue.delete(item.id);
+      await alertAdmin('Poison message detected', { item, error });
+    } else {
+      await queue.retry(item.id, { delay: Math.pow(2, item.attempts) * 1000 });
+    }
   }
 }
 ```
@@ -465,270 +174,152 @@ async function loadRulesWithFallback(
 
 ## Error Logging
 
-### Event Log Structure
+All errors logged to `event_log` table with:
 
-```typescript
-interface ErrorEvent {
-  family_id: string;
-  event_type:
-    | 'processing_error'
-    | 'api_error'
-    | 'database_error'
-    | 'queue_error';
-  actor: string; // Which component failed
-  timestamp: string;
-  event_data: {
-    error_message: string;
-    error_code?: string;
-    stack_trace?: string; // Only in development
-    context: {
-      message_id?: string;
-      question_id?: string;
-      claim_id?: string;
-      // ... relevant IDs
-    };
-    retry_count?: number;
-    will_retry: boolean;
-  };
-}
-```
+- `event_type`: 'error_occurred'
+- `event_category`: Component that failed ('scribe', 'registrar', 'telegram')
+- `actor`: Agent or system component
+- `event_data`: Error details, stack trace, context
 
-### Error Severity Levels
+**Log levels:**
 
-```typescript
-enum ErrorSeverity {
-  INFO = 'info', // Retryable, expected (rate limit)
-  WARNING = 'warning', // Degraded functionality (translation failed)
-  ERROR = 'error', // Component failed but system continues
-  CRITICAL = 'critical', // System-wide failure
-}
+- **ERROR**: Unexpected failures requiring investigation
+- **WARN**: Expected failures with fallback (e.g., rate limit hit)
+- **INFO**: Normal operations, successful retries
 
-async function logError(
-  familyId: string,
-  severity: ErrorSeverity,
-  error: Error,
-  context: Record<string, any>,
-) {
-  await db.from('event_log').insert({
-    family_id: familyId,
-    event_type: 'error',
-    actor: context.actor || 'unknown',
-    timestamp: new Date().toISOString(),
-    event_data: {
-      severity,
-      error_message: error.message,
-      error_code: error.code,
-      stack_trace:
-        process.env.NODE_ENV === 'development' ? error.stack : undefined,
-      context,
-    },
-  });
+**Don't log:**
 
-  // Critical errors trigger alerts
-  if (severity === ErrorSeverity.CRITICAL) {
-    await alertAdmin({
-      familyId,
-      message: `Critical error: ${error.message}`,
-      context,
-    });
-  }
-}
-```
+- Full message content (privacy)
+- API keys or secrets
+- User PII unless necessary
 
 ---
 
 ## Monitoring & Alerts
 
-### Health Checks
+**Key metrics:**
 
-```typescript
-// apps/chatbots/src/health.ts
-export async function healthCheck(): Promise<HealthStatus> {
-  const checks = await Promise.allSettled([
-    checkDatabase(),
-    checkClaudeAPI(),
-    checkQueue(),
-    checkTranslation(),
-  ]);
+- Processing queue depth (alert if > 1000)
+- Error rate (alert if > 5% of messages)
+- API failure rate (alert if Claude/Supabase down)
+- Processing latency (alert if p95 > 5 seconds)
 
-  const failures = checks.filter((c) => c.status === 'rejected');
+**Alert channels:**
 
-  return {
-    healthy: failures.length === 0,
-    timestamp: new Date().toISOString(),
-    checks: {
-      database: checks[0].status === 'fulfilled',
-      claude: checks[1].status === 'fulfilled',
-      queue: checks[2].status === 'fulfilled',
-      translation: checks[3].status === 'fulfilled',
-    },
-    errors: failures.map((f) => f.reason),
-  };
-}
+- Slack/Discord for urgent issues
+- Email for daily summaries
+- Dashboard for real-time monitoring
 
-async function checkDatabase(): Promise<void> {
-  await db.from('families').select('id').limit(1);
-}
+**Health checks:**
 
-async function checkClaudeAPI(): Promise<void> {
-  await claudeClient.callClaude('test', { maxTokens: 10 });
-}
-```
-
-### Metrics to Track
-
-```typescript
-interface SystemMetrics {
-  // Processing
-  messages_processed_per_hour: number;
-  messages_failed_per_hour: number;
-  average_processing_time_ms: number;
-
-  // Queue
-  queue_depth_by_family: Record<string, number>;
-  dead_letter_queue_depth: number;
-
-  // API calls
-  claude_api_calls_per_hour: number;
-  claude_api_errors_per_hour: number;
-  claude_api_p95_latency_ms: number;
-
-  // Database
-  database_writes_per_hour: number;
-  database_errors_per_hour: number;
-  database_p95_latency_ms: number;
-
-  // Facilitator
-  questions_asked_per_hour: number;
-  questions_answered_per_hour: number;
-  question_ignore_rate: number;
-}
-```
+- `/health` endpoint returns 200 if:
+  - Database connection healthy
+  - Queue worker running
+  - No poison messages in queue
+  - Error rate < 10%
 
 ---
 
 ## Circuit Breaker Pattern
 
-**Prevent cascading failures:**
+Prevent cascading failures:
 
 ```typescript
 class CircuitBreaker {
-  private failureCount = 0;
-  private lastFailureTime: number | null = null;
-  private state: 'closed' | 'open' | 'half-open' = 'closed';
+  state: 'closed' | 'open' | 'half-open' = 'closed';
+  failures = 0;
+  threshold = 5;
+  timeout = 60000; // 1 minute
 
-  constructor(
-    private threshold: number = 5,
-    private timeout: number = 60000, // 1 minute
-  ) {}
-
-  async execute<T>(fn: () => Promise<T>): Promise<T> {
+  async call<T>(fn: () => Promise<T>): Promise<T> {
     if (this.state === 'open') {
-      // Check if timeout expired
-      if (this.shouldAttemptReset()) {
+      if (Date.now() - this.lastFailure > this.timeout) {
         this.state = 'half-open';
       } else {
-        throw new Error('Circuit breaker is OPEN');
+        throw new Error('Circuit breaker open');
       }
     }
 
     try {
       const result = await fn();
-      this.onSuccess();
+      if (this.state === 'half-open') {
+        this.reset();
+      }
       return result;
     } catch (error) {
-      this.onFailure();
+      this.failures += 1;
+      this.lastFailure = Date.now();
+
+      if (this.failures >= this.threshold) {
+        this.state = 'open';
+        await this.notifyAdmin('Circuit breaker opened');
+      }
       throw error;
     }
   }
 
-  private onSuccess() {
-    this.failureCount = 0;
+  reset() {
     this.state = 'closed';
+    this.failures = 0;
   }
-
-  private onFailure() {
-    this.failureCount++;
-    this.lastFailureTime = Date.now();
-
-    if (this.failureCount >= this.threshold) {
-      this.state = 'open';
-      logger.error('Circuit breaker opened');
-    }
-  }
-
-  private shouldAttemptReset(): boolean {
-    return (
-      this.lastFailureTime !== null &&
-      Date.now() - this.lastFailureTime >= this.timeout
-    );
-  }
-}
-
-// Usage
-const claudeCircuitBreaker = new CircuitBreaker(5, 60000);
-
-async function callClaudeWithCircuitBreaker(prompt: string) {
-  return claudeCircuitBreaker.execute(() =>
-    claudeClient.callClaude(prompt, options),
-  );
 }
 ```
+
+**Use for:**
+
+- External API calls (Claude, Telegram)
+- Database operations during outages
+- Any expensive operations that might cascade
 
 ---
 
 ## Graceful Shutdown
 
-**Clean shutdown on SIGTERM:**
+Ensure clean shutdown on deploy/restart:
 
 ```typescript
-// apps/chatbots/src/main.ts
-let isShuttingDown = false;
-
 process.on('SIGTERM', async () => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
+  logger.info('SIGTERM received, starting graceful shutdown');
 
-  logger.info('Received SIGTERM, shutting down gracefully...');
+  // 1. Stop accepting new work
+  await stopAcceptingNewMessages();
 
-  // Stop accepting new messages
-  bot.stopPolling();
+  // 2. Finish current work (with timeout)
+  await Promise.race([
+    finishCurrentProcessing(),
+    sleep(30000), // 30s timeout
+  ]);
 
-  // Wait for current processing to finish (max 30s)
-  await Promise.race([waitForQueueEmpty(), sleep(30000)]);
+  // 3. Release locks
+  await releaseAllLocks();
 
-  // Close database connections
-  await db.close();
+  // 4. Close connections
+  await closeDatabase();
+  await closeTelegram();
 
-  // Close Redis connection
-  await redis.quit();
-
-  logger.info('Shutdown complete');
+  logger.info('Graceful shutdown complete');
   process.exit(0);
 });
-
-async function waitForQueueEmpty() {
-  while (true) {
-    const depth = await queue.getTotalDepth();
-    if (depth === 0) break;
-    await sleep(1000);
-  }
-}
 ```
 
 ---
 
-## Summary: Error Handling Checklist
+## Error Handling Checklist
 
-- [ ] Claude API failures → Retry with exponential backoff
-- [ ] Database failures → Transaction rollback + retry
-- [ ] Queue failures → Dead letter queue after max retries
-- [ ] Translation failures → Graceful degradation (original only)
-- [ ] Facilitator failures → Conservative fallback (don't ask)
-- [ ] All errors logged to event_log
-- [ ] Critical errors trigger alerts
-- [ ] Circuit breakers for external APIs
-- [ ] Health check endpoint implemented
-- [ ] Graceful shutdown on SIGTERM
-- [ ] Metrics tracked and monitored
-- [ ] Dead letter queue inspectable by admin
+- [ ] All LLM calls wrapped in retry logic
+- [ ] Database writes use transactions where needed
+- [ ] Webhook handlers return 200 immediately
+- [ ] Queue items have retry logic with dead letter queue
+- [ ] Circuit breakers protect external dependencies
+- [ ] Errors logged to event_log with context
+- [ ] Monitoring alerts configured
+- [ ] Graceful shutdown implemented
+- [ ] Health check endpoint configured
+- [ ] Rate limiting respects API limits
+
+---
+
+## See Also
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture overview
+- [AGENTS.md](AGENTS.md) - Agent specifications and flows

@@ -30,6 +30,10 @@ This directory contains Architecture Decision Records (ADRs) for Sobremesa.
 | [022](022-intern-agent-haiku.md)                  | Intern Agent for Lightweight Preprocessing (Haiku)     | Accepted | 2026-01-12 |
 | [023](023-domain-model-augmentation.md)           | Domain Model Augmentation Pattern                      | Accepted | 2026-01-12 |
 | [024](024-historian-returns-facilitator-sends.md) | Historian Returns Answers, Facilitator Sends           | Accepted | 2026-01-15 |
+| [025](025-claims-based-data-architecture.md)      | Claims-Based Data Architecture                         | Accepted | 2026-01-21 |
+| [026](026-llm-evaluation-queue.md)                | LLM Evaluation Queue Architecture                      | Accepted | 2026-01-26 |
+| [027](027-hybrid-claim-strength-scoring.md)       | Hybrid Claim Strength Scoring                          | Accepted | 2026-01-26 |
+| [028](028-data-quality-extraction-rules.md)       | Data Quality Extraction Rules                          | Accepted | 2026-01-27 |
 
 ## Key Architectural Themes
 

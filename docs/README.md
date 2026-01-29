@@ -27,15 +27,21 @@ This directory contains all specifications, decisions, and guides needed to buil
 | [WARMTH.md](WARMTH.md)   | The warmth formula and why it matters           |
 | [CULTURE.md](CULTURE.md) | Cultural adaptation and language considerations |
 
+### Architecture Decisions
+
+See [adr/](adr/) for Architecture Decision Records (ADRs 001-028) documenting key architectural choices.
+
 ### Architecture & Technical
 
-| Document                               | Purpose                                           |
-| -------------------------------------- | ------------------------------------------------- |
-| [ARCHITECTURE.md](ARCHITECTURE.md)     | System architecture, data flow, and key decisions |
-| [TECH-STACK.md](TECH-STACK.md)         | Complete technology stack and setup               |
-| [DOMAIN-MODEL.md](DOMAIN-MODEL.md)     | Contract between Scribe/Curator → Registrar       |
-| [DATA-ISOLATION.md](DATA-ISOLATION.md) | Multi-family data isolation strategy              |
-| [ERROR-HANDLING.md](ERROR-HANDLING.md) | Failure scenarios and resilience patterns         |
+| Document                               | Purpose                                             |
+| -------------------------------------- | --------------------------------------------------- |
+| [ARCHITECTURE.md](ARCHITECTURE.md)     | System architecture, data flow, and key decisions   |
+| [TECH-STACK.md](TECH-STACK.md)         | Complete technology stack and setup                 |
+| [DOMAIN-MODEL.md](DOMAIN-MODEL.md)     | Contract between Scribe/Curator → Registrar         |
+| [DATA-ISOLATION.md](DATA-ISOLATION.md) | Multi-family data isolation strategy                |
+| [ERROR-HANDLING.md](ERROR-HANDLING.md) | Failure scenarios and resilience patterns           |
+| [SERVICES.md](SERVICES.md)             | Service layer architecture and integration patterns |
+| [AUTH.md](AUTH.md)                     | Authentication and authorization system             |
 
 ### Agents
 

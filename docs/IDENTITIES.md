@@ -6,6 +6,72 @@ The **Identities system** bridges chat providers (Telegram, WhatsApp, SMS) with 
 
 ---
 
+## Key Concepts
+
+Understanding the difference between Users, Identities, Family Access, and Participants:
+
+| Term              | Table           | Scope            | Purpose                                                                                                 |
+| ----------------- | --------------- | ---------------- | ------------------------------------------------------------------------------------------------------- |
+| **User**          | `users`         | Global           | Web auth account for Studio login. Has global role (user/super_admin), display name, avatar.            |
+| **Identity**      | `identities`    | Global           | Chat provider account (e.g., Telegram user 12345). Links to a user via `user_id`.                       |
+| **Family Access** | `family_access` | Per-family       | Permission to access a family. Links identity to family with role. Has `person_id` for genealogy claim. |
+| **Person**        | `people`        | Per-family       | Record in the family genealogy (the "real person").                                                     |
+| **Participant**   | (query-based)   | Per-conversation | A verified conversation member whose identity has sent messages AND has claimed a person_id.            |
+
+### Relationship Chain
+
+```
+User (web auth account)
+  └── Identity (provider account, e.g., Telegram)
+        └── Family Access (per-family permission)
+              ├── role: admin | member | viewer
+              └── person_id → Person (genealogy record)
+```
+
+### Key Distinctions
+
+**User vs Identity:**
+
+- A **user** is created when someone logs into Studio (web app)
+- An **identity** is created when someone interacts via a chat provider
+- One user can have multiple identities (same person on Telegram + WhatsApp)
+- An identity may exist without a user (bot-only interaction, no web login)
+
+**Identity vs Person:**
+
+- An **identity** is a chat provider account (Telegram user 12345)
+- A **person** is a record in the family genealogy ("Grandma Elena")
+- The link is made via `family_access.person_id` (user claims "I am Elena")
+
+**Family Access vs Participant:**
+
+- **Family access** grants permission to view/edit a family's data
+- A **participant** is someone who has sent messages in a conversation AND claimed a person
+- Participants are query-based (join `conversation_events` → `identities` → `family_access`)
+
+### Example Flow
+
+```
+1. Gabriel sends message in Telegram group
+   → Identity created: telegram:123456789
+
+2. Gabriel clicks Studio link from chat
+   → User created (web auth)
+   → Identity linked to user
+   → Family access created (member role)
+
+3. Gabriel confirms "Yes, I'm Gabriel" in welcome modal
+   → family_access.person_id = gabriel_person_uuid
+
+4. Facilitator checks if Gabriel is a participant
+   → Joins: conversation_events (has messages?)
+          → identities (which provider?)
+          → family_access (has person_id?)
+   → Returns: true (Gabriel is verified participant)
+```
+
+---
+
 ## Architecture
 
 ```
@@ -31,36 +97,76 @@ A **person** (real-world human) can have **multiple identities**:
 
 ## Schema
 
-### Identities Table
+### Users Table (Web Auth)
+
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT,
+  display_name TEXT,
+  avatar_url TEXT,
+  role TEXT NOT NULL DEFAULT 'user',  -- 'user' or 'super_admin'
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### Identities Table (Global, Provider Accounts)
 
 ```sql
 CREATE TABLE identities (
-  id UUID PRIMARY KEY,
-  family_id UUID NOT NULL,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id),  -- Link to web auth user (nullable)
 
-  -- Provider account
-  source VARCHAR(50) NOT NULL,         -- 'telegram', 'whatsapp', 'sms'
-  provider_user_id VARCHAR(255) NOT NULL,  -- e.g., Telegram user ID (string)
+  -- Provider account (globally unique)
+  provider TEXT NOT NULL,              -- 'telegram', 'whatsapp', 'sms'
+  provider_user_id TEXT NOT NULL,      -- e.g., Telegram user ID as string
 
-  -- Profile snapshot (read from provider)
-  display_name VARCHAR(255),           -- Latest known name from provider
-  username VARCHAR(255),               -- Latest known username from provider
-
-  -- Link to family tree person
-  person_id UUID NULL,                 -- Optional: link to canonical Person
+  -- Profile snapshot (auto-updated from provider)
+  provider_username TEXT,
+  display_name TEXT,
+  avatar_url TEXT,
 
   is_active BOOLEAN DEFAULT TRUE,
-
+  last_login_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
 
-  UNIQUE (family_id, source, provider_user_id),
-  CONSTRAINT fk_identities_person_family
-    FOREIGN KEY (family_id, person_id)
-    REFERENCES people(family_id, id)
-    ON DELETE SET NULL
+  UNIQUE (provider, provider_user_id)  -- Global uniqueness
 );
 ```
+
+### Family Access Table (Per-Family Permissions)
+
+```sql
+CREATE TABLE family_access (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  identity_id UUID NOT NULL REFERENCES identities(id),
+  family_id UUID NOT NULL REFERENCES families(id),
+
+  role TEXT NOT NULL DEFAULT 'member',  -- 'admin', 'member', 'viewer'
+  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'active', 'revoked', 'suspended'
+
+  -- Person claim: who is this identity in this family's genealogy?
+  person_id UUID REFERENCES people(id),
+
+  granted_by TEXT NOT NULL,  -- 'system', 'admin', 'telegram_login', 'access_pass'
+  granted_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Revocation tracking
+  revoked_at TIMESTAMPTZ,
+  revoked_by UUID,
+  revoke_reason TEXT,
+
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  UNIQUE (identity_id, family_id)
+);
+```
+
+> **Note:** The old schema had `identities.person_id` directly. The current schema uses `family_access.person_id` to support per-family person claims (same identity could theoretically claim different people in different families).
 
 ### Key Fields
 
@@ -413,5 +519,5 @@ Messages still processed, but not attributed to a family member
 
 ---
 
-**Last Updated**: 2026-01-12
+**Last Updated**: 2026-01-28
 **Status**: Production-ready
