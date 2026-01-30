@@ -35,6 +35,11 @@ import {
   StrengthCalculatorService,
 } from './services';
 
+// Import registrar package version
+import registrarPkg from '../../package.json' with { type: 'json' };
+
+const REGISTRAR_VERSION = registrarPkg.version;
+
 /**
  * Options for creating a RegistrarAgent.
  */
@@ -195,10 +200,13 @@ export class RegistrarAgent {
   /**
    * Persist a domain model to the database.
    * This is the RegistrarProcessor function for MessageProcessor.
+   *
+   * @param pipelineVersions - Versions of upstream agents (intern, scribe) for extraction tracking
    */
   async persist(
     domainModel: ScribeDomainModel,
     familyId: string,
+    pipelineVersions?: { internVersion?: string; scribeVersion?: string },
   ): Promise<void> {
     this.logger.info(
       { familyId, conversationEventId: domainModel.conversationEventId },
@@ -218,6 +226,17 @@ export class RegistrarAgent {
     };
 
     const conversationEventId = domainModel.conversationEventId;
+
+    // Build composite extraction version from all pipeline components
+    const versionParts: string[] = [];
+    if (pipelineVersions?.internVersion) {
+      versionParts.push(`intern-v${pipelineVersions.internVersion}`);
+    }
+    if (pipelineVersions?.scribeVersion) {
+      versionParts.push(`scribe-v${pipelineVersions.scribeVersion}`);
+    }
+    versionParts.push(`registrar-v${REGISTRAR_VERSION}`);
+    const extractionVersion = versionParts.join('+');
 
     // Get the claimedBy from the source event
     const sourceEvent = await this.conversationEventRepo.findById(
@@ -297,6 +316,7 @@ export class RegistrarAgent {
             person,
             conversationEventId,
             claimedBy,
+            extractionVersion,
           );
 
           this.logger.debug(
@@ -322,6 +342,7 @@ export class RegistrarAgent {
           familyId,
           place,
           conversationEventId,
+          extractionVersion,
         );
         placeIdMap.set(place.name, dbPlace.id);
         if (new Date(dbPlace.createdAt).getTime() > Date.now() - 1000) {
@@ -344,6 +365,7 @@ export class RegistrarAgent {
           placeId,
           conversationEventId,
           claimedBy,
+          extractionVersion,
         );
         createdEventIds.push(createdEvent.id);
 
@@ -387,6 +409,7 @@ export class RegistrarAgent {
                 conversationEventId,
                 claimedBy,
                 confidence: rel.confidence,
+                extractionVersion,
               },
             );
             result.relationshipsCreated++;
@@ -402,7 +425,9 @@ export class RegistrarAgent {
           ? null
           : await this.eventRepo.findById(familyId, conversationEventId);
         const language =
-          domainModel.detectedLanguage || event?.languageOriginal || 'unknown';
+          domainModel.detectedLanguage ||
+          event?.descriptionLanguage ||
+          'unknown';
 
         const createdStory = await this.storyRepo.createFromExtracted(
           familyId,
@@ -410,6 +435,7 @@ export class RegistrarAgent {
           conversationEventId,
           language,
           claimedBy,
+          extractionVersion,
         );
 
         // Link people via story_people join table
@@ -793,6 +819,7 @@ export class RegistrarAgent {
           claim,
           conversationEventId,
           claim.claimedBy,
+          extractionVersion,
         );
 
         // Create analysis record (mutable system metadata)

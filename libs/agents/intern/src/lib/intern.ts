@@ -6,7 +6,7 @@ import {
 import { createLogger } from '@sobremesa/shared-utils';
 import type { AIProvider } from '@sobremesa/ai-provider';
 import type pino from 'pino';
-import type { Image } from '@sobremesa/shared-types';
+import type { Image, LanguageCode } from '@sobremesa/shared-types';
 import type { MessageContext } from '@sobremesa/queue';
 
 /**
@@ -24,7 +24,7 @@ export interface FilterResult {
   /** Reason for the decision (for logging/debugging) */
   reason: string;
   /** Detected language of the message (en, es) */
-  language?: string;
+  language?: LanguageCode;
   /** Tokens used for this call */
   tokensUsed?: number;
 }
@@ -45,7 +45,7 @@ export interface RoutingResult {
   /** Reason for the routing decision */
   reason: string;
   /** Detected language of the message (en, es) */
-  language?: string;
+  language?: LanguageCode;
   /** Tokens used (if AI was called) */
   tokensUsed?: number;
 }
@@ -292,7 +292,7 @@ export class InternAgent {
   private parseFilterResponse(text: string): {
     relevant: boolean;
     reason: string;
-    language?: string;
+    language?: LanguageCode;
   } {
     try {
       // Try to extract JSON from the response

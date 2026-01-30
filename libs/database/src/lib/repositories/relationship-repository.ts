@@ -112,6 +112,7 @@ export class RelationshipRepository {
       conversationEventId?: string;
       claimedBy?: string;
       confidence?: Confidence;
+      extractionVersion?: string;
     },
   ): Promise<Relationship> {
     // Normalize the relationship
@@ -145,6 +146,7 @@ export class RelationshipRepository {
       confidence: options?.confidence || Confidence.MEDIUM,
       conversationEventId: options?.conversationEventId,
       claimedBy: options?.claimedBy,
+      extractionVersion: options?.extractionVersion,
     });
   }
 

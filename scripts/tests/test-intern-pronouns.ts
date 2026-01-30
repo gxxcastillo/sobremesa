@@ -5,7 +5,7 @@
 import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { AnthropicProvider } from '@sobremesa/ai-provider';
-import { InternAgent } from '../libs/agents/intern/src/lib/intern.js';
+import { InternAgent } from '../../libs/agents/intern/src/lib/intern.js';
 import type { MessageContext } from '../libs/queue/src/lib/types.js';
 
 async function main() {

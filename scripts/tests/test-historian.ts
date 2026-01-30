@@ -6,7 +6,7 @@
 import {
   isQuestion,
   parseQuestion,
-} from '../libs/agents/historian/src/lib/question-parser';
+} from '../../libs/agents/historian/src/lib/question-parser';
 
 interface TestCase {
   input: string;

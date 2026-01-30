@@ -84,7 +84,13 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       throw new Error(`Failed to find recent events: ${error.message}`);
     }
 
-    return (data || []).map((row) => this.filterJoinedFields(row));
+    if (!data) {
+      return [];
+    }
+
+    return data.map((row) =>
+      this.filterJoinedFields(row as unknown as Record<string, unknown>),
+    );
   }
 
   /**

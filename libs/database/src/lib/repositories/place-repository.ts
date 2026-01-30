@@ -78,6 +78,7 @@ export class PlaceRepository extends BaseRepository<Place> {
     familyId: string,
     extracted: ExtractedPlace,
     conversationEventId: string,
+    extractionVersion?: string,
   ): Promise<Place> {
     // Try to find by exact name first
     const existing = await this.findByName(familyId, extracted.name);
@@ -109,6 +110,7 @@ export class PlaceRepository extends BaseRepository<Place> {
       country: extracted.country,
       firstMentionedEventId: conversationEventId,
       redacted: false,
+      extractionVersion,
     };
 
     return await this.insert(record);

@@ -8,12 +8,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   buildSystemPrompt,
   buildUserMessage,
-} from '../libs/agents/scribe/src/lib/prompt-builder.js';
-import { parseScribeResponse } from '../libs/agents/scribe/src/lib/response-parser.js';
+} from '../../libs/agents/scribe/src/lib/prompt-builder.js';
+import { parseScribeResponse } from '../../libs/agents/scribe/src/lib/response-parser.js';
 import type {
   ScribeConfig,
   ScribeContext,
-} from '../libs/agents/scribe/src/lib/types.js';
+} from '../../libs/agents/scribe/src/lib/types.js';
 
 const TEST_MESSAGE = `My grandfather Abraham came to America sometime in the 1920s.
 I think he came from Poland but I'm not 100% sure. He opened a small grocery store

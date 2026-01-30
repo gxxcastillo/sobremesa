@@ -4,9 +4,9 @@
  * Run with: npx tsx scripts/test-answer-detection.ts
  */
 import 'dotenv/config';
-import { FamilyRepository } from '../libs/database/src/lib/repositories/family-repository.js';
-import { QuestionRepository } from '../libs/database/src/lib/repositories/question-repository.js';
-import { getServiceClient } from '../libs/database/src/lib/client.js';
+import { FamilyRepository } from '../../libs/database/src/lib/repositories/family-repository.js';
+import { QuestionRepository } from '../../libs/database/src/lib/repositories/question-repository.js';
+import { getServiceClient } from '../../libs/database/src/lib/client.js';
 
 async function main() {
   const familyRepo = new FamilyRepository();

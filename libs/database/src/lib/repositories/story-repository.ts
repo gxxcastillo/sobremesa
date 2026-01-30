@@ -121,6 +121,7 @@ export class StoryRepository extends BaseRepository<Story> {
     conversationEventId: string,
     language: LanguageCode,
     sharedBy?: string,
+    extractionVersion?: string,
   ): Promise<Story> {
     // Note: Entity associations use join tables (story_people, story_places, story_events)
     // Note: Source provenance uses story_conversation_events join table
@@ -138,6 +139,7 @@ export class StoryRepository extends BaseRepository<Story> {
       confidence: 'medium' as Confidence,
       sharedBy,
       redacted: false,
+      extractionVersion,
     };
 
     const created = await this.insert(record);

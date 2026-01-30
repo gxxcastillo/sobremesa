@@ -193,6 +193,7 @@ export class PersonRepository extends BaseRepository<Person> {
     extracted: ExtractedPerson,
     conversationEventId: string,
     createdBy?: string,
+    extractionVersion?: string,
   ): Promise<Person> {
     const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,
@@ -206,6 +207,7 @@ export class PersonRepository extends BaseRepository<Person> {
       createdBy,
       redacted: false,
       isPlaceholder: this.isDescriptiveName(extracted.name),
+      extractionVersion,
     };
 
     return await this.insert(record);
@@ -311,6 +313,7 @@ export class PersonRepository extends BaseRepository<Person> {
     extracted: ExtractedPerson,
     conversationEventId: string,
     createdBy?: string,
+    extractionVersion?: string,
   ): Promise<Person> {
     // Try to find existing person
     const existing = await this.findByFuzzyMatch(
@@ -344,6 +347,7 @@ export class PersonRepository extends BaseRepository<Person> {
       extracted,
       conversationEventId,
       createdBy,
+      extractionVersion,
     );
   }
 
@@ -437,6 +441,7 @@ export class PersonRepository extends BaseRepository<Person> {
    * @param relatedToPersonIds - IDs of people this placeholder is related to (for potential future merging)
    * @param conversationEventId - The conversation event that led to this placeholder's creation
    * @param createdBy - Who created this placeholder
+   * @param extractionVersion - Version of extraction logic (for event sourcing)
    */
   async createPlaceholder(
     familyId: string,
@@ -444,6 +449,7 @@ export class PersonRepository extends BaseRepository<Person> {
     relatedToPersonIds: string[],
     conversationEventId?: string,
     createdBy?: string,
+    extractionVersion?: string,
   ): Promise<Person> {
     const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,
@@ -456,6 +462,7 @@ export class PersonRepository extends BaseRepository<Person> {
       firstMentionedEventId: conversationEventId,
       createdBy,
       redacted: false,
+      extractionVersion,
     };
 
     return await this.insert(record);
@@ -497,6 +504,7 @@ export class PersonRepository extends BaseRepository<Person> {
     relatedToPersonIds: string[],
     conversationEventId?: string,
     createdBy?: string,
+    extractionVersion?: string,
   ): Promise<Person> {
     const existing = await this.findPlaceholderByDescription(
       familyId,
@@ -513,6 +521,7 @@ export class PersonRepository extends BaseRepository<Person> {
       relatedToPersonIds,
       conversationEventId,
       createdBy,
+      extractionVersion,
     );
   }
 

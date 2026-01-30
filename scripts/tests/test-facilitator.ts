@@ -4,9 +4,9 @@
  * Run with: npx tsx scripts/test-facilitator.ts
  */
 import 'dotenv/config';
-import { FacilitatorAgent } from '../libs/agents/facilitator/src/lib/facilitator.js';
-import { FamilyRepository } from '../libs/database/src/lib/repositories/family-repository.js';
-import { QuestionRepository } from '../libs/database/src/lib/repositories/question-repository.js';
+import { FacilitatorAgent } from '../../libs/agents/facilitator/src/lib/facilitator.js';
+import { FamilyRepository } from '../../libs/database/src/lib/repositories/family-repository.js';
+import { QuestionRepository } from '../../libs/database/src/lib/repositories/question-repository.js';
 
 // Mock message sender that just logs
 const mockSender = {

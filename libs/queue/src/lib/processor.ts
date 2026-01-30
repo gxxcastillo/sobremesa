@@ -144,12 +144,21 @@ export type ScribeProcessor = (
 ) => Promise<ScribeDomainModel>;
 
 /**
+ * Pipeline versions for extraction tracking.
+ */
+export interface PipelineVersions {
+  internVersion?: string;
+  scribeVersion?: string;
+}
+
+/**
  * Registrar processor function type.
  * Implementations should persist the domain model to the database.
  */
 export type RegistrarProcessor = (
   domainModel: ScribeDomainModel,
   familyId: string,
+  pipelineVersions?: PipelineVersions,
 ) => Promise<void>;
 
 /**
@@ -253,6 +262,7 @@ export class MessageProcessor {
   private imageLinker?: ImageLinkerProcessor;
   private scribe?: ScribeProcessor;
   private registrar?: RegistrarProcessor;
+  private pipelineVersions?: PipelineVersions;
   private onImageCreated?: OnImageCreatedCallback;
   private logger: pino.Logger;
 
@@ -335,6 +345,13 @@ export class MessageProcessor {
    */
   setRegistrar(registrar: RegistrarProcessor): void {
     this.registrar = registrar;
+  }
+
+  /**
+   * Set pipeline versions for extraction tracking.
+   */
+  setPipelineVersions(versions: PipelineVersions): void {
+    this.pipelineVersions = versions;
   }
 
   /**
@@ -865,7 +882,7 @@ export class MessageProcessor {
     // Run Registrar (if configured and we have a domain model)
     if (this.registrar && domainModel) {
       this.logger.debug({ eventId }, 'Running Registrar');
-      await this.registrar(domainModel, familyId);
+      await this.registrar(domainModel, familyId, this.pipelineVersions);
     }
   }
 

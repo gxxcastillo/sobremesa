@@ -5,8 +5,8 @@
  */
 import 'dotenv/config';
 import { Telegraf } from 'telegraf';
-import { FamilyRepository } from '../libs/database/src/lib/repositories/family-repository.js';
-import { QuestionRepository } from '../libs/database/src/lib/repositories/question-repository.js';
+import { FamilyRepository } from '../../libs/database/src/lib/repositories/family-repository.js';
+import { QuestionRepository } from '../../libs/database/src/lib/repositories/question-repository.js';
 
 async function main() {
   const facilitatorToken = process.env['TELEGRAM_BOT_TOKEN_FACILITATOR'];

@@ -9,8 +9,8 @@ import { MessageQueue, MessageProcessor } from '@sobremesa/queue';
 import { BotManager } from '@sobremesa/telegram';
 import { AdminAgent } from '@sobremesa/agents-admin';
 import { HistorianAgent } from '@sobremesa/agents-historian';
-import { InternAgent } from '@sobremesa/agents-intern';
-import { ScribeAgent } from '@sobremesa/agents-scribe';
+import { InternAgent, INTERN_VERSION } from '@sobremesa/agents-intern';
+import { ScribeAgent, SCRIBE_VERSION } from '@sobremesa/agents-scribe';
 import { RegistrarAgent } from '@sobremesa/agents-registrar';
 import { FacilitatorAgent } from '@sobremesa/agents-facilitator';
 
@@ -146,6 +146,10 @@ async function main() {
       processor.setScribe((eventId, familyId, context) =>
         scribe.process(eventId, familyId, context),
       );
+      processor.setPipelineVersions({
+        internVersion: INTERN_VERSION,
+        scribeVersion: SCRIBE_VERSION,
+      });
       processor.setHistorianProcessor(async (eventId, familyId) => {
         // 1. Historian generates the answer
         const result = await historian.answer(eventId, familyId);
@@ -164,8 +168,8 @@ async function main() {
 
         return { success: responseResult.success, error: responseResult.error };
       });
-      processor.setRegistrar(async (model, familyId) => {
-        await registrar.persist(model, familyId);
+      processor.setRegistrar(async (model, familyId, pipelineVersions) => {
+        await registrar.persist(model, familyId, pipelineVersions);
 
         // Fire-and-forget: trigger Facilitator after persist
         // Log errors but don't block or retry

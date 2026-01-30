@@ -27,6 +27,7 @@
         "@swc/core": "~1.5.7",
         "@swc/helpers": "~0.5.11",
         "@types/node": "20.19.9",
+        "@types/semver": "^7.7.1",
         "@vitest/coverage-v8": "4.0.9",
         "@vitest/ui": "4.0.9",
         "esbuild": "^0.19.2",
@@ -38,6 +39,7 @@
         "lint-staged": "^16.2.7",
         "nx": "22.3.3",
         "prettier": "~3.6.2",
+        "semver": "^7.7.3",
         "swc-loader": "0.1.15",
         "tslib": "^2.3.0",
         "tsx": "^4.21.0",
@@ -933,6 +935,8 @@
     "@types/phoenix": ["@types/phoenix@1.6.7", "", {}, "sha512-oN9ive//QSBkf19rfDv45M7eZPi0eEXylht2OLEXicu5b4KoQ1OzXIw+xDSGWxSxe1JmepRR/ZH283vsu518/Q=="],
 
     "@types/responselike": ["@types/responselike@1.0.0", "", { "dependencies": { "@types/node": "*" } }, "sha512-85Y2BjiufFzaMIlvJDvTTB8Fxl2xfLo4HgmHzVBz08w4wDePCTjYw66PdrolO0kzli3yam/YCgRufyo1DdQVTA=="],
+
+    "@types/semver": ["@types/semver@7.7.1", "", {}, "sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA=="],
 
     "@types/stack-utils": ["@types/stack-utils@2.0.3", "", {}, "sha512-9aEbYZ3TbYMznPdcdr3SmIrLXwC/AKZXQeCf9Pgao5CKb8CyHuEX5jzWPTkvregvhRJHcpRO6BFoGW9ycaOkYw=="],
 

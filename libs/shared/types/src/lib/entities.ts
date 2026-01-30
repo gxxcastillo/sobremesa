@@ -15,6 +15,8 @@ export interface BaseEntity {
   redactedBy?: string;
   redactionReason?: string;
   contentHmac?: string;
+  /** Version of extraction logic that created this record (e.g., scribe-v1.0.0) */
+  extractionVersion?: string;
 }
 
 /**
@@ -236,6 +238,8 @@ export interface Relationship {
   descriptionOriginal?: string;
   languageOriginal?: LanguageCode;
   createdAt: Date;
+  /** Version of extraction logic that created this record (e.g., scribe-v1.0.0) */
+  extractionVersion?: string;
 }
 
 /**

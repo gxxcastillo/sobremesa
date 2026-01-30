@@ -127,6 +127,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
     extracted: ExtractedClaim,
     conversationEventId: string,
     claimedBy: string,
+    extractionVersion?: string,
   ): Promise<Claim> {
     // Parse claim_value from Scribe (may be JSON string or plain string)
     // Scribe outputs JSON strings for structured claims:
@@ -165,6 +166,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
       // Note: Entity associations now via claim_entities join table
 
       status: 'active',
+      extractionVersion,
     };
 
     return await this.insert(record);

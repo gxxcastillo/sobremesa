@@ -5,18 +5,8 @@
  * Displays a suggested person match and allows confirm/deny.
  */
 
-import {
-  type Component,
-  createSignal,
-  Show,
-  onMount,
-  createEffect,
-} from 'solid-js';
-import {
-  StudioApiClient,
-  type PersonSuggestion,
-  type IdentityResponse,
-} from '@sobremesa/api-client';
+import { type Component, createSignal, Show, onMount } from 'solid-js';
+import { StudioApiClient, type PersonSuggestion } from '@sobremesa/api-client';
 import './WelcomeModal.css';
 
 export interface WelcomeModalProps {

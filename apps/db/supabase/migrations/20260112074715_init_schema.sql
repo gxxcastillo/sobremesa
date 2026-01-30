@@ -572,6 +572,9 @@ CREATE TABLE IF NOT EXISTS people (
   superseded_by UUID,
   superseded_at TIMESTAMPTZ,
 
+  -- Extraction versioning (for event sourcing)
+  extraction_version VARCHAR(100),
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -594,6 +597,7 @@ COMMENT ON COLUMN people.death_year IS 'Derived summary; canonical provenance li
 COMMENT ON COLUMN people.is_placeholder IS 'True if this person is a placeholder for an unknown individual in the family tree.';
 COMMENT ON COLUMN people.superseded_by IS 'References the person this entity was merged into. NULL = current/active entity. Denormalized from entity_merges.';
 COMMENT ON COLUMN people.superseded_at IS 'When this person was superseded by another. Denormalized from entity_merges.';
+COMMENT ON COLUMN people.extraction_version IS 'Version of extraction logic that created this record (e.g., scribe-v1.0.0). For event sourcing.';
 
 CREATE INDEX IF NOT EXISTS idx_people_family_name
   ON people(family_id, name);
@@ -612,6 +616,10 @@ CREATE INDEX IF NOT EXISTS idx_people_current
 
 CREATE INDEX IF NOT EXISTS idx_people_aliases_gin
   ON people USING gin(aliases);
+
+CREATE INDEX IF NOT EXISTS idx_people_extraction_version
+  ON people(extraction_version)
+  WHERE extraction_version IS NOT NULL;
 
 DROP TRIGGER IF EXISTS update_people_updated_at ON people;
 CREATE TRIGGER update_people_updated_at
@@ -856,6 +864,9 @@ CREATE TABLE IF NOT EXISTS relationships (
   description_original TEXT,
   language_original VARCHAR(10),
 
+  -- Extraction versioning (for event sourcing)
+  extraction_version VARCHAR(100),
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -888,6 +899,7 @@ COMMENT ON COLUMN relationships.relationship_type IS 'Type: parent, spouse, guar
 COMMENT ON COLUMN relationships.category IS 'Category: biological, legal, functional, honorary, social';
 COMMENT ON COLUMN relationships.status IS 'Status: active, ended, deceased';
 COMMENT ON COLUMN relationships.qualifier IS 'Qualifier: half, step, adoptive, maternal, paternal, etc.';
+COMMENT ON COLUMN relationships.extraction_version IS 'Version of extraction logic that created this record (e.g., scribe-v1.0.0). For event sourcing.';
 
 CREATE INDEX IF NOT EXISTS idx_relationships_family
   ON relationships(family_id);
@@ -904,6 +916,10 @@ CREATE INDEX IF NOT EXISTS idx_relationships_category
 CREATE INDEX IF NOT EXISTS idx_relationships_tree
   ON relationships(family_id, category)
   WHERE category IN ('biological', 'legal');
+
+CREATE INDEX IF NOT EXISTS idx_relationships_extraction_version
+  ON relationships(extraction_version)
+  WHERE extraction_version IS NOT NULL;
 
 DROP TRIGGER IF EXISTS update_relationships_updated_at ON relationships;
 CREATE TRIGGER update_relationships_updated_at
@@ -940,6 +956,9 @@ CREATE TABLE IF NOT EXISTS places (
   superseded_by UUID,
   superseded_at TIMESTAMPTZ,
 
+  -- Extraction versioning (for event sourcing)
+  extraction_version VARCHAR(100),
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -956,6 +975,7 @@ CREATE TABLE IF NOT EXISTS places (
 COMMENT ON TABLE places IS 'Geographic locations mentioned in stories.';
 COMMENT ON COLUMN places.superseded_by IS 'References the place this entity was merged into. NULL = current/active entity. Denormalized from entity_merges.';
 COMMENT ON COLUMN places.superseded_at IS 'When this place was superseded by another. Denormalized from entity_merges.';
+COMMENT ON COLUMN places.extraction_version IS 'Version of extraction logic that created this record (e.g., scribe-v1.0.0). For event sourcing.';
 
 CREATE INDEX IF NOT EXISTS idx_places_family_name
   ON places(family_id, name);
@@ -966,6 +986,10 @@ CREATE INDEX IF NOT EXISTS idx_places_family_country
 CREATE INDEX IF NOT EXISTS idx_places_current
   ON places(family_id)
   WHERE superseded_by IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_places_extraction_version
+  ON places(extraction_version)
+  WHERE extraction_version IS NOT NULL;
 
 DROP TRIGGER IF EXISTS update_places_updated_at ON places;
 CREATE TRIGGER update_places_updated_at
@@ -1007,6 +1031,9 @@ CREATE TABLE IF NOT EXISTS events (
   superseded_by UUID,
   superseded_at TIMESTAMPTZ,
 
+  -- Extraction versioning (for event sourcing)
+  extraction_version VARCHAR(100),
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -1026,6 +1053,7 @@ CREATE TABLE IF NOT EXISTS events (
 COMMENT ON TABLE events IS 'Atomic timeline facts: single point-in-time occurrences (birth, marriage, immigration, etc.). Structured and queryable by date/place/type. For narrative context connecting multiple events/people/places, use stories table.';
 COMMENT ON COLUMN events.superseded_by IS 'References the event this entity was merged into. NULL = current/active entity. Denormalized from entity_merges.';
 COMMENT ON COLUMN events.superseded_at IS 'When this event was superseded by another. Denormalized from entity_merges.';
+COMMENT ON COLUMN events.extraction_version IS 'Version of extraction logic that created this record (e.g., scribe-v1.0.0). For event sourcing.';
 
 CREATE INDEX IF NOT EXISTS idx_events_family_year
   ON events(family_id, date_year);
@@ -1036,6 +1064,10 @@ CREATE INDEX IF NOT EXISTS idx_events_family_type
 CREATE INDEX IF NOT EXISTS idx_events_current
   ON events(family_id)
   WHERE superseded_by IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_events_extraction_version
+  ON events(extraction_version)
+  WHERE extraction_version IS NOT NULL;
 
 DROP TRIGGER IF EXISTS update_events_updated_at ON events;
 CREATE TRIGGER update_events_updated_at
@@ -1125,6 +1157,9 @@ CREATE TABLE IF NOT EXISTS stories (
   superseded_by UUID,
   superseded_at TIMESTAMPTZ,
 
+  -- Extraction versioning (for event sourcing)
+  extraction_version VARCHAR(100),
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -1142,6 +1177,7 @@ CREATE TABLE IF NOT EXISTS stories (
 COMMENT ON TABLE stories IS 'Multi-entity narrative arcs that connect people, places, and events. Use for storytelling that weaves together multiple timeline points. Single-event descriptions go in events.description_original instead. Stories typically reference 2+ entities via story_people/story_places/story_events.';
 COMMENT ON COLUMN stories.superseded_by IS 'References the story this entity was merged into. NULL = current/active entity. Denormalized from entity_merges.';
 COMMENT ON COLUMN stories.superseded_at IS 'When this story was superseded by another. Denormalized from entity_merges.';
+COMMENT ON COLUMN stories.extraction_version IS 'Version of extraction logic that created this record (e.g., scribe-v1.0.0). For event sourcing.';
 
 CREATE INDEX IF NOT EXISTS idx_stories_family_timeframe
   ON stories(family_id, timeframe);
@@ -1153,6 +1189,10 @@ CREATE INDEX IF NOT EXISTS idx_stories_not_redacted
 CREATE INDEX IF NOT EXISTS idx_stories_current
   ON stories(family_id)
   WHERE superseded_by IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_stories_extraction_version
+  ON stories(extraction_version)
+  WHERE extraction_version IS NOT NULL;
 
 DROP TRIGGER IF EXISTS update_stories_updated_at ON stories;
 CREATE TRIGGER update_stories_updated_at
@@ -1297,6 +1337,9 @@ CREATE TABLE IF NOT EXISTS claims (
 
   content_hmac TEXT,
 
+  -- Extraction versioning (for event sourcing)
+  extraction_version VARCHAR(100),
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -1322,6 +1365,7 @@ CREATE TABLE IF NOT EXISTS claims (
 
 COMMENT ON TABLE claims IS 'Atomic factual claims with full provenance (canonical truth layer).';
 COMMENT ON COLUMN claims.conversation_event_id IS 'Reference to the conversation event where this claim originated';
+COMMENT ON COLUMN claims.extraction_version IS 'Version of extraction logic that created this record (e.g., scribe-v1.0.0). For event sourcing.';
 
 DROP TRIGGER IF EXISTS update_claims_updated_at ON claims;
 CREATE TRIGGER update_claims_updated_at
@@ -1345,6 +1389,10 @@ CREATE INDEX IF NOT EXISTS idx_claims_active
 
 CREATE INDEX IF NOT EXISTS idx_claims_family_source_type
   ON claims(family_id, claimed_by_source);
+
+CREATE INDEX IF NOT EXISTS idx_claims_extraction_version
+  ON claims(extraction_version)
+  WHERE extraction_version IS NOT NULL;
 
 -- ============================================================================
 -- CLAIM ANALYSIS (System-computed metadata, separated from immutable provenance)

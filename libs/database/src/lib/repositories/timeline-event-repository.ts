@@ -118,6 +118,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
     placeId: string | undefined,
     conversationEventId: string,
     claimedBy?: string,
+    extractionVersion?: string,
   ): Promise<TimelineEvent> {
     // Note: People associations removed - use EventPeopleRepository to link people
     const record: Omit<TimelineEvent, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -130,6 +131,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
       conversationEventId,
       claimedBy,
       redacted: false,
+      extractionVersion,
     };
 
     return await this.insert(record);

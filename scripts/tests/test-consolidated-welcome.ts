@@ -7,11 +7,11 @@
  * Run with: npx tsx scripts/test-consolidated-welcome.ts
  */
 import 'dotenv/config';
-import { MessageIngester } from '../libs/ingester/src/lib/ingester.js';
-import { ProcessingQueueRepository } from '../libs/database/src/lib/repositories/processing-queue-repository.js';
-import { ConversationEventRepository } from '../libs/database/src/lib/repositories/conversation-event-repository.js';
-import { getServiceClient } from '../libs/database/src/lib/client.js';
-import { formatMemberJoinPluralMessage } from '../libs/agents/admin/src/lib/messages.js';
+import { MessageIngester } from '../../libs/ingester/src/lib/ingester.js';
+import { ProcessingQueueRepository } from '../../libs/database/src/lib/repositories/processing-queue-repository.js';
+import { ConversationEventRepository } from '../../libs/database/src/lib/repositories/conversation-event-repository.js';
+import { getServiceClient } from '../../libs/database/src/lib/client.js';
+import { formatMemberJoinPluralMessage } from '../../libs/agents/admin/src/lib/messages.js';
 
 const TEST_FAMILY_ID = '00000000-0000-0000-0000-000000000001';
 const TEST_CHAT_ID = 'test-chat-consolidated-123';

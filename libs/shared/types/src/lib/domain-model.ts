@@ -128,6 +128,9 @@ export interface ScribeDomainModel {
 
   // Language detection (optional - provided by Intern preprocessing)
   detectedLanguage?: LanguageCode;
+
+  // Extraction version for event sourcing (e.g., scribe-v1.0.0)
+  extractionVersion?: string;
 }
 
 /**

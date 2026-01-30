@@ -9,12 +9,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   buildSystemPrompt,
   buildUserMessage,
-} from '../libs/agents/scribe/src/lib/prompt-builder.js';
-import { parseScribeResponse } from '../libs/agents/scribe/src/lib/response-parser.js';
+} from '../../libs/agents/scribe/src/lib/prompt-builder.js';
+import { parseScribeResponse } from '../../libs/agents/scribe/src/lib/response-parser.js';
 import type {
   ScribeConfig,
   ScribeContext,
-} from '../libs/agents/scribe/src/lib/types.js';
+} from '../../libs/agents/scribe/src/lib/types.js';
 
 // The message to extract from (contains "her parents")
 const TEST_MESSAGE = `I don't know why her parents were great`;
