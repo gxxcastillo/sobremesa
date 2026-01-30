@@ -126,8 +126,8 @@ export interface ScribeDomainModel {
   // Image references detected
   imageReferences: ImageReference[];
 
-  // Language detection
-  detectedLanguage: LanguageCode;
+  // Language detection (optional - provided by Intern preprocessing)
+  detectedLanguage?: LanguageCode;
 }
 
 /**

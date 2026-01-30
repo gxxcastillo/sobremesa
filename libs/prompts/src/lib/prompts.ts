@@ -5,6 +5,7 @@ import facilitatorResponsePrompt from '../agents/facilitator-response.txt?raw';
 import historianPrompt from '../agents/historian.txt?raw';
 import internFilterPrompt from '../agents/intern-filter.txt?raw';
 import internImageLinkPrompt from '../agents/intern-image-link.txt?raw';
+import internPronounsPrompt from '../agents/intern-pronouns.txt?raw';
 import scribePrompt from '../agents/scribe.txt?raw';
 
 export type PromptName = keyof typeof prompts;
@@ -17,6 +18,7 @@ const prompts = {
   historian: historianPrompt,
   internFilter: internFilterPrompt,
   internImageLink: internImageLinkPrompt,
+  internPronouns: internPronounsPrompt,
   scribe: scribePrompt,
 } as const;
 

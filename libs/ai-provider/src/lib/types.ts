@@ -70,6 +70,8 @@ export interface AICompletionRequest {
   messages: AIMessage[];
   /** System prompt (instructions for the model) */
   system?: string;
+  /** Enable prompt caching for system prompt (Anthropic only, saves ~90% on cached tokens) */
+  enablePromptCache?: boolean;
   /** Maximum tokens to generate */
   maxTokens: number;
   /** Temperature for sampling (0-1, lower = more deterministic) */

@@ -397,11 +397,18 @@ export class RegistrarAgent {
       // 5. Process Story (if present)
       if (domainModel.story) {
         // Create story without entity associations
+        // Fetch event to get original language if detected language not available
+        const event = domainModel.detectedLanguage
+          ? null
+          : await this.eventRepo.findById(familyId, conversationEventId);
+        const language =
+          domainModel.detectedLanguage || event?.languageOriginal || 'unknown';
+
         const createdStory = await this.storyRepo.createFromExtracted(
           familyId,
           domainModel.story,
           conversationEventId,
-          domainModel.detectedLanguage,
+          language,
           claimedBy,
         );
 

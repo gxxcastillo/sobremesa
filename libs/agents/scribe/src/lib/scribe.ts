@@ -1,4 +1,8 @@
-import type { ScribeDomainModel } from '@sobremesa/shared-types';
+import type {
+  LanguageCode,
+  RawImageReference,
+  ScribeDomainModel,
+} from '@sobremesa/shared-types';
 import {
   ConversationEventRepository,
   FamilyRepository,
@@ -62,11 +66,17 @@ export class ScribeAgent {
    * Process a conversation event and extract a domain model.
    * This is the ScribeProcessor function for MessageProcessor.
    * Optional preloadedContext allows sharing pre-fetched context from MessageProcessor.
+   * Optional preprocessed data from Intern (language, resolved content, image refs).
    */
   async process(
     eventId: string,
     familyId: string,
     preloadedContext?: MessageContext,
+    preprocessed?: {
+      contentProcessed?: string;
+      detectedLanguage?: LanguageCode;
+      imageReferences?: RawImageReference[];
+    },
   ): Promise<ScribeDomainModel> {
     this.logger.info({ eventId, familyId }, 'Scribe processing started');
 
@@ -76,12 +86,20 @@ export class ScribeAgent {
       throw new Error(`Event not found: ${eventId}`);
     }
 
-    if (!event.contentOriginal) {
+    // Use preprocessed content if available, otherwise fall back to original
+    const contentToProcess =
+      preprocessed?.contentProcessed || event.contentOriginal;
+
+    // Use detected language from preprocessing, event, or parameter
+    const detectedLanguage =
+      preprocessed?.detectedLanguage || event.languageOriginal;
+
+    if (!contentToProcess) {
       this.logger.debug(
         { eventId },
         'Event has no content, returning empty model',
       );
-      return this.createEmptyModel(eventId, familyId);
+      return this.createEmptyModel(eventId, familyId, detectedLanguage);
     }
 
     // Load family config for cultural terms
@@ -107,10 +125,10 @@ export class ScribeAgent {
       preloadedContext,
     );
 
-    // Build prompts
+    // Build prompts (use processed content)
     const systemPrompt = buildSystemPrompt(config);
     const userMessage = buildUserMessage(
-      event.contentOriginal,
+      contentToProcess,
       event.actorDisplayName || event.actorUsername || 'Unknown',
       context,
       new Date(event.occurredAt),
@@ -133,6 +151,7 @@ export class ScribeAgent {
         model: this.model,
         maxTokens: config.maxTokens,
         system: systemPrompt,
+        enablePromptCache: true, // Cache system prompt (90% cost savings on reuse)
         messages: [{ role: 'user', content: userMessage }],
         responseFormat: {
           type: 'json_schema',
@@ -157,6 +176,10 @@ export class ScribeAgent {
         response.content,
         eventId,
         familyId,
+        {
+          detectedLanguage,
+          imageReferences: preprocessed?.imageReferences,
+        },
       );
 
       return domainModel;
@@ -186,7 +209,8 @@ export class ScribeAgent {
           ? config.culturalTerms
           : [],
       };
-    } catch {
+    } catch (error) {
+      this.logger.warn({ familyId, error }, 'Failed to load family config');
       return null;
     }
   }
@@ -197,6 +221,7 @@ export class ScribeAgent {
   private createEmptyModel(
     eventId: string,
     familyId: string,
+    detectedLanguage?: LanguageCode,
   ): ScribeDomainModel {
     return {
       conversationEventId: eventId,
@@ -208,7 +233,7 @@ export class ScribeAgent {
       relationships: [],
       claims: [],
       imageReferences: [],
-      detectedLanguage: 'en',
+      detectedLanguage: detectedLanguage,
     };
   }
 }

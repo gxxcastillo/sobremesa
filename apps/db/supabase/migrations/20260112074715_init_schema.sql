@@ -2324,6 +2324,49 @@ CREATE INDEX IF NOT EXISTS idx_event_log_family_actor
   ON event_log(family_id, actor);
 
 -- ============================================================================
+-- CONVERSATION EVENT PROCESSING (Preprocessing artifacts)
+-- ============================================================================
+-- Stores preprocessing results (pronoun resolution, language detection, etc.)
+-- Separate from conversation_events to keep original events fully immutable
+CREATE TABLE IF NOT EXISTS conversation_event_processing (
+  conversation_event_id UUID PRIMARY KEY,
+  family_id UUID NOT NULL,
+
+  -- Preprocessing results
+  content_processed TEXT,                      -- Content after pronoun resolution
+  detected_language VARCHAR(10),               -- Language detected by preprocessing (if different from original)
+  image_references JSONB,                      -- Image references extracted from message
+
+  -- Processing metadata
+  processing_metadata JSONB,                   -- Agent versions, token usage, etc.
+  processed_at TIMESTAMPTZ DEFAULT NOW(),
+  processed_by VARCHAR(50),                    -- Agent name: 'intern', 'scribe', etc.
+
+  -- Composite FK enforces tenant integrity
+  CONSTRAINT fk_event_processing_event
+    FOREIGN KEY (family_id, conversation_event_id)
+    REFERENCES conversation_events(family_id, id)
+    ON DELETE CASCADE
+);
+
+COMMENT ON TABLE conversation_event_processing IS
+  'Preprocessing artifacts for conversation events. Mutable - can be reprocessed. Original events remain immutable in conversation_events.';
+COMMENT ON COLUMN conversation_event_processing.content_processed IS
+  'Content after pronoun resolution. This is what the Scribe agent processes for extraction.';
+COMMENT ON COLUMN conversation_event_processing.detected_language IS
+  'Language detected during preprocessing. May differ from language_original if preprocessing improves detection.';
+COMMENT ON COLUMN conversation_event_processing.image_references IS
+  'Array of image references extracted by preprocessing: [{imageId, referenceType, peopleIdentified, contextProvided}]';
+COMMENT ON COLUMN conversation_event_processing.processing_metadata IS
+  'Agent metadata: versions, model used, token usage, processing duration, etc.';
+
+CREATE INDEX IF NOT EXISTS idx_event_processing_family
+  ON conversation_event_processing(family_id);
+
+CREATE INDEX IF NOT EXISTS idx_event_processing_processed_at
+  ON conversation_event_processing(family_id, processed_at DESC);
+
+-- ============================================================================
 -- CONVERSATION REDACTIONS (Non-destructive privacy controls)
 -- ============================================================================
 -- Tracks redaction separately to keep conversation_events immutable
@@ -2685,13 +2728,13 @@ CREATE OR REPLACE FUNCTION prevent_conversation_event_updates()
 RETURNS TRIGGER AS $$
 BEGIN
   RAISE EXCEPTION 'conversation_events is immutable - updates are not allowed'
-    USING HINT = 'Use processing_queue for state management, conversation_redactions for privacy';
+    USING HINT = 'Use conversation_event_processing for preprocessing artifacts, processing_queue for state management, conversation_redactions for privacy';
   RETURN NULL;
 END;
 $$ LANGUAGE plpgsql
 SET search_path = '';
 
-COMMENT ON FUNCTION prevent_conversation_event_updates IS 'Enforce immutability of conversation_events table';
+COMMENT ON FUNCTION prevent_conversation_event_updates IS 'Enforce full immutability of conversation_events table';
 
 DROP TRIGGER IF EXISTS enforce_conversation_events_immutable ON conversation_events;
 CREATE TRIGGER enforce_conversation_events_immutable
@@ -2733,6 +2776,7 @@ ALTER TABLE chat_admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE families ENABLE ROW LEVEL SECURITY;
 ALTER TABLE family_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversation_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE conversation_event_processing ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversation_redactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE processing_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE people ENABLE ROW LEVEL SECURITY;
@@ -3039,6 +3083,16 @@ CREATE POLICY "conversation_redactions_insert" ON conversation_redactions
 
 CREATE POLICY "conversation_redactions_delete" ON conversation_redactions
   FOR DELETE USING (is_family_admin(family_id));
+
+-- --------------------------------------------------------------------------
+-- CONVERSATION_EVENT_PROCESSING policies
+-- --------------------------------------------------------------------------
+-- Backend-only access (service_role) for insert/update/delete
+-- Read access for family members (for debugging/transparency)
+CREATE POLICY "conversation_event_processing_select" ON conversation_event_processing
+  FOR SELECT USING (family_id IN (SELECT * FROM get_user_family_ids()));
+
+-- Note: INSERT/UPDATE/DELETE on conversation_event_processing is service-role only (no policy = blocked by RLS)
 
 -- --------------------------------------------------------------------------
 -- EVENT_LOG policies

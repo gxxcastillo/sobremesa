@@ -51,6 +51,8 @@ interface AnthropicResponse {
   usage?: {
     input_tokens: number;
     output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
   };
 }
 
@@ -174,10 +176,22 @@ export class AnthropicProvider implements AIProvider {
       messages,
     };
 
-    if (systemPrompt) {
-      anthropicRequest['system'] = systemPrompt;
-    } else if (request.system) {
-      anthropicRequest['system'] = request.system;
+    // Add system prompt with optional prompt caching
+    const finalSystemPrompt = systemPrompt || request.system;
+    if (finalSystemPrompt) {
+      if (request.enablePromptCache) {
+        // Use prompt caching format (array with cache_control)
+        anthropicRequest['system'] = [
+          {
+            type: 'text',
+            text: finalSystemPrompt,
+            cache_control: { type: 'ephemeral' },
+          },
+        ];
+      } else {
+        // Standard string format
+        anthropicRequest['system'] = finalSystemPrompt;
+      }
     }
 
     // Add output_format for native structured outputs (supported models only)
@@ -218,6 +232,17 @@ export class AnthropicProvider implements AIProvider {
 
     if (!textContent) {
       throw new Error('No text content in Anthropic response');
+    }
+
+    // Log cache performance if prompt caching was enabled
+    if (request.enablePromptCache && response.usage) {
+      const cacheRead = response.usage.cache_read_input_tokens || 0;
+      const cacheCreation = response.usage.cache_creation_input_tokens || 0;
+      if (cacheRead > 0 || cacheCreation > 0) {
+        console.log(
+          `[Anthropic Provider] Cache stats - Read: ${cacheRead} tokens (90% savings), Creation: ${cacheCreation} tokens`,
+        );
+      }
     }
 
     return {

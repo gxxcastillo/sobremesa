@@ -10,6 +10,12 @@ import type { Image } from '@sobremesa/shared-types';
 import type { MessageContext } from '@sobremesa/queue';
 
 /**
+ * Upper bound for querying recent messages in fallback path.
+ * Should be enough to cover maxContextChars (2500) in most cases.
+ */
+const CONTEXT_QUERY_LIMIT = 30;
+
+/**
  * Result of a message filter task.
  */
 export interface FilterResult {
@@ -70,20 +76,30 @@ export interface ImageLinkResult {
 }
 
 /**
+ * Result of pronoun resolution task.
+ */
+export interface PronounResolutionResult {
+  /** Message with pronouns replaced by actual names */
+  resolvedMessage: string;
+  /** Tokens used for this call */
+  tokensUsed?: number;
+}
+
+/**
  * Configuration for the Intern agent.
  */
 export interface InternConfig {
   /** Maximum tokens for response */
   maxTokens: number;
-  /** Number of recent messages for context */
-  recentMessageCount: number;
+  /** Maximum characters of context to include (default: 2500 ≈ 600 tokens) */
+  maxContextChars: number;
   /** Bot username for mention detection (without @) */
   botUsername?: string;
 }
 
 export const DEFAULT_INTERN_CONFIG: InternConfig = {
   maxTokens: 100,
-  recentMessageCount: 5, // Enough context to see conversation continuations
+  maxContextChars: 2500, // ~600 tokens, adaptively fits 5-15 messages
 };
 
 /**
@@ -187,22 +203,39 @@ export class InternAgent {
       // Use pre-fetched context if provided, otherwise fetch from DB
       let contextMessages: string;
       if (context) {
-        // Use shared context (excluding current message)
+        // Use shared context (already filtered by character limit)
         contextMessages = context.recentMessages
           .filter((m) => m.id !== eventId)
-          .slice(0, this.config.recentMessageCount)
           .map((m) => `- ${m.senderName}: "${m.content}"`)
           .join('\n');
       } else {
-        // Fallback: fetch from DB
-        const recentMessages = await this.eventRepo.findRecent(
+        // Fallback: fetch from DB with character limit
+        const allRecentMessages = await this.eventRepo.findRecent(
           familyId,
           event.conversationId,
-          this.config.recentMessageCount + 1, // +1 to include current, then filter it out
+          CONTEXT_QUERY_LIMIT,
         );
-        contextMessages = recentMessages
-          .filter((m) => m.id !== eventId && m.contentOriginal)
-          .slice(0, this.config.recentMessageCount)
+
+        // Accumulate messages until character limit
+        const messages = [];
+        let totalChars = 0;
+
+        for (const m of allRecentMessages) {
+          if (m.id === eventId || !m.contentOriginal) continue;
+
+          const content = m.contentOriginal;
+          if (
+            totalChars + content.length > this.config.maxContextChars &&
+            messages.length > 0
+          ) {
+            break;
+          }
+
+          messages.push(m);
+          totalChars += content.length;
+        }
+
+        contextMessages = messages
           .map(
             (m) =>
               `- ${m.actorDisplayName || 'Someone'}: "${m.contentOriginal}"`,
@@ -721,6 +754,82 @@ export class InternAgent {
       return {
         action: 'scribe',
         reason: `Routing error: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * Resolve pronouns in a message by replacing them with actual names from context.
+   * Uses Haiku 4.5 for focused pronoun resolution task.
+   */
+  async resolvePronouns(
+    messageText: string,
+    senderName: string,
+    context: MessageContext,
+  ): Promise<PronounResolutionResult> {
+    try {
+      // Build prompt with context messages (already filtered by character limit in processor)
+      const contextLines = context.recentMessages
+        .map((msg) => `- ${msg.content}`)
+        .join('\n');
+
+      const systemPrompt = loadPrompt('internPronouns');
+      const userPrompt = `SENDER: ${senderName}
+
+CONTEXT (newest first):
+${contextLines}
+
+MESSAGE to rewrite:
+"${messageText}"
+
+Rewrite this message by replacing ALL pronouns (I/me/my/we/us/our/he/she/they/his/her/their) with actual names. Output only the rewritten message.`;
+
+      this.logger.debug(
+        {
+          senderName,
+          messageLength: messageText.length,
+          contextMessages: context.recentMessages.length,
+          contextPreview: contextLines.slice(0, 200), // Show first 200 chars
+          messageText,
+        },
+        'Resolving pronouns',
+      );
+
+      const response = await this.provider.complete({
+        model: this.model,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        maxTokens: 200, // Short output, just the rewritten message
+      });
+
+      const resolvedMessage = response.content
+        .trim()
+        .replace(/^["']|["']$/g, ''); // Remove surrounding quotes if present
+
+      this.logger.info(
+        {
+          original: messageText,
+          resolved: resolvedMessage,
+          changed: messageText !== resolvedMessage,
+          tokensUsed: response.usage.totalTokens,
+        },
+        'Pronouns resolved',
+      );
+
+      return {
+        resolvedMessage,
+        tokensUsed: response.usage.totalTokens,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        { error: errorMessage },
+        'Pronoun resolution error, returning original message',
+      );
+      // On error, return original message unchanged
+      return {
+        resolvedMessage: messageText,
       };
     }
   }

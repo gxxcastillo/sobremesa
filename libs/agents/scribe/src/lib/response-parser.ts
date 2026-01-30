@@ -7,6 +7,8 @@ import {
   type ExtractedRelationship,
   type ExtractedClaim,
   type ImageReference,
+  type RawImageReference,
+  type LanguageCode,
 } from '@sobremesa/shared-types';
 import { createLogger } from '@sobremesa/shared-utils';
 import { RawScribeResponseSchema, type RawScribeResponse } from './schema';
@@ -92,6 +94,10 @@ export function parseScribeResponse(
   rawText: string,
   conversationEventId: string,
   familyId: string,
+  preprocessed?: {
+    detectedLanguage?: LanguageCode;
+    imageReferences?: RawImageReference[];
+  },
 ): ScribeDomainModel {
   let raw: RawScribeResponse;
 
@@ -104,7 +110,11 @@ export function parseScribeResponse(
         { error: parseResult.error.flatten(), rawText: rawText.slice(0, 500) },
         'Zod validation failed for Scribe response',
       );
-      return createEmptyDomainModel(conversationEventId, familyId);
+      return createEmptyDomainModel(
+        conversationEventId,
+        familyId,
+        preprocessed?.detectedLanguage,
+      );
     }
 
     raw = parseResult.data;
@@ -113,7 +123,11 @@ export function parseScribeResponse(
       { error, rawText: rawText.slice(0, 500) },
       'Failed to parse Scribe response JSON',
     );
-    return createEmptyDomainModel(conversationEventId, familyId);
+    return createEmptyDomainModel(
+      conversationEventId,
+      familyId,
+      preprocessed?.detectedLanguage,
+    );
   }
 
   // Parse people (confidence removed from schema, default to MEDIUM)
@@ -177,13 +191,24 @@ export function parseScribeResponse(
     : undefined;
 
   // Parse image references (confidence removed from schema)
-  const imageReferences: ImageReference[] = raw.image_references.map((r) => ({
-    imageId: r.image_id,
-    referenceType: parseImageReferenceType(r.reference_type),
-    peopleIdentified: r.people_identified,
-    contextProvided: r.context_provided,
-    confidence: Confidence.MEDIUM,
-  }));
+  const imageReferences: ImageReference[] = (raw.image_references || []).map(
+    (r) => ({
+      imageId: r.image_id,
+      referenceType: parseImageReferenceType(r.reference_type),
+      peopleIdentified: r.people_identified,
+      contextProvided: r.context_provided,
+      confidence: Confidence.MEDIUM,
+    }),
+  );
+
+  // Convert raw image references to full ImageReference with confidence
+  const finalImageReferences: ImageReference[] = preprocessed?.imageReferences
+    ? preprocessed.imageReferences.map((ref) => ({
+        peopleIdentified: [],
+        ...ref,
+        confidence: Confidence.MEDIUM,
+      }))
+    : imageReferences;
 
   return {
     conversationEventId,
@@ -195,8 +220,8 @@ export function parseScribeResponse(
     relationships,
     claims,
     story,
-    imageReferences,
-    detectedLanguage: raw.detected_language,
+    imageReferences: finalImageReferences,
+    detectedLanguage: preprocessed?.detectedLanguage || raw.detected_language,
   };
 }
 
@@ -206,6 +231,7 @@ export function parseScribeResponse(
 function createEmptyDomainModel(
   conversationEventId: string,
   familyId: string,
+  detectedLanguage?: LanguageCode,
 ): ScribeDomainModel {
   return {
     conversationEventId,
@@ -217,6 +243,6 @@ function createEmptyDomainModel(
     relationships: [],
     claims: [],
     imageReferences: [],
-    detectedLanguage: 'en',
+    detectedLanguage,
   };
 }

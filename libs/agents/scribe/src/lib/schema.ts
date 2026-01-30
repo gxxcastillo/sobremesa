@@ -47,10 +47,17 @@ const RelationshipSchema = z.object({
 });
 
 /**
- * Claim types:
- * - Singular (one value per subject, can conflict): date, location, identity, relationship
- * - Additive (multiple per subject, never conflict): detail
+ * Claim value is a string that may contain JSON.
+ * The prompt instructs the LLM to output JSON strings for structured claims:
+ * - date: '{"year": 1992, "month": 3, "day": 13, "text": "March 13, 1992"}'
+ * - identity: '{"real_name": "Tim", "descriptive_name": "Ralphy\'s friend"}'
+ * - simple: 'great' (plain string)
+ *
+ * The repository will parse JSON strings into objects for database storage.
+ * This avoids Anthropic's additionalProperties restriction.
  */
+const ClaimValueSchema = z.string();
+
 const ClaimSchema = z.object({
   claim_type: z.enum([
     'date',
@@ -60,7 +67,7 @@ const ClaimSchema = z.object({
     'detail',
   ]),
   subject: z.string(),
-  claim_value: z.string(),
+  claim_value: ClaimValueSchema,
   certainty_language: z.string().optional(),
   claimed_by: z.string(),
   claimed_by_source: z.enum(['direct', 'attributed', 'hearsay']),

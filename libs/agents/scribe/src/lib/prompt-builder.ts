@@ -57,15 +57,11 @@ export function buildUserMessage(
   parts.push(`TODAY: ${dateStr}`);
   parts.push('');
 
-  // Add recent messages for context
+  // Add recent messages for context (already filtered by character limit)
   if (context.recentMessages.length > 0) {
     parts.push('CONTEXT:');
-    for (const msg of context.recentMessages.slice(0, 5)) {
-      const truncated =
-        msg.content.length > 200
-          ? msg.content.slice(0, 200) + '...'
-          : msg.content;
-      parts.push(`${msg.senderName}: ${truncated}`);
+    for (const msg of context.recentMessages) {
+      parts.push(`${msg.senderName}: ${msg.content}`);
     }
     parts.push('');
   }

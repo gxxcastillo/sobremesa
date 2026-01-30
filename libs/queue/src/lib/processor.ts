@@ -2,9 +2,12 @@ import {
   Confidence,
   type ProcessingResult,
   type ScribeDomainModel,
+  type LanguageCode,
+  type RawImageReference,
 } from '@sobremesa/shared-types';
 import {
   ConversationEventRepository,
+  ConversationEventProcessingRepository,
   EventLogRepository,
   QuestionRepository,
   ImageRepository,
@@ -18,6 +21,13 @@ import type pino from 'pino';
  */
 const MEDIA_EVENT_TYPES = ['photo', 'document', 'video'] as const;
 type MediaEventType = (typeof MEDIA_EVENT_TYPES)[number];
+
+/**
+ * Upper bound for querying recent messages.
+ * Should be enough to cover maxContextChars (2500) in most cases.
+ * Average message ~100-150 chars, so 30 messages ≈ 3000-4500 chars.
+ */
+const CONTEXT_QUERY_LIMIT = 30;
 
 /**
  * Shared message context fetched once and passed to processors.
@@ -54,7 +64,7 @@ export interface FilterProcessorResult {
   /** Reason for the decision (for logging/debugging) */
   reason: string;
   /** Detected language of the message (en, es) */
-  language?: string;
+  language?: LanguageCode;
   /** Tokens used for this filter call */
   tokensUsed?: number;
 }
@@ -96,14 +106,41 @@ export type FilterProcessor = (
 ) => Promise<FilterProcessorResult>;
 
 /**
+ * Pronoun resolver result.
+ */
+export interface PronounResolverResult {
+  /** Message with pronouns replaced by actual names */
+  resolvedMessage: string;
+  /** Tokens used for this call */
+  tokensUsed?: number;
+}
+
+/**
+ * Pronoun resolver processor function type.
+ * Implementations should resolve pronouns in messages using context.
+ * Optional context parameter allows sharing pre-fetched context.
+ */
+export type PronounResolverProcessor = (
+  messageText: string,
+  senderName: string,
+  context: MessageContext,
+) => Promise<PronounResolverResult>;
+
+/**
  * Scribe processor function type.
  * Implementations should extract domain model from a conversation event.
  * Optional context parameter allows sharing pre-fetched context.
+ * Optional preprocessed parameter provides preprocessing results (pronouns, language, images).
  */
 export type ScribeProcessor = (
   eventId: string,
   familyId: string,
   context?: MessageContext,
+  preprocessed?: {
+    contentProcessed?: string;
+    detectedLanguage?: LanguageCode;
+    imageReferences?: RawImageReference[];
+  },
 ) => Promise<ScribeDomainModel>;
 
 /**
@@ -203,6 +240,7 @@ export type OnImageCreatedCallback = (
  */
 export class MessageProcessor {
   private eventRepo: ConversationEventRepository;
+  private processingRepo: ConversationEventProcessingRepository;
   private eventLog: EventLogRepository;
   private questionRepo: QuestionRepository;
   private imageRepo: ImageRepository;
@@ -211,6 +249,7 @@ export class MessageProcessor {
   private adminProcessor?: AdminProcessor;
   private historianProcessor?: HistorianProcessor;
   private filter?: FilterProcessor;
+  private pronounResolver?: PronounResolverProcessor;
   private imageLinker?: ImageLinkerProcessor;
   private scribe?: ScribeProcessor;
   private registrar?: RegistrarProcessor;
@@ -219,12 +258,15 @@ export class MessageProcessor {
 
   constructor(options?: {
     eventRepo?: ConversationEventRepository;
+    processingRepo?: ConversationEventProcessingRepository;
     eventLog?: EventLogRepository;
     questionRepo?: QuestionRepository;
     imageRepo?: ImageRepository;
     queueRepo?: ProcessingQueueRepository;
   }) {
     this.eventRepo = options?.eventRepo || new ConversationEventRepository();
+    this.processingRepo =
+      options?.processingRepo || new ConversationEventProcessingRepository();
     this.eventLog = options?.eventLog || new EventLogRepository();
     this.questionRepo = options?.questionRepo || new QuestionRepository();
     this.imageRepo = options?.imageRepo || new ImageRepository();
@@ -266,6 +308,14 @@ export class MessageProcessor {
   }
 
   /**
+   * Set the Pronoun Resolver processor.
+   * The pronoun resolver preprocesses messages to replace pronouns with actual names.
+   */
+  setPronounResolver(pronounResolver: PronounResolverProcessor): void {
+    this.pronounResolver = pronounResolver;
+  }
+
+  /**
    * Set the Image Linker processor.
    * The image linker runs after Scribe to detect image references that Scribe may have missed.
    */
@@ -298,18 +348,20 @@ export class MessageProcessor {
    * Fetch message context (recent messages and images) for a conversation.
    * This context is shared between Router, Filter, Scribe, and ImageLinker
    * to avoid duplicate database queries.
+   *
+   * Uses character limits instead of fixed message counts for efficient context usage.
    */
   async fetchContext(
     familyId: string,
     conversationId: string,
-    options?: { recentMessageCount?: number; maxImages?: number },
+    options?: { maxContextChars?: number; maxImages?: number },
   ): Promise<MessageContext> {
-    const recentMessageCount = options?.recentMessageCount ?? 5;
+    const maxContextChars = options?.maxContextChars ?? 2500; // ~600 tokens
     const maxImages = options?.maxImages ?? 5;
 
     // Fetch data in parallel
     const [recentEvents, recentImages] = await Promise.all([
-      this.eventRepo.findRecent(familyId, conversationId, recentMessageCount),
+      this.eventRepo.findRecent(familyId, conversationId, CONTEXT_QUERY_LIMIT),
       this.imageRepo.findRecentInConversation(
         familyId,
         conversationId,
@@ -317,15 +369,47 @@ export class MessageProcessor {
       ),
     ]);
 
-    // Transform to context format
-    const recentMessages = recentEvents
-      .filter((e) => e.contentOriginal)
-      .map((e) => ({
+    // Fetch processing data for all recent events (batch)
+    const processingDataList = await Promise.all(
+      recentEvents.map((e) =>
+        this.processingRepo.findByEventId(familyId, e.id),
+      ),
+    );
+
+    // Create a map of eventId -> processing data for quick lookup
+    const processingMap = new Map(
+      processingDataList
+        .filter((p): p is NonNullable<typeof p> => p !== null)
+        .map((p) => [p.conversationEventId, p]),
+    );
+
+    // Transform to context format, accumulating until character limit
+    const recentMessages = [];
+    let totalChars = 0;
+
+    for (const e of recentEvents) {
+      if (!e.contentOriginal) continue;
+
+      const processing = processingMap.get(e.id);
+      const content = processing?.contentProcessed || e.contentOriginal || '';
+
+      // Check if adding this message would exceed limit
+      if (
+        totalChars + content.length > maxContextChars &&
+        recentMessages.length > 0
+      ) {
+        break; // Stop accumulating
+      }
+
+      recentMessages.push({
         id: e.id,
-        content: e.contentOriginal || '',
+        content,
         senderName: e.actorDisplayName || e.actorUsername || 'Unknown',
         occurredAt: new Date(e.occurredAt),
-      }));
+      });
+
+      totalChars += content.length;
+    }
 
     const recentImagesContext = recentImages.map((img) => ({
       id: img.id,
@@ -585,9 +669,10 @@ export class MessageProcessor {
   ): Promise<void> {
     // Run Filter (if configured) to determine if message is relevant
     let shouldProcess = true;
+    let filterResult: FilterProcessorResult | undefined;
     if (this.filter) {
       this.logger.debug({ eventId }, 'Running Filter');
-      const filterResult = await this.filter(eventId, familyId, context);
+      filterResult = await this.filter(eventId, familyId, context);
 
       if (!filterResult.relevant) {
         // Message is not relevant - skip Scribe
@@ -628,11 +713,77 @@ export class MessageProcessor {
       }
     }
 
+    // Run Pronoun Resolver (if configured and filter passed)
+    let resolvedContent: string | undefined;
+    let detectedLanguage: LanguageCode | undefined;
+    if (this.pronounResolver && shouldProcess) {
+      // Load the event to get the message text
+      const event = await this.eventRepo.findById(familyId, eventId);
+      if (event?.contentOriginal) {
+        this.logger.debug({ eventId }, 'Running Pronoun Resolver');
+        // Exclude current message from context to avoid circular reference
+        const contextWithoutCurrent = {
+          ...context,
+          recentMessages: context.recentMessages.filter(
+            (msg) => msg.id !== eventId,
+          ),
+        };
+        const senderName =
+          event.actorDisplayName || event.actorUsername || 'Unknown';
+        const resolveResult = await this.pronounResolver(
+          event.contentOriginal,
+          senderName,
+          contextWithoutCurrent,
+        );
+
+        resolvedContent = resolveResult.resolvedMessage;
+
+        // Store preprocessing results in conversation_event_processing
+        await this.processingRepo.upsert({
+          conversationEventId: eventId,
+          familyId,
+          contentProcessed: resolvedContent,
+          processedBy: 'intern',
+          processingMetadata: {
+            tokensUsed: resolveResult.tokensUsed,
+          },
+        });
+
+        this.logger.debug(
+          {
+            eventId,
+            tokensUsed: resolveResult.tokensUsed,
+          },
+          'Pronouns resolved and stored',
+        );
+      }
+    }
+
+    // Store detected language from filter if different from original
+    if (shouldProcess && filterResult?.language) {
+      detectedLanguage = filterResult.language;
+      const event = await this.eventRepo.findById(familyId, eventId);
+
+      // If filter detected different language than ingestion, store in processing table
+      if (event && event.languageOriginal !== detectedLanguage) {
+        await this.processingRepo.upsert({
+          conversationEventId: eventId,
+          familyId,
+          detectedLanguage,
+          contentProcessed: resolvedContent, // Include if already resolved
+          processedBy: 'intern',
+        });
+      }
+    }
+
     // Run Scribe (if configured and filter passed)
     let domainModel: ScribeDomainModel | undefined;
     if (this.scribe && shouldProcess) {
       this.logger.debug({ eventId }, 'Running Scribe');
-      domainModel = await this.scribe(eventId, familyId, context);
+      domainModel = await this.scribe(eventId, familyId, context, {
+        contentProcessed: resolvedContent,
+        detectedLanguage,
+      });
 
       // Log extraction results
       if (domainModel) {

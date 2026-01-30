@@ -1,4 +1,5 @@
 export { ConversationEventRepository } from './conversation-event-repository';
+export { ConversationEventProcessingRepository } from './conversation-event-processing-repository';
 export { ConversationRedactionRepository } from './conversation-redaction-repository';
 export { FamilyRepository } from './family-repository';
 export {

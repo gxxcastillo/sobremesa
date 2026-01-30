@@ -137,6 +137,9 @@ async function main() {
       processor.setFilter((eventId, familyId, context) =>
         intern.filter(eventId, familyId, context),
       );
+      processor.setPronounResolver((messageText, senderName, context) =>
+        intern.resolvePronouns(messageText, senderName, context),
+      );
       processor.setImageLinker((eventId, familyId, context) =>
         intern.linkToImage(eventId, familyId, context),
       );

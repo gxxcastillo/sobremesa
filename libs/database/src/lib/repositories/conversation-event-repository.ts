@@ -52,20 +52,28 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   /**
    * Find recent events for context.
    * Excludes redacted events using LEFT JOIN.
+   * Optionally includes preprocessing data from conversation_event_processing.
    */
   async findRecent(
     familyId: string,
     conversationId: string,
     limit = 20,
+    includeProcessing = false,
   ): Promise<ConversationEvent[]> {
-    const { data, error } = await this.client
-      .from(this.tableName)
-      .select(
-        `
+    const selectFields = includeProcessing
+      ? `
+        *,
+        redacted:conversation_redactions(id),
+        processing:conversation_event_processing(content_processed, detected_language)
+      `
+      : `
         *,
         redacted:conversation_redactions(id)
-      `,
-      )
+      `;
+
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select(selectFields)
       .eq('family_id', familyId)
       .eq('conversation_id', conversationId)
       .is('redacted.id', null)
@@ -146,11 +154,11 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
 
   /**
    * Filter out joined fields that are not part of ConversationEvent schema.
-   * These fields (queue, redacted) are used for filtering but should not be returned.
+   * These fields (queue, redacted, processing) are used for filtering but should not be returned.
    */
   private filterJoinedFields(row: Record<string, unknown>): ConversationEvent {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { queue, redacted, ...eventData } = row;
+    const { queue, redacted, processing, ...eventData } = row;
     return mapRowToCamelCase<ConversationEvent>(eventData);
   }
 

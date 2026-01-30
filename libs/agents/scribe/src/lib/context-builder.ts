@@ -9,14 +9,17 @@ import type { ScribeContext, ImageContext } from './types';
  * Options for building Scribe context.
  */
 export interface ContextBuilderOptions {
-  /** Number of recent messages to include */
+  /** Query upper bound of messages (enough to cover character limit) */
   recentMessageCount?: number;
+  /** Maximum characters of context to include (default: 2500 ≈ 600 tokens) */
+  maxContextChars?: number;
   /** Number of recent images to include */
   maxImages?: number;
 }
 
 const DEFAULT_OPTIONS: Required<ContextBuilderOptions> = {
-  recentMessageCount: 5,
+  recentMessageCount: 30,
+  maxContextChars: 2500,
   maxImages: 5,
 };
 
@@ -46,7 +49,7 @@ export function convertToScribeContext(context: MessageContext): ScribeContext {
 
 /**
  * Build context for the Scribe agent from database repositories.
- * Note: People and places are no longer included - Registrar handles entity matching.
+ * Note: People and places are not included - Registrar handles entity matching.
  * If preloadedContext is provided, it will be converted to ScribeContext instead of fetching from DB.
  */
 export async function buildScribeContext(
@@ -82,14 +85,31 @@ export async function buildScribeContext(
       : Promise.resolve([]),
   ]);
 
-  // Transform recent events to context format
-  const recentMessages = recentEvents
-    .filter((e) => e.contentOriginal) // Only messages with content
-    .map((e) => ({
-      content: e.contentOriginal || '',
+  // Transform recent events to context format, accumulating until character limit
+  const recentMessages = [];
+  let totalChars = 0;
+
+  for (const e of recentEvents) {
+    if (!e.contentOriginal) continue;
+
+    const content = e.contentOriginal;
+
+    // Check if adding this message would exceed limit
+    if (
+      totalChars + content.length > opts.maxContextChars &&
+      recentMessages.length > 0
+    ) {
+      break; // Stop accumulating
+    }
+
+    recentMessages.push({
+      content,
       senderName: e.actorDisplayName || e.actorUsername || 'Unknown',
       occurredAt: new Date(e.occurredAt),
-    }));
+    });
+
+    totalChars += content.length;
+  }
 
   // Transform images to context format
   const recentImagesContext: ImageContext[] = recentImages.map((img) => ({

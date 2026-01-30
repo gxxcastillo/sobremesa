@@ -128,20 +128,25 @@ export class ClaimRepository extends BaseRepository<Claim> {
     conversationEventId: string,
     claimedBy: string,
   ): Promise<Claim> {
-    // Convert string claimValue to Record for storage
-    // Try to parse as JSON first, otherwise wrap in { value: string }
+    // Parse claim_value from Scribe (may be JSON string or plain string)
+    // Scribe outputs JSON strings for structured claims:
+    //   '{"year": 1992, "month": 3, "day": 13, "text": "March 13, 1992"}'
+    // Or plain strings for simple values: "great"
     let claimValue: Record<string, unknown>;
     if (typeof extracted.claimValue === 'string') {
       try {
+        // Try to parse as JSON
         const parsed = JSON.parse(extracted.claimValue);
         claimValue =
           typeof parsed === 'object' && parsed !== null
             ? parsed
             : { value: extracted.claimValue };
       } catch {
+        // Not JSON, wrap plain string in {value: ...}
         claimValue = { value: extracted.claimValue };
       }
     } else {
+      // Already an object (shouldn't happen with new schema, but handle it)
       claimValue = extracted.claimValue as Record<string, unknown>;
     }
 

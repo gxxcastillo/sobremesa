@@ -55,6 +55,40 @@ export interface ConversationEvent {
 }
 
 /**
+ * Raw image reference from preprocessing (before confidence scoring).
+ */
+export interface RawImageReference {
+  imageId: string;
+  referenceType:
+    | 'describes'
+    | 'identifies_people'
+    | 'provides_context'
+    | 'asks_about';
+  peopleIdentified?: string[];
+  contextProvided?: string;
+}
+
+/**
+ * Preprocessing artifacts for a conversation event.
+ * Separate from ConversationEvent to keep original events fully immutable.
+ * This table is mutable and can be reprocessed/updated.
+ */
+export interface ConversationEventProcessing {
+  conversationEventId: string;
+  familyId: string;
+
+  // Preprocessing results
+  contentProcessed?: string;
+  detectedLanguage?: LanguageCode;
+  imageReferences?: RawImageReference[];
+
+  // Processing metadata
+  processingMetadata?: Record<string, unknown>;
+  processedAt: Date;
+  processedBy?: string;
+}
+
+/**
  * A redaction record for a conversation event (non-destructive privacy control).
  * conversation_events remains immutable; redaction is tracked separately.
  */
