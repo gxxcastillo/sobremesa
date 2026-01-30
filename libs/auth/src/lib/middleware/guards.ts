@@ -8,6 +8,7 @@
 import { Elysia } from 'elysia';
 import type { AuthContext, FamilyRole } from '../types';
 import { FamilyAccessRepository } from '../repositories/family-access-repository';
+import type { DatabaseClient } from '@sobremesa/database';
 
 /**
  * Require authentication guard
@@ -191,11 +192,12 @@ export function getFamilyRole(
  * might not have access records loaded
  */
 export async function checkFamilyAccess(
+  dbClient: DatabaseClient,
   identityId: string,
   familyId: string,
   minimumRole?: FamilyRole,
 ): Promise<boolean> {
-  const accessRepo = new FamilyAccessRepository();
+  const accessRepo = new FamilyAccessRepository(dbClient);
   const role = await accessRepo.getRole(identityId, familyId);
 
   if (!role) {

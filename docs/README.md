@@ -53,12 +53,11 @@ Prompts are in `libs/prompts/src/agents/*.txt`
 
 ### Data Models
 
-| Document                             | Purpose                                               |
-| ------------------------------------ | ----------------------------------------------------- |
-| [DATA-MODELS.md](DATA-MODELS.md)     | Overview of all data models and relationships         |
-| [RELATIONSHIPS.md](RELATIONSHIPS.md) | Structural/extended relationships, normalization, API |
-| [IDENTITIES.md](IDENTITIES.md)       | Chat provider accounts, multi-channel linking         |
-| [PERSONS.md](PERSONS.md)             | Family tree members, fuzzy matching, placeholders     |
+| Document                                   | Purpose                                               |
+| ------------------------------------------ | ----------------------------------------------------- |
+| [DATA-MODELS.md](DATA-MODELS.md)           | Overview of all data models and relationships         |
+| [RELATIONSHIPS.md](RELATIONSHIPS.md)       | Structural/extended relationships, normalization, API |
+| [PEOPLE-AND-ROLES.md](PEOPLE-AND-ROLES.md) | People, identities, users, roles, and participants    |
 
 ### Configuration & Setup
 
@@ -92,8 +91,7 @@ System Architecture
 Data Models
     ├── DATA-MODELS.md      ← Overview of all models
     ├── RELATIONSHIPS.md    ← How people connect
-    ├── IDENTITIES.md       ← Chat provider accounts
-    └── PERSONS.md          ← Family tree members
+    └── PEOPLE-AND-ROLES.md ← People, identities, roles
 
 Technical Setup
     ├── TECH-STACK.md       ← Technologies
@@ -169,20 +167,19 @@ Implementation
 
 ## 📝 Quick Reference
 
-| Need to...                   | See...                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------ |
-| Understand product vision    | [PRODUCT.md](PRODUCT.md)                                                             |
-| Set up dev environment       | [QUICKSTART.md](QUICKSTART.md)                                                       |
-| Understand data flow         | [ARCHITECTURE.md](ARCHITECTURE.md)                                                   |
-| Understand all data models   | [DATA-MODELS.md](DATA-MODELS.md)                                                     |
-| Build relationships feature  | [RELATIONSHIPS.md](RELATIONSHIPS.md)                                                 |
-| Build identity/multi-channel | [IDENTITIES.md](IDENTITIES.md)                                                       |
-| Build person management      | [PERSONS.md](PERSONS.md)                                                             |
-| Implement Scribe             | [AGENTS.md](AGENTS.md#scribe-default-don-rubén) + [DOMAIN-MODEL.md](DOMAIN-MODEL.md) |
-| Write warm questions         | [WARMTH.md](WARMTH.md)                                                               |
-| Adapt for culture            | [CULTURE.md](CULTURE.md)                                                             |
-| Handle errors                | [ERROR-HANDLING.md](ERROR-HANDLING.md)                                               |
-| Ensure data isolation        | [DATA-ISOLATION.md](DATA-ISOLATION.md)                                               |
+| Need to...                    | See...                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| Understand product vision     | [PRODUCT.md](PRODUCT.md)                                                             |
+| Set up dev environment        | [QUICKSTART.md](QUICKSTART.md)                                                       |
+| Understand data flow          | [ARCHITECTURE.md](ARCHITECTURE.md)                                                   |
+| Understand all data models    | [DATA-MODELS.md](DATA-MODELS.md)                                                     |
+| Build relationships feature   | [RELATIONSHIPS.md](RELATIONSHIPS.md)                                                 |
+| Understand people/roles/users | [PEOPLE-AND-ROLES.md](PEOPLE-AND-ROLES.md)                                           |
+| Implement Scribe              | [AGENTS.md](AGENTS.md#scribe-default-don-rubén) + [DOMAIN-MODEL.md](DOMAIN-MODEL.md) |
+| Write warm questions          | [WARMTH.md](WARMTH.md)                                                               |
+| Adapt for culture             | [CULTURE.md](CULTURE.md)                                                             |
+| Handle errors                 | [ERROR-HANDLING.md](ERROR-HANDLING.md)                                               |
+| Ensure data isolation         | [DATA-ISOLATION.md](DATA-ISOLATION.md)                                               |
 
 ---
 

@@ -71,7 +71,11 @@ export class BotManager {
     });
 
     // Configure chatbot handler
-    const handler = new ChatbotHandler(this.logger);
+    const handler = new ChatbotHandler({
+      dbClient: config.dbClient,
+      studioUrl: config.studioUrl,
+      logger: this.logger,
+    });
     handler.configure(this.bot);
 
     // Error handling

@@ -1,6 +1,7 @@
 import type { Telegraf } from 'telegraf';
 import type pino from 'pino';
 import { BotRole, type OutgoingMessage } from '@sobremesa/shared-types';
+import type { DatabaseClient } from '@sobremesa/database';
 
 // Re-export from shared-types for consumers
 export { BotRole, type OutgoingMessage };
@@ -31,6 +32,10 @@ export interface MessageSpacingConfig {
 export interface BotManagerConfig {
   /** Bot token */
   token: string;
+  /** Database client */
+  dbClient: DatabaseClient;
+  /** Studio base URL for access pass links */
+  studioUrl: string;
   /** Logger instance */
   logger?: pino.Logger;
   /** Message spacing configuration */

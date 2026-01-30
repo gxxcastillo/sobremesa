@@ -1,4 +1,4 @@
-import { getServiceClient } from './client';
+import { createDatabaseClient } from './client';
 
 /**
  * Check database status and report missing tables.
@@ -6,7 +6,26 @@ import { getServiceClient } from './client';
 async function checkDb(): Promise<void> {
   console.log('Checking database connection and schema...\n');
 
-  const client = getServiceClient();
+  // Read configuration from environment
+  const url = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const anonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!url) {
+    throw new Error('Missing required environment variable: SUPABASE_URL');
+  }
+
+  if (!serviceRoleKey && !anonKey) {
+    throw new Error(
+      'Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY',
+    );
+  }
+
+  const client = createDatabaseClient({
+    url,
+    anonKey: anonKey || '',
+    serviceRoleKey,
+  });
 
   const requiredTables = [
     'families',

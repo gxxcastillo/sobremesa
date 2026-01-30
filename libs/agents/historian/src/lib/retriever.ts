@@ -6,6 +6,7 @@ import {
   StoryRepository,
   PlaceRepository,
   ImageRepository,
+  type DatabaseClient,
 } from '@sobremesa/database';
 import type { Confidence } from '@sobremesa/shared-types';
 import type {
@@ -22,15 +23,16 @@ import type {
  * Retriever for fetching relevant data from the database.
  */
 export class DataRetriever {
-  private personRepo: PersonRepository;
-  private claimRepo: ClaimRepository;
-  private relationshipRepo: RelationshipRepository;
-  private eventRepo: TimelineEventRepository;
-  private storyRepo: StoryRepository;
-  private placeRepo: PlaceRepository;
-  private imageRepo: ImageRepository;
+  private personRepo!: PersonRepository;
+  private claimRepo!: ClaimRepository;
+  private relationshipRepo!: RelationshipRepository;
+  private eventRepo!: TimelineEventRepository;
+  private storyRepo!: StoryRepository;
+  private placeRepo!: PlaceRepository;
+  private imageRepo!: ImageRepository;
 
   constructor(options?: {
+    dbClient?: DatabaseClient;
     personRepo?: PersonRepository;
     claimRepo?: ClaimRepository;
     relationshipRepo?: RelationshipRepository;
@@ -39,14 +41,63 @@ export class DataRetriever {
     placeRepo?: PlaceRepository;
     imageRepo?: ImageRepository;
   }) {
-    this.personRepo = options?.personRepo || new PersonRepository();
-    this.claimRepo = options?.claimRepo || new ClaimRepository();
-    this.relationshipRepo =
-      options?.relationshipRepo || new RelationshipRepository();
-    this.eventRepo = options?.eventRepo || new TimelineEventRepository();
-    this.storyRepo = options?.storyRepo || new StoryRepository();
-    this.placeRepo = options?.placeRepo || new PlaceRepository();
-    this.imageRepo = options?.imageRepo || new ImageRepository();
+    const dbClient = options?.dbClient;
+
+    if (options?.personRepo) {
+      this.personRepo = options.personRepo;
+    } else if (dbClient) {
+      this.personRepo = new PersonRepository(dbClient);
+    }
+
+    if (options?.claimRepo) {
+      this.claimRepo = options.claimRepo;
+    } else if (dbClient) {
+      this.claimRepo = new ClaimRepository(dbClient);
+    }
+
+    if (options?.relationshipRepo) {
+      this.relationshipRepo = options.relationshipRepo;
+    } else if (dbClient) {
+      this.relationshipRepo = new RelationshipRepository(dbClient);
+    }
+
+    if (options?.eventRepo) {
+      this.eventRepo = options.eventRepo;
+    } else if (dbClient) {
+      this.eventRepo = new TimelineEventRepository(dbClient);
+    }
+
+    if (options?.storyRepo) {
+      this.storyRepo = options.storyRepo;
+    } else if (dbClient) {
+      this.storyRepo = new StoryRepository(dbClient);
+    }
+
+    if (options?.placeRepo) {
+      this.placeRepo = options.placeRepo;
+    } else if (dbClient) {
+      this.placeRepo = new PlaceRepository(dbClient);
+    }
+
+    if (options?.imageRepo) {
+      this.imageRepo = options.imageRepo;
+    } else if (dbClient) {
+      this.imageRepo = new ImageRepository(dbClient);
+    }
+
+    if (
+      !this.personRepo ||
+      !this.claimRepo ||
+      !this.relationshipRepo ||
+      !this.eventRepo ||
+      !this.storyRepo ||
+      !this.placeRepo ||
+      !this.imageRepo
+    ) {
+      throw new Error(
+        'DataRetriever requires either dbClient or all repository instances',
+      );
+    }
   }
 
   /**

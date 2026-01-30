@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { Person, ExtractedPerson } from '@sobremesa/shared-types';
 import {
   BaseRepository,
@@ -19,8 +19,8 @@ export interface PersonMatchResult {
  * Repository for people mentioned in family history.
  */
 export class PersonRepository extends BaseRepository<Person> {
-  constructor(client?: SupabaseClient) {
-    super('people', client);
+  constructor(client: DatabaseClient) {
+    super(client, 'people');
   }
 
   /**

@@ -2,6 +2,7 @@ import {
   ConversationEventRepository,
   EventLogRepository,
   FamilyRepository,
+  type DatabaseClient,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type { AIProvider } from '@sobremesa/ai-provider';
@@ -19,6 +20,8 @@ import {
  * Options for HistorianAgent.
  */
 export interface HistorianAgentOptions {
+  /** Database client (required if repositories not provided) */
+  dbClient?: DatabaseClient;
   /** AI provider for completions */
   provider: AIProvider;
   /** Model to use */
@@ -46,21 +49,54 @@ export interface HistorianAgentOptions {
 export class HistorianAgent {
   private provider: AIProvider;
   private model: string;
-  private eventRepo: ConversationEventRepository;
-  // @ts-expect-error FamilyRepo is available for future use (e.g., getting family name for responses)
-  private _familyRepo: FamilyRepository;
-  private eventLog: EventLogRepository;
-  private retriever: DataRetriever;
+  private eventRepo!: ConversationEventRepository;
+  private familyRepo!: FamilyRepository;
+  private eventLog!: EventLogRepository;
+  private retriever!: DataRetriever;
   private logger: pino.Logger;
   private config: HistorianConfig;
 
   constructor(options: HistorianAgentOptions) {
+    const { dbClient } = options;
+
+    if (options.eventLog) {
+      this.eventLog = options.eventLog;
+    } else if (dbClient) {
+      this.eventLog = new EventLogRepository(dbClient);
+    }
+
+    if (options.eventRepo) {
+      this.eventRepo = options.eventRepo;
+    } else if (dbClient) {
+      this.eventRepo = new ConversationEventRepository(dbClient);
+    }
+
+    if (options.retriever) {
+      this.retriever = options.retriever;
+    } else if (dbClient) {
+      this.retriever = new DataRetriever({ dbClient });
+    }
+
+    if (options.familyRepo) {
+      this.familyRepo = options.familyRepo;
+    } else if (dbClient) {
+      this.familyRepo = new FamilyRepository(dbClient);
+    }
+
+    if (
+      !this.eventLog ||
+      !this.eventRepo ||
+      !this.retriever ||
+      !this.familyRepo
+    ) {
+      throw new Error(
+        'HistorianAgent requires either dbClient or all repository instances',
+      );
+    }
+
     this.provider = options.provider;
     this.model = options.model;
-    this.eventRepo = options.eventRepo || new ConversationEventRepository();
-    this._familyRepo = options.familyRepo || new FamilyRepository();
-    this.eventLog = options.eventLog || new EventLogRepository();
-    this.retriever = options.retriever || new DataRetriever();
+
     this.logger = options.logger || createLogger({ name: 'historian' });
     this.config = { ...DEFAULT_HISTORIAN_CONFIG, ...options.config };
   }

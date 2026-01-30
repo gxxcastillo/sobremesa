@@ -1,6 +1,5 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { ConversationRedaction } from '@sobremesa/shared-types';
-import { getServiceClient } from '../client.js';
 import { mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
 import { EventLogRepository } from './event-log-repository.js';
 
@@ -10,12 +9,12 @@ import { EventLogRepository } from './event-log-repository.js';
  * Automatically logs all redaction/unredaction actions to event_log.
  */
 export class ConversationRedactionRepository {
-  private client: SupabaseClient;
+  private client: DatabaseClient;
   private tableName = 'conversation_redactions';
   private eventLog: EventLogRepository;
 
-  constructor(client?: SupabaseClient, eventLog?: EventLogRepository) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient, eventLog?: EventLogRepository) {
+    this.client = client;
     this.eventLog = eventLog || new EventLogRepository(this.client);
   }
 

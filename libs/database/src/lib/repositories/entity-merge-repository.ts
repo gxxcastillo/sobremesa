@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { EntityMerge } from '@sobremesa/shared-types';
 import {
   BaseRepository,
@@ -10,8 +10,8 @@ import {
  * Repository for entity merges (active merges, deletable to undo).
  */
 export class EntityMergeRepository extends BaseRepository<EntityMerge> {
-  constructor(client?: SupabaseClient) {
-    super('entity_merges', client);
+  constructor(client: DatabaseClient) {
+    super(client, 'entity_merges');
   }
 
   /**

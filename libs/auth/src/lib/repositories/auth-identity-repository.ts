@@ -1,3 +1,4 @@
+import type { DatabaseClient } from '@sobremesa/database';
 /**
  * AuthIdentityRepository
  *
@@ -21,9 +22,9 @@ export class AuthIdentityRepository {
   private identityRepo: IdentityRepository;
   private userRepo: UserRepository;
 
-  constructor() {
-    this.identityRepo = new IdentityRepository();
-    this.userRepo = new UserRepository();
+  constructor(client: DatabaseClient) {
+    this.identityRepo = new IdentityRepository(client);
+    this.userRepo = new UserRepository(client);
   }
 
   /**

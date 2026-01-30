@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { ConversationEvent } from '@sobremesa/shared-types';
 import {
   BaseRepository,
@@ -10,8 +10,8 @@ import {
  * Repository for conversation events (raw message ingestion).
  */
 export class ConversationEventRepository extends BaseRepository<ConversationEvent> {
-  constructor(client?: SupabaseClient) {
-    super('conversation_events', client);
+  constructor(client: DatabaseClient) {
+    super(client, 'conversation_events');
   }
 
   /**

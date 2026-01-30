@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { Place, ExtractedPlace } from '@sobremesa/shared-types';
 import {
   BaseRepository,
@@ -10,8 +10,8 @@ import {
  * Repository for geographic locations mentioned in stories.
  */
 export class PlaceRepository extends BaseRepository<Place> {
-  constructor(client?: SupabaseClient) {
-    super('places', client);
+  constructor(client: DatabaseClient) {
+    super(client, 'places');
   }
 
   /**

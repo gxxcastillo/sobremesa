@@ -7,20 +7,20 @@
 
 import { Elysia } from 'elysia';
 import * as jose from 'jose';
+import type { DatabaseClient } from '@sobremesa/database';
 import type { AuthContext, SessionPayload } from '../types';
 import { UserRepository } from '../repositories/user-repository';
 import { AuthIdentityRepository } from '../repositories/auth-identity-repository';
 import { FamilyAccessRepository } from '../repositories/family-access-repository';
 
 /**
- * Get the secret key for signing/verifying JWTs
+ * Configuration for auth plugin
  */
-function getSecretKey(): Uint8Array {
-  const secret = process.env.ACCESS_PASS_SECRET;
-  if (!secret) {
-    throw new Error('ACCESS_PASS_SECRET environment variable is required');
-  }
-  return new TextEncoder().encode(secret);
+export interface AuthPluginConfig {
+  /** Secret for signing/verifying JWTs */
+  secret: string;
+  /** Supabase client for database access */
+  dbClient: DatabaseClient;
 }
 
 /**
@@ -28,14 +28,15 @@ function getSecretKey(): Uint8Array {
  */
 export async function createSessionToken(
   payload: SessionPayload,
+  secret: string,
 ): Promise<string> {
-  const secret = getSecretKey();
+  const secretKey = new TextEncoder().encode(secret);
 
   return await new jose.SignJWT(payload as unknown as jose.JWTPayload)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('7d')
-    .sign(secret);
+    .sign(secretKey);
 }
 
 /**
@@ -43,10 +44,11 @@ export async function createSessionToken(
  */
 export async function verifySessionToken(
   token: string,
+  secret: string,
 ): Promise<SessionPayload | null> {
   try {
-    const secret = getSecretKey();
-    const { payload } = await jose.jwtVerify(token, secret);
+    const secretKey = new TextEncoder().encode(secret);
+    const { payload } = await jose.jwtVerify(token, secretKey);
     return payload as unknown as SessionPayload;
   } catch {
     return null;
@@ -78,61 +80,63 @@ function extractBearerToken(authorization: string | undefined): string | null {
  * 3. Loads the full user, identity, and membership data
  * 4. Makes auth context available via `auth` in request handlers
  */
-export const authPlugin = new Elysia({ name: 'auth' })
-  .derive(async ({ request }): Promise<{ auth: AuthContext }> => {
-    const authorization = request.headers.get('authorization');
-    const token = extractBearerToken(authorization || undefined);
+export function createAuthPlugin(config: AuthPluginConfig) {
+  return new Elysia({ name: 'auth' })
+    .derive(async ({ request }): Promise<{ auth: AuthContext }> => {
+      const authorization = request.headers.get('authorization');
+      const token = extractBearerToken(authorization || undefined);
 
-    // Default unauthenticated context
-    const unauthenticatedContext: AuthContext = {
-      user: null,
-      identity: null,
-      isAuthenticated: false,
-      isSuperAdmin: false,
-      familyAccess: [],
-    };
+      // Default unauthenticated context
+      const unauthenticatedContext: AuthContext = {
+        user: null,
+        identity: null,
+        isAuthenticated: false,
+        isSuperAdmin: false,
+        familyAccess: [],
+      };
 
-    if (!token) {
-      return { auth: unauthenticatedContext };
-    }
+      if (!token) {
+        return { auth: unauthenticatedContext };
+      }
 
-    // Verify token
-    const sessionPayload = await verifySessionToken(token);
-    if (!sessionPayload) {
-      return { auth: unauthenticatedContext };
-    }
+      // Verify token
+      const sessionPayload = await verifySessionToken(token, config.secret);
+      if (!sessionPayload) {
+        return { auth: unauthenticatedContext };
+      }
 
-    // Load user from database (primary identity)
-    const userRepo = new UserRepository();
-    const user = await userRepo.findById(sessionPayload.userId);
+      // Load user from database (primary identity)
+      const userRepo = new UserRepository(config.dbClient);
+      const user = await userRepo.findById(sessionPayload.userId);
 
-    if (!user) {
-      return { auth: unauthenticatedContext };
-    }
+      if (!user) {
+        return { auth: unauthenticatedContext };
+      }
 
-    // Load identity from database
-    const identityRepo = new AuthIdentityRepository();
-    const identity = await identityRepo.findById(sessionPayload.identityId);
+      // Load identity from database
+      const identityRepo = new AuthIdentityRepository(config.dbClient);
+      const identity = await identityRepo.findById(sessionPayload.identityId);
 
-    if (!identity) {
-      return { auth: unauthenticatedContext };
-    }
+      if (!identity) {
+        return { auth: unauthenticatedContext };
+      }
 
-    // Load family access records
-    const accessRepo = new FamilyAccessRepository();
-    const accessRecords = await accessRepo.findByIdentity(identity.id);
+      // Load family access records
+      const accessRepo = new FamilyAccessRepository(config.dbClient);
+      const accessRecords = await accessRepo.findByIdentity(identity.id);
 
-    return {
-      auth: {
-        user,
-        identity,
-        isAuthenticated: true,
-        isSuperAdmin: user.role === 'super_admin',
-        familyAccess: accessRecords,
-      },
-    };
-  })
-  .as('scoped');
+      return {
+        auth: {
+          user,
+          identity,
+          isAuthenticated: true,
+          isSuperAdmin: user.role === 'super_admin',
+          familyAccess: accessRecords,
+        },
+      };
+    })
+    .as('scoped');
+}
 
 /**
  * Type for handlers that receive auth context

@@ -1,15 +1,14 @@
-import { SupabaseClient } from '@supabase/supabase-js';
-import { getServiceClient } from '../client.js';
+import type { DatabaseClient } from '../client';
 
 /**
  * Repository for allowed chats allowlist.
  */
 export class AllowedChatRepository {
-  private client: SupabaseClient;
+  private client: DatabaseClient;
   private tableName = 'allowed_chats';
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   /**

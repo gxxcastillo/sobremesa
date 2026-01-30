@@ -1,17 +1,16 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { StoryPerson } from '@sobremesa/shared-types';
-import { getServiceClient } from '../client.js';
 import { mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
 
 /**
  * Repository for story-person relationships (many-to-many join table).
  */
 export class StoryPeopleRepository {
-  protected client: SupabaseClient;
+  protected client: DatabaseClient;
   protected tableName = 'story_people';
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   /**

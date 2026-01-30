@@ -1,5 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
-import { getServiceClient } from '../client.js';
+import type { DatabaseClient } from '../client';
 import { mapRowToCamelCase } from '../base-repository.js';
 
 /**
@@ -48,11 +47,11 @@ export interface QueueStats {
  * - Multiple evaluation types (claim strength, entity matching, conflict resolution)
  */
 export class LlmEvaluationQueueRepository {
-  protected client: SupabaseClient;
+  protected client: DatabaseClient;
   protected tableName = 'llm_evaluation_queue';
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   /**

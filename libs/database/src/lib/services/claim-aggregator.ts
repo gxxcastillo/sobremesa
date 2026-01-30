@@ -178,9 +178,11 @@ export class ClaimAggregatorService {
         });
       }
 
-      const group = valueGroups.get(year)!;
-      group.claims.push(claim);
-      group.totalStrength += strength;
+      const group = valueGroups.get(year);
+      if (group) {
+        group.claims.push(claim);
+        group.totalStrength += strength;
+      }
     }
 
     if (valueGroups.size === 0) {
@@ -287,9 +289,11 @@ export class ClaimAggregatorService {
         });
       }
 
-      const group = valueGroups.get(value)!;
-      group.claims.push(claim);
-      group.totalStrength += strength;
+      const group = valueGroups.get(value);
+      if (group) {
+        group.claims.push(claim);
+        group.totalStrength += strength;
+      }
     }
 
     if (valueGroups.size === 0) {

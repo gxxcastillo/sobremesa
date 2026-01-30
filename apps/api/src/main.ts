@@ -4,9 +4,9 @@ import { cors } from '@elysiajs/cors';
 import {
   FamilyRepository,
   AllowedChatRepository,
-  getServiceClient,
+  createDatabaseClient,
 } from '@sobremesa/database';
-import { authPlugin, hasAccessToFamily } from '@sobremesa/auth';
+import { createAuthPlugin, hasAccessToFamily } from '@sobremesa/auth';
 import { authRoutes } from './routes/auth';
 import { identityRoutes } from './routes/identity';
 
@@ -35,6 +35,19 @@ function validateEnv(): void {
 // Validate environment variables before starting
 validateEnv();
 
+// Initialize database client
+const dbClient = createDatabaseClient({
+  url: process.env.SUPABASE_URL as string,
+  anonKey: process.env.SUPABASE_ANON_KEY as string,
+  serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY as string,
+});
+
+// Initialize auth plugin with config
+const authPlugin = createAuthPlugin({
+  secret: process.env.ACCESS_PASS_SECRET as string,
+  dbClient,
+});
+
 const port = parseInt(process.env.PORT || '3001', 10);
 const hostname = process.env.HOST || '0.0.0.0';
 const tlsCertPath = process.env.TLS_CERT;
@@ -48,8 +61,8 @@ const app = new Elysia()
   .use(swagger())
   .use(cors())
   .use(authPlugin)
-  .use(authRoutes)
-  .use(identityRoutes)
+  .use(authRoutes(dbClient))
+  .use(identityRoutes(dbClient))
   .get(
     '/health',
     () => ({
@@ -70,24 +83,22 @@ const app = new Elysia()
   .get(
     '/api/public/stats',
     async () => {
-      const client = getServiceClient();
-
       // Get aggregate stats across all families
       const [familiesCount, peopleCount, storiesCount, eventsCount] =
         await Promise.all([
-          client
+          dbClient
             .from('families')
             .select('*', { count: 'exact', head: true })
             .eq('is_active', true),
-          client
+          dbClient
             .from('people')
             .select('*', { count: 'exact', head: true })
             .eq('redacted', false),
-          client
+          dbClient
             .from('stories')
             .select('*', { count: 'exact', head: true })
             .eq('redacted', false),
-          client
+          dbClient
             .from('events')
             .select('*', { count: 'exact', head: true })
             .eq('redacted', false),
@@ -120,8 +131,7 @@ const app = new Elysia()
         return { error: 'Authentication required' };
       }
 
-      const client = getServiceClient();
-      const familyRepo = new FamilyRepository();
+      const familyRepo = new FamilyRepository(dbClient);
 
       // Get family
       const families = await familyRepo.findAllActive();
@@ -147,7 +157,7 @@ const app = new Elysia()
         storiesRes,
         questionsRes,
       ] = await Promise.all([
-        client
+        dbClient
           .from('people')
           .select('name, aliases, birth_year, death_year, notes_original')
           .eq('family_id', family.id)
@@ -155,7 +165,7 @@ const app = new Elysia()
           .or('is_placeholder.is.null,is_placeholder.eq.false')
           .order('created_at', { ascending: true }),
 
-        client
+        dbClient
           .from('relationships')
           .select(
             `
@@ -166,14 +176,14 @@ const app = new Elysia()
           )
           .eq('family_id', family.id),
 
-        client
+        dbClient
           .from('places')
           .select('name, type, city, region, country, context_original')
           .eq('family_id', family.id)
           .eq('redacted', false)
           .order('created_at', { ascending: true }),
 
-        client
+        dbClient
           .from('events')
           .select(
             'title, event_type, date_text, date_year, description_original',
@@ -182,14 +192,14 @@ const app = new Elysia()
           .eq('redacted', false)
           .order('date_year', { ascending: true, nullsFirst: false }),
 
-        client
+        dbClient
           .from('stories')
           .select('title, content_original, themes, completeness')
           .eq('family_id', family.id)
           .eq('redacted', false)
           .order('created_at', { ascending: false }),
 
-        client.from('questions').select('status').eq('family_id', family.id),
+        dbClient.from('questions').select('status').eq('family_id', family.id),
       ]);
 
       const people = peopleRes.data || [];
@@ -245,8 +255,6 @@ const app = new Elysia()
         return { error: 'Access denied to this family' };
       }
 
-      const client = getServiceClient();
-
       // Fetch all data in parallel
       const [
         peopleRes,
@@ -257,7 +265,7 @@ const app = new Elysia()
         questionsRes,
         familyRes,
       ] = await Promise.all([
-        client
+        dbClient
           .from('people')
           .select('name, aliases, birth_year, death_year, notes_original')
           .eq('family_id', familyId)
@@ -265,7 +273,7 @@ const app = new Elysia()
           .or('is_placeholder.is.null,is_placeholder.eq.false')
           .order('created_at', { ascending: true }),
 
-        client
+        dbClient
           .from('relationships')
           .select(
             `
@@ -276,14 +284,14 @@ const app = new Elysia()
           )
           .eq('family_id', familyId),
 
-        client
+        dbClient
           .from('places')
           .select('name, type, city, region, country, context_original')
           .eq('family_id', familyId)
           .eq('redacted', false)
           .order('created_at', { ascending: true }),
 
-        client
+        dbClient
           .from('events')
           .select(
             'title, event_type, date_text, date_year, description_original',
@@ -292,16 +300,16 @@ const app = new Elysia()
           .eq('redacted', false)
           .order('date_year', { ascending: true, nullsFirst: false }),
 
-        client
+        dbClient
           .from('stories')
           .select('title, content_original, themes, completeness')
           .eq('family_id', familyId)
           .eq('redacted', false)
           .order('created_at', { ascending: false }),
 
-        client.from('questions').select('status').eq('family_id', familyId),
+        dbClient.from('questions').select('status').eq('family_id', familyId),
 
-        client.from('families').select('name').eq('id', familyId).single(),
+        dbClient.from('families').select('name').eq('id', familyId).single(),
       ]);
 
       if (!familyRes.data) {
@@ -442,7 +450,7 @@ const app = new Elysia()
         return { error: 'Super admin access required' };
       }
 
-      const allowedChatRepo = new AllowedChatRepository();
+      const allowedChatRepo = new AllowedChatRepository(dbClient);
       return allowedChatRepo.list();
     },
     {
@@ -471,7 +479,7 @@ const app = new Elysia()
       }
 
       const { chatId, note } = body;
-      const allowedChatRepo = new AllowedChatRepository();
+      const allowedChatRepo = new AllowedChatRepository(dbClient);
       await allowedChatRepo.add(chatId, note);
       return { success: true };
     },
@@ -504,7 +512,7 @@ const app = new Elysia()
         return { error: 'Super admin access required' };
       }
 
-      const allowedChatRepo = new AllowedChatRepository();
+      const allowedChatRepo = new AllowedChatRepository(dbClient);
       await allowedChatRepo.remove(chatId);
       return { success: true };
     },

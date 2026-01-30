@@ -1,18 +1,25 @@
+import type { DatabaseClient } from '@sobremesa/database';
 /**
  * User Repository
  *
  * Manages users table operations for global user accounts
  */
 
-import { getServiceClient, mapRowToCamelCase } from '@sobremesa/database';
+import { mapRowToCamelCase } from '@sobremesa/database';
 import type { User } from '../types';
 
 export class UserRepository {
+  private client: DatabaseClient;
+
+  constructor(client: DatabaseClient) {
+    this.client = client;
+  }
+
   /**
    * Find user by ID
    */
   async findById(id: string): Promise<User | null> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('users')
@@ -31,7 +38,7 @@ export class UserRepository {
    * Find user by email
    */
   async findByEmail(email: string): Promise<User | null> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('users')
@@ -50,7 +57,7 @@ export class UserRepository {
    * Find user by identity ID
    */
   async findByIdentityId(identityId: string): Promise<User | null> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('identities')
@@ -73,7 +80,7 @@ export class UserRepository {
     avatarUrl?: string | null;
     email?: string | null;
   }): Promise<User> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('users')
@@ -104,7 +111,7 @@ export class UserRepository {
       email?: string | null;
     },
   ): Promise<User | null> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const updateData: Record<string, unknown> = {};
 

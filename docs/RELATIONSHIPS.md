@@ -460,8 +460,7 @@ Then create relationship to the placeholder, which can later be merged when the 
 - **Repository**: [relationship-repository.ts](../libs/database/src/lib/repositories/relationship-repository.ts)
 - **Types**: [entities.ts](../libs/shared/types/src/lib/entities.ts) + [relationships.ts](../libs/shared/types/src/lib/relationships.ts)
 - **ADR**: [001-family-tree-traversal.md](./adr/001-family-tree-traversal.md)
-- **Identities**: [IDENTITIES.md](./IDENTITIES.md) (for linking chat users to family tree)
-- **Placeholder People**: [PERSONS.md](./PERSONS.md) (for handling unknown individuals)
+- **People and Roles**: [PEOPLE-AND-ROLES.md](./PEOPLE-AND-ROLES.md) (people, identities, users, placeholders, and access control)
 
 ---
 

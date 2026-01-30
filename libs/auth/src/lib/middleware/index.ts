@@ -1,8 +1,9 @@
 export {
-  authPlugin,
+  createAuthPlugin,
   createSessionToken,
   verifySessionToken,
   type AuthenticatedContext,
+  type AuthPluginConfig,
 } from './auth-plugin';
 
 export {

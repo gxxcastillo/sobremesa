@@ -7,13 +7,13 @@
  */
 
 import { createHash, randomBytes } from 'crypto';
+import type { DatabaseClient } from '@sobremesa/database';
 import type {
   AccessPass,
   CreateAccessPassInput,
   CreateAccessPassResult,
   FamilyRole,
 } from './types';
-import { getServiceClient } from '@sobremesa/database';
 import { mapRowToCamelCase } from '@sobremesa/database';
 
 /**
@@ -44,6 +44,7 @@ export function hashToken(token: string): string {
  * Create an access pass and store it in the database
  */
 export async function createAccessPass(
+  client: DatabaseClient,
   input: CreateAccessPassInput,
 ): Promise<CreateAccessPassResult> {
   const {
@@ -62,8 +63,6 @@ export async function createAccessPass(
 
   // Calculate expiry time
   const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
-
-  const client = getServiceClient();
 
   // First, expire any existing pending passes for this user+family combination
   await client
@@ -106,10 +105,10 @@ export async function createAccessPass(
  * Find an access pass by token
  */
 export async function findAccessPassByToken(
+  client: DatabaseClient,
   token: string,
 ): Promise<AccessPass | null> {
   const tokenHash = hashToken(token);
-  const client = getServiceClient();
 
   const { data, error } = await client
     .from('access_passes')
@@ -157,11 +156,10 @@ export function validateAccessPass(pass: AccessPass): {
  * Mark an access pass as redeemed
  */
 export async function markAccessPassRedeemed(
+  client: DatabaseClient,
   passId: string,
   identityId: string,
 ): Promise<boolean> {
-  const client = getServiceClient();
-
   const { error } = await client
     .from('access_passes')
     .update({
@@ -179,9 +177,7 @@ export async function markAccessPassRedeemed(
  * Expire all pending passes that have passed their expiry time
  * (Cleanup function, can be run periodically)
  */
-export async function expireOldPasses(): Promise<number> {
-  const client = getServiceClient();
-
+export async function expireOldPasses(client: DatabaseClient): Promise<number> {
   const { data, error } = await client
     .from('access_passes')
     .update({ status: 'expired' })

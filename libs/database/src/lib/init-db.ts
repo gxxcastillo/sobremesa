@@ -1,13 +1,39 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { getServiceClient } from './client';
+import { createDatabaseClient, type DatabaseClient } from './client';
+
+/**
+ * Create database client from environment variables.
+ * Used by CLI tools.
+ */
+function createClientFromEnv(): DatabaseClient {
+  const url = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const anonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!url) {
+    throw new Error('Missing required environment variable: SUPABASE_URL');
+  }
+
+  if (!serviceRoleKey && !anonKey) {
+    throw new Error(
+      'Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY',
+    );
+  }
+
+  return createDatabaseClient({
+    url,
+    anonKey: anonKey || '',
+    serviceRoleKey,
+  });
+}
 
 /**
  * Initialize the database schema.
  * Reads the migration file and executes it against Supabase.
  */
-export async function initDb(): Promise<void> {
-  const client = getServiceClient();
+export async function initDb(dbClient?: DatabaseClient): Promise<void> {
+  const client = dbClient || createClientFromEnv();
 
   // Find schema file relative to project root
   const schemaPath = join(
@@ -58,8 +84,10 @@ export async function initDb(): Promise<void> {
 /**
  * Check if the database is initialized by checking for required tables.
  */
-export async function isDbInitialized(): Promise<boolean> {
-  const client = getServiceClient();
+export async function isDbInitialized(
+  dbClient?: DatabaseClient,
+): Promise<boolean> {
+  const client = dbClient || createClientFromEnv();
 
   try {
     // Try to query the families table
@@ -74,8 +102,10 @@ export async function isDbInitialized(): Promise<boolean> {
 /**
  * Get list of missing tables.
  */
-export async function getMissingTables(): Promise<string[]> {
-  const client = getServiceClient();
+export async function getMissingTables(
+  dbClient?: DatabaseClient,
+): Promise<string[]> {
+  const client = dbClient || createClientFromEnv();
   const requiredTables = [
     'families',
     'conversation_events',

@@ -24,6 +24,7 @@ describe('telegram-verify', () => {
 
       // For testing, we'll use the actual verification logic
       // In a real test, you'd use a known valid hash
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { hash, ...dataWithoutHash } = validData;
       const dataCheckString = Object.keys(dataWithoutHash)
         .sort()
@@ -77,6 +78,7 @@ describe('telegram-verify', () => {
         hash: 'mock-hash',
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { hash, ...dataWithoutHash } = recentData;
       const dataCheckString = Object.keys(dataWithoutHash)
         .sort()

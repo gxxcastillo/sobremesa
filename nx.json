@@ -104,5 +104,6 @@
   "tui": {
     "autoExit": 1
   },
+  "useDaemonProcess": false,
   "nxCloudId": "6961ac7de391467e39b9a1d6"
 }

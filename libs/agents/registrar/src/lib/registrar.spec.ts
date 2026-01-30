@@ -56,6 +56,55 @@ const mockImageRepo = {
   findById: vi.fn(),
 };
 
+const mockClaimAnalysisRepo = {
+  create: vi.fn(),
+  update: vi.fn(),
+};
+
+const mockEntityMergeRepo = {
+  create: vi.fn(),
+  findByEntityId: vi.fn(),
+};
+
+const mockClaimEntityRepo = {
+  linkEntityToClaim: vi.fn(),
+  findClaimsByEntity: vi.fn(),
+};
+
+const mockClaimRelationshipRepo = {
+  create: vi.fn(),
+  findByClaimId: vi.fn(),
+};
+
+const mockStoryPeopleRepo = {
+  addPerson: vi.fn(),
+};
+
+const mockStoryPlacesRepo = {
+  addPlace: vi.fn(),
+};
+
+const mockStoryEventsRepo = {
+  addEvent: vi.fn(),
+};
+
+const mockStoryConversationEventsRepo = {
+  addConversationEvent: vi.fn(),
+};
+
+const mockEventPeopleRepo = {
+  addPerson: vi.fn(),
+};
+
+const mockEventPlacesRepo = {
+  addPlace: vi.fn(),
+};
+
+const mockLlmQueueRepo = {
+  enqueue: vi.fn(),
+  dequeue: vi.fn(),
+};
+
 const mockLogger = {
   info: vi.fn(),
   debug: vi.fn(),
@@ -112,11 +161,21 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       eventRepo: mockEventRepo as any,
       storyRepo: mockStoryRepo as any,
       claimRepo: mockClaimRepo as any,
+      claimAnalysisRepo: mockClaimAnalysisRepo as any,
       relationshipRepo: mockRelationshipRepo as any,
-      questionRepo: mockQuestionRepo as any,
       eventLog: mockEventLog as any,
       conversationEventRepo: mockConversationEventRepo as any,
       imageRepo: mockImageRepo as any,
+      entityMergeRepo: mockEntityMergeRepo as any,
+      claimEntityRepo: mockClaimEntityRepo as any,
+      claimRelationshipRepo: mockClaimRelationshipRepo as any,
+      storyPeopleRepo: mockStoryPeopleRepo as any,
+      storyPlacesRepo: mockStoryPlacesRepo as any,
+      storyEventsRepo: mockStoryEventsRepo as any,
+      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
+      eventPeopleRepo: mockEventPeopleRepo as any,
+      eventPlacesRepo: mockEventPlacesRepo as any,
+      llmQueueRepo: mockLlmQueueRepo as any,
       logger: mockLogger as any,
     });
   });

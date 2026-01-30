@@ -4,12 +4,17 @@
  * Run with: npx tsx scripts/summary.ts
  */
 import 'dotenv/config';
-import { getServiceClient } from '../libs/database/src/lib/client.js';
+import { createDatabaseClient } from '../libs/database/src/lib/client.js';
 import { FamilyRepository } from '../libs/database/src/lib/repositories/family-repository.js';
 
 async function main() {
-  const client = getServiceClient();
-  const familyRepo = new FamilyRepository();
+  const dbClient = createDatabaseClient({
+    url: process.env.SUPABASE_URL as string,
+    anonKey: process.env.SUPABASE_ANON_KEY as string,
+    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY as string,
+  });
+
+  const familyRepo = new FamilyRepository(dbClient);
 
   // Get family
   const families = await familyRepo.findAllActive();
@@ -25,7 +30,7 @@ async function main() {
   console.log(`${'='.repeat(60)}\n`);
 
   // People
-  const { data: people } = await client
+  const { data: people } = await dbClient
     .from('people')
     .select('name, aliases, birth_year, death_year, notes_original')
     .eq('family_id', family.id)
@@ -58,7 +63,7 @@ async function main() {
   }
 
   // Relationships
-  const { data: relationships } = await client
+  const { data: relationships } = await dbClient
     .from('relationships')
     .select(
       `
@@ -86,7 +91,7 @@ async function main() {
   }
 
   // Places
-  const { data: places } = await client
+  const { data: places } = await dbClient
     .from('places')
     .select('name, type, city, region, country, context_original')
     .eq('family_id', family.id)
@@ -116,7 +121,7 @@ async function main() {
   }
 
   // Events
-  const { data: events } = await client
+  const { data: events } = await dbClient
     .from('events')
     .select('title, event_type, date_text, date_year, description_original')
     .eq('family_id', family.id)
@@ -143,7 +148,7 @@ async function main() {
   }
 
   // Stories
-  const { data: stories } = await client
+  const { data: stories } = await dbClient
     .from('stories')
     .select('title, content_original, themes, completeness')
     .eq('family_id', family.id)
@@ -177,7 +182,7 @@ async function main() {
   }
 
   // Questions status
-  const { data: questionStats } = await client
+  const { data: questionStats } = await dbClient
     .from('questions')
     .select('status')
     .eq('family_id', family.id);
@@ -203,7 +208,7 @@ async function main() {
   console.log('GAPS (What we still want to know)');
   console.log('-'.repeat(40));
 
-  const { data: pendingQuestions } = await client
+  const { data: pendingQuestions } = await dbClient
     .from('questions')
     .select('content_original, priority')
     .eq('family_id', family.id)

@@ -12,6 +12,7 @@ import {
   QuestionRepository,
   ImageRepository,
   ProcessingQueueRepository,
+  type DatabaseClient,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
@@ -248,12 +249,12 @@ export type OnImageCreatedCallback = (
  * Media events create Image records and notify via callback for async Curator analysis.
  */
 export class MessageProcessor {
-  private eventRepo: ConversationEventRepository;
-  private processingRepo: ConversationEventProcessingRepository;
-  private eventLog: EventLogRepository;
-  private questionRepo: QuestionRepository;
-  private imageRepo: ImageRepository;
-  private queueRepo: ProcessingQueueRepository;
+  private eventRepo!: ConversationEventRepository;
+  private processingRepo!: ConversationEventProcessingRepository;
+  private eventLog!: EventLogRepository;
+  private questionRepo!: QuestionRepository;
+  private imageRepo!: ImageRepository;
+  private queueRepo!: ProcessingQueueRepository;
   private router?: RouterProcessor;
   private adminProcessor?: AdminProcessor;
   private historianProcessor?: HistorianProcessor;
@@ -266,7 +267,8 @@ export class MessageProcessor {
   private onImageCreated?: OnImageCreatedCallback;
   private logger: pino.Logger;
 
-  constructor(options?: {
+  constructor(options: {
+    dbClient?: DatabaseClient;
     eventRepo?: ConversationEventRepository;
     processingRepo?: ConversationEventProcessingRepository;
     eventLog?: EventLogRepository;
@@ -274,13 +276,57 @@ export class MessageProcessor {
     imageRepo?: ImageRepository;
     queueRepo?: ProcessingQueueRepository;
   }) {
-    this.eventRepo = options?.eventRepo || new ConversationEventRepository();
-    this.processingRepo =
-      options?.processingRepo || new ConversationEventProcessingRepository();
-    this.eventLog = options?.eventLog || new EventLogRepository();
-    this.questionRepo = options?.questionRepo || new QuestionRepository();
-    this.imageRepo = options?.imageRepo || new ImageRepository();
-    this.queueRepo = options?.queueRepo || new ProcessingQueueRepository();
+    const { dbClient } = options;
+
+    if (options.eventRepo) {
+      this.eventRepo = options.eventRepo;
+    } else if (dbClient) {
+      this.eventRepo = new ConversationEventRepository(dbClient);
+    }
+
+    if (options.processingRepo) {
+      this.processingRepo = options.processingRepo;
+    } else if (dbClient) {
+      this.processingRepo = new ConversationEventProcessingRepository(dbClient);
+    }
+
+    if (options.eventLog) {
+      this.eventLog = options.eventLog;
+    } else if (dbClient) {
+      this.eventLog = new EventLogRepository(dbClient);
+    }
+
+    if (options.questionRepo) {
+      this.questionRepo = options.questionRepo;
+    } else if (dbClient) {
+      this.questionRepo = new QuestionRepository(dbClient);
+    }
+
+    if (options.imageRepo) {
+      this.imageRepo = options.imageRepo;
+    } else if (dbClient) {
+      this.imageRepo = new ImageRepository(dbClient);
+    }
+
+    if (options.queueRepo) {
+      this.queueRepo = options.queueRepo;
+    } else if (dbClient) {
+      this.queueRepo = new ProcessingQueueRepository(dbClient);
+    }
+
+    if (
+      !this.eventRepo ||
+      !this.processingRepo ||
+      !this.eventLog ||
+      !this.questionRepo ||
+      !this.imageRepo ||
+      !this.queueRepo
+    ) {
+      throw new Error(
+        'MessageProcessor requires either dbClient or all repository instances',
+      );
+    }
+
     this.logger = createLogger({ name: 'processor' });
   }
 

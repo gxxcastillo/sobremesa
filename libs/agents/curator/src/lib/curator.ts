@@ -1,7 +1,7 @@
-import { ImageRepository } from '@sobremesa/database';
+import { ImageRepository, type DatabaseClient } from '@sobremesa/database';
 import { loadPrompt } from '@sobremesa/prompts';
 import { createLogger } from '@sobremesa/shared-utils';
-import type { AIProvider } from '@sobremesa/ai-provider';
+import { type AIProvider } from '@sobremesa/ai-provider';
 import type pino from 'pino';
 
 /**
@@ -38,6 +38,8 @@ export interface ImageAnalysis {
  * Options for creating a Curator.
  */
 export interface CuratorOptions {
+  /** Database client (required if imageRepo not provided) */
+  dbClient?: DatabaseClient;
   /** AI provider for completions (must support vision) */
   provider: AIProvider;
   /** Model to use */
@@ -63,9 +65,21 @@ export class Curator {
   private config: CuratorConfig;
 
   constructor(options: CuratorOptions) {
+    const { dbClient } = options;
+
+    if (options.imageRepo) {
+      this.imageRepo = options.imageRepo;
+    } else if (dbClient) {
+      this.imageRepo = new ImageRepository(dbClient);
+    }
+
+    // @ts-expect-error TS wants this to have been defined already
+    if (!this.imageRepo) {
+      throw new Error('Curator requires either dbClient or imageRepo instance');
+    }
+
     this.provider = options.provider;
     this.model = options.model;
-    this.imageRepo = options.imageRepo || new ImageRepository();
     this.logger = options.logger || createLogger({ name: 'curator' });
     this.config = { ...DEFAULT_CURATOR_CONFIG, ...options.config };
   }

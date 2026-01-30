@@ -96,7 +96,7 @@ export class DataRetrieverService {
    */
   async getPlacesContext(familyId: string): Promise<PlaceContext[]> {
     const places = await this.placeRepo.findAllActive(familyId);
-    return places.map((p: any) => ({
+    return places.map((p: PlaceContext) => ({
       id: p.id,
       name: p.name,
       type: p.type,

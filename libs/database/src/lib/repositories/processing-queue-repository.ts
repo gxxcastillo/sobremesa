@@ -1,11 +1,10 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type {
   QueueItem,
   QueueItemStatus,
   EnqueueOptions,
 } from '@sobremesa/shared-types';
 import { QueuePriority } from '@sobremesa/shared-types';
-import { getServiceClient } from '../client.js';
 import { mapRowToCamelCase } from '../base-repository.js';
 
 /**
@@ -13,11 +12,11 @@ import { mapRowToCamelCase } from '../base-repository.js';
  * Manages ordered, retryable message processing.
  */
 export class ProcessingQueueRepository {
-  private client: SupabaseClient;
+  private client: DatabaseClient;
   private tableName = 'processing_queue';
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   /**

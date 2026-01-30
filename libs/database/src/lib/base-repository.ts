@@ -1,5 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
-import { getServiceClient } from './client';
+import type { DatabaseClient } from './client';
 
 /**
  * Base repository with common database operations.
@@ -8,12 +7,12 @@ import { getServiceClient } from './client';
 export abstract class BaseRepository<
   T extends { id: string; familyId: string },
 > {
-  protected client: SupabaseClient;
+  protected client: DatabaseClient;
   protected tableName: string;
 
-  constructor(tableName: string, client?: SupabaseClient) {
+  constructor(client: DatabaseClient, tableName: string) {
+    this.client = client;
     this.tableName = tableName;
-    this.client = client || getServiceClient();
   }
 
   /**

@@ -4,6 +4,7 @@ import {
   EventLogRepository,
   FamilyAccessRepository,
   PersonRepository,
+  type DatabaseClient,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type { AIProvider } from '@sobremesa/ai-provider';
@@ -29,6 +30,8 @@ export type { MessageSender };
  * Options for FacilitatorAgent.
  */
 export interface FacilitatorAgentOptions {
+  /** Database client (required if repositories not provided) */
+  dbClient?: DatabaseClient;
   /** Message sender (typically BotManager) */
   messageSender: MessageSender;
   /** AI provider for warmth transformation (optional - falls back to verbatim if not provided) */
@@ -99,24 +102,62 @@ export class FacilitatorAgent {
   private messageSender: MessageSender;
   private provider?: AIProvider;
   private model: string;
-  private questionRepo: QuestionRepository;
-  private familyRepo: FamilyRepository;
-  private eventLog: EventLogRepository;
-  private familyAccessRepo: FamilyAccessRepository;
-  private personRepo: PersonRepository;
+  private questionRepo!: QuestionRepository;
+  private familyRepo!: FamilyRepository;
+  private eventLog!: EventLogRepository;
+  private familyAccessRepo!: FamilyAccessRepository;
+  private personRepo!: PersonRepository;
   private logger: pino.Logger;
   private minMinutesBetweenQuestions: number;
 
   constructor(options: FacilitatorAgentOptions) {
+    const { dbClient } = options;
+
+    if (options.questionRepo) {
+      this.questionRepo = options.questionRepo;
+    } else if (dbClient) {
+      this.questionRepo = new QuestionRepository(dbClient);
+    }
+
+    if (options.familyRepo) {
+      this.familyRepo = options.familyRepo;
+    } else if (dbClient) {
+      this.familyRepo = new FamilyRepository(dbClient);
+    }
+
+    if (options.eventLog) {
+      this.eventLog = options.eventLog;
+    } else if (dbClient) {
+      this.eventLog = new EventLogRepository(dbClient);
+    }
+
+    if (options.familyAccessRepo) {
+      this.familyAccessRepo = options.familyAccessRepo;
+    } else if (dbClient) {
+      this.familyAccessRepo = new FamilyAccessRepository(dbClient);
+    }
+
+    if (options.personRepo) {
+      this.personRepo = options.personRepo;
+    } else if (dbClient) {
+      this.personRepo = new PersonRepository(dbClient);
+    }
+
+    if (
+      !this.questionRepo ||
+      !this.familyRepo ||
+      !this.eventLog ||
+      !this.familyAccessRepo ||
+      !this.personRepo
+    ) {
+      throw new Error(
+        'FacilitatorAgent requires either dbClient or all repository instances',
+      );
+    }
+
     this.messageSender = options.messageSender;
     this.provider = options.provider;
     this.model = options.model || DEFAULT_WARMTH_MODEL;
-    this.questionRepo = options.questionRepo || new QuestionRepository();
-    this.familyRepo = options.familyRepo || new FamilyRepository();
-    this.eventLog = options.eventLog || new EventLogRepository();
-    this.familyAccessRepo =
-      options.familyAccessRepo || new FamilyAccessRepository();
-    this.personRepo = options.personRepo || new PersonRepository();
     this.logger = options.logger || createLogger({ name: 'facilitator' });
     this.minMinutesBetweenQuestions = options.minMinutesBetweenQuestions ?? 60; // Default 1 hour
   }

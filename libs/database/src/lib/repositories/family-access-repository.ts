@@ -1,5 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
-import { getServiceClient } from '../client.js';
+import type { DatabaseClient } from '../client';
 
 /**
  * A verified conversation participant with their person record info.
@@ -60,10 +59,10 @@ export interface ParticipantMatch {
  */
 export class FamilyAccessRepository {
   protected tableName = 'family_access';
-  protected client: SupabaseClient;
+  protected client: DatabaseClient;
 
-  constructor(client?: SupabaseClient) {
-    this.client = client ?? getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   /**

@@ -10,7 +10,7 @@ import {
   ProcessingQueueRepository,
   EventLogRepository,
   IdentityRepository,
-  getServiceClient,
+  type DatabaseClient,
 } from '@sobremesa/database';
 import type pino from 'pino';
 
@@ -119,17 +119,19 @@ export interface MemberEventInput extends BaseMessageInput {
  * Handles deduplication, event creation, and queue enqueue.
  */
 export class MessageIngester {
+  private client: DatabaseClient;
   private conversationEvents: ConversationEventRepository;
   private queueRepo: ProcessingQueueRepository;
   private eventLog: EventLogRepository;
   private identityRepo: IdentityRepository;
   private logger: pino.Logger;
 
-  constructor(logger?: pino.Logger) {
-    this.conversationEvents = new ConversationEventRepository();
-    this.queueRepo = new ProcessingQueueRepository();
-    this.eventLog = new EventLogRepository();
-    this.identityRepo = new IdentityRepository();
+  constructor(client: DatabaseClient, logger?: pino.Logger) {
+    this.client = client;
+    this.conversationEvents = new ConversationEventRepository(client);
+    this.queueRepo = new ProcessingQueueRepository(client);
+    this.eventLog = new EventLogRepository(client);
+    this.identityRepo = new IdentityRepository(client);
     this.logger = logger || createLogger({ name: 'ingester' });
   }
 
@@ -156,8 +158,7 @@ export class MessageIngester {
 
       // Ensure family_access record exists with status='pending'
       // This marks the user as a chat participant (not yet web-authenticated)
-      const client = getServiceClient();
-      await client.from('family_access').upsert(
+      await this.client.from('family_access').upsert(
         {
           identity_id: identity.id,
           family_id: familyId,

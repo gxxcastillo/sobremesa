@@ -1,17 +1,16 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { Family } from '@sobremesa/shared-types';
 import { mapRowToCamelCase } from '../base-repository.js';
-import { getServiceClient } from '../client.js';
 
 /**
  * Repository for family spaces.
  */
 export class FamilyRepository {
-  private client: SupabaseClient;
+  private client: DatabaseClient;
   private tableName = 'families';
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   /**

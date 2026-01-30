@@ -3,6 +3,7 @@ import {
   FamilyRepository,
   EventLogRepository,
   ProcessingQueueRepository,
+  type DatabaseClient,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
@@ -29,6 +30,8 @@ export type { MessageSender };
  * Options for AdminAgent.
  */
 export interface AdminAgentOptions {
+  /** Database client (required if repositories not provided) */
+  dbClient?: DatabaseClient;
   /** Message sender (typically BotManager) */
   messageSender: MessageSender;
   /** Conversation event repository */
@@ -73,18 +76,51 @@ export interface AdminHandleResult {
  */
 export class AdminAgent {
   private messageSender: MessageSender;
-  private eventRepo: ConversationEventRepository;
-  private familyRepo: FamilyRepository;
-  private eventLog: EventLogRepository;
-  private queueRepo: ProcessingQueueRepository;
+  private eventRepo!: ConversationEventRepository;
+  private familyRepo!: FamilyRepository;
+  private eventLog!: EventLogRepository;
+  private queueRepo!: ProcessingQueueRepository;
   private logger: pino.Logger;
 
   constructor(options: AdminAgentOptions) {
+    const { dbClient } = options;
+
+    if (options.eventRepo) {
+      this.eventRepo = options.eventRepo;
+    } else if (dbClient) {
+      this.eventRepo = new ConversationEventRepository(dbClient);
+    }
+
+    if (options.familyRepo) {
+      this.familyRepo = options.familyRepo;
+    } else if (dbClient) {
+      this.familyRepo = new FamilyRepository(dbClient);
+    }
+
+    if (options.eventLog) {
+      this.eventLog = options.eventLog;
+    } else if (dbClient) {
+      this.eventLog = new EventLogRepository(dbClient);
+    }
+
+    if (options.queueRepo) {
+      this.queueRepo = options.queueRepo;
+    } else if (dbClient) {
+      this.queueRepo = new ProcessingQueueRepository(dbClient);
+    }
+
+    if (
+      !this.eventRepo ||
+      !this.familyRepo ||
+      !this.eventLog ||
+      !this.queueRepo
+    ) {
+      throw new Error(
+        'AdminAgent requires either dbClient or all repository instances',
+      );
+    }
+
     this.messageSender = options.messageSender;
-    this.eventRepo = options.eventRepo || new ConversationEventRepository();
-    this.familyRepo = options.familyRepo || new FamilyRepository();
-    this.eventLog = options.eventLog || new EventLogRepository();
-    this.queueRepo = options.queueRepo || new ProcessingQueueRepository();
     this.logger = options.logger || createLogger({ name: 'admin' });
   }
 

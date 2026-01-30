@@ -2,6 +2,7 @@ import { loadPrompt } from '@sobremesa/prompts';
 import {
   ConversationEventRepository,
   ImageRepository,
+  type DatabaseClient,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type { AIProvider } from '@sobremesa/ai-provider';
@@ -106,6 +107,8 @@ export const DEFAULT_INTERN_CONFIG: InternConfig = {
  * Options for creating an InternAgent.
  */
 export interface InternAgentOptions {
+  /** Database client (required if repositories not provided) */
+  dbClient?: DatabaseClient;
   /** AI provider for completions */
   provider: AIProvider;
   /** Model to use */
@@ -139,10 +142,29 @@ export class InternAgent {
   private config: InternConfig;
 
   constructor(options: InternAgentOptions) {
+    const { dbClient } = options;
+
+    if (options.eventRepo) {
+      this.eventRepo = options.eventRepo;
+    } else if (dbClient) {
+      this.eventRepo = new ConversationEventRepository(dbClient);
+    }
+
+    if (options.imageRepo) {
+      this.imageRepo = options.imageRepo;
+    } else if (dbClient) {
+      this.imageRepo = new ImageRepository(dbClient);
+    }
+
+    // @ts-expect-error TS wants these to have been defined already
+    if (!this.eventRepo || !this.imageRepo) {
+      throw new Error(
+        'InternAgent requires either dbClient or all repository instances',
+      );
+    }
+
     this.provider = options.provider;
     this.model = options.model;
-    this.eventRepo = options.eventRepo || new ConversationEventRepository();
-    this.imageRepo = options.imageRepo || new ImageRepository();
     this.logger = options.logger || createLogger({ name: 'intern' });
     this.config = { ...DEFAULT_INTERN_CONFIG, ...options.config };
   }

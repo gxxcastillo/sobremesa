@@ -10,17 +10,12 @@
    - Category/status/qualifier for relationship nuance
    - Normalization rules for consistent storage
 
-2. **[Identities](./IDENTITIES.md)** - Chat provider accounts
-   - Maps Telegram/WhatsApp/SMS to family tree persons
-   - Separates provider accounts from real people
-   - One person can have multiple chat identities
-   - Auto-updates profile snapshots
-
-3. **[Persons](./PERSONS.md)** - Family tree members
-   - Real people in the family tree
-   - Fuzzy matching to find duplicates
+2. **[People and Roles](./PEOPLE-AND-ROLES.md)** - People, identities, users, and access control
+   - Separates chat accounts (identities), web auth (users), and real people (persons)
+   - One person can have multiple identities (Telegram + WhatsApp)
+   - Family-scoped roles (admin, member, viewer)
+   - Fuzzy matching to prevent duplicates
    - Placeholder support for unknown people
-   - Merge placeholders when real person identified
 
 ---
 

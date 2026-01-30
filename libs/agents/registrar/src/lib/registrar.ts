@@ -20,6 +20,7 @@ import {
   EventPeopleRepository,
   EventPlacesRepository,
   LlmEvaluationQueueRepository,
+  type DatabaseClient,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
@@ -44,6 +45,8 @@ const REGISTRAR_VERSION = registrarPkg.version;
  * Options for creating a RegistrarAgent.
  */
 export interface RegistrarAgentOptions {
+  /** Database client (required unless all repos provided) */
+  dbClient?: DatabaseClient;
   /** Person repository */
   personRepo?: PersonRepository;
   /** Place repository */
@@ -140,45 +143,92 @@ export class RegistrarAgent {
   private strengthCalculatorService: StrengthCalculatorService;
 
   constructor(options: RegistrarAgentOptions = {}) {
+    const { dbClient } = options;
+
+    // Helper to get or create repository
+    const getRepo = <T>(
+      provided: T | undefined,
+      create: (client: DatabaseClient) => T,
+    ): T => {
+      if (provided) return provided;
+      if (!dbClient) {
+        throw new Error(
+          'RegistrarAgent requires either dbClient or all repository instances',
+        );
+      }
+      return create(dbClient);
+    };
+
     // Repositories
-    this.personRepo = options.personRepo || new PersonRepository();
-    this.placeRepo = options.placeRepo || new PlaceRepository();
-    this.eventRepo = options.eventRepo || new TimelineEventRepository();
-    this.storyRepo = options.storyRepo || new StoryRepository();
-    this.claimRepo = options.claimRepo || new ClaimRepository();
-    this.claimAnalysisRepo =
-      options.claimAnalysisRepo || new ClaimAnalysisRepository();
-    this.relationshipRepo =
-      options.relationshipRepo || new RelationshipRepository();
-    this.eventLog = options.eventLog || new EventLogRepository();
-    this.conversationEventRepo =
-      options.conversationEventRepo || new ConversationEventRepository();
-    this.imageRepo = options.imageRepo || new ImageRepository();
-    this.entityMergeRepo =
-      options.entityMergeRepo || new EntityMergeRepository();
-    this.claimEntityRepo =
-      options.claimEntityRepo || new ClaimEntityRepository();
-    this.claimRelationshipRepo =
-      options.claimRelationshipRepo || new ClaimRelationshipRepository();
-    this.llmQueueRepo =
-      options.llmQueueRepo || new LlmEvaluationQueueRepository();
+    this.personRepo = getRepo(
+      options.personRepo,
+      (c) => new PersonRepository(c),
+    );
+    this.placeRepo = getRepo(options.placeRepo, (c) => new PlaceRepository(c));
+    this.eventRepo = getRepo(
+      options.eventRepo,
+      (c) => new TimelineEventRepository(c),
+    );
+    this.storyRepo = getRepo(options.storyRepo, (c) => new StoryRepository(c));
+    this.claimRepo = getRepo(options.claimRepo, (c) => new ClaimRepository(c));
+    this.claimAnalysisRepo = getRepo(
+      options.claimAnalysisRepo,
+      (c) => new ClaimAnalysisRepository(c),
+    );
+    this.relationshipRepo = getRepo(
+      options.relationshipRepo,
+      (c) => new RelationshipRepository(c),
+    );
+    this.eventLog = getRepo(options.eventLog, (c) => new EventLogRepository(c));
+    this.conversationEventRepo = getRepo(
+      options.conversationEventRepo,
+      (c) => new ConversationEventRepository(c),
+    );
+    this.imageRepo = getRepo(options.imageRepo, (c) => new ImageRepository(c));
+    this.entityMergeRepo = getRepo(
+      options.entityMergeRepo,
+      (c) => new EntityMergeRepository(c),
+    );
+    this.claimEntityRepo = getRepo(
+      options.claimEntityRepo,
+      (c) => new ClaimEntityRepository(c),
+    );
+    this.claimRelationshipRepo = getRepo(
+      options.claimRelationshipRepo,
+      (c) => new ClaimRelationshipRepository(c),
+    );
+    this.llmQueueRepo = getRepo(
+      options.llmQueueRepo,
+      (c) => new LlmEvaluationQueueRepository(c),
+    );
     this.logger = options.logger || createLogger({ name: 'registrar' });
 
     // Phase 2: Join table repositories
-    this.storyPeopleRepo =
-      options.storyPeopleRepo || new StoryPeopleRepository();
-    this.storyPlacesRepo =
-      options.storyPlacesRepo || new StoryPlacesRepository();
-    this.storyEventsRepo =
-      options.storyEventsRepo || new StoryEventsRepository();
-    this.storyConversationEventsRepo =
-      options.storyConversationEventsRepo ||
-      new StoryConversationEventsRepository();
-    this.eventPeopleRepo =
-      options.eventPeopleRepo || new EventPeopleRepository();
+    this.storyPeopleRepo = getRepo(
+      options.storyPeopleRepo,
+      (c) => new StoryPeopleRepository(c),
+    );
+    this.storyPlacesRepo = getRepo(
+      options.storyPlacesRepo,
+      (c) => new StoryPlacesRepository(c),
+    );
+    this.storyEventsRepo = getRepo(
+      options.storyEventsRepo,
+      (c) => new StoryEventsRepository(c),
+    );
+    this.storyConversationEventsRepo = getRepo(
+      options.storyConversationEventsRepo,
+      (c) => new StoryConversationEventsRepository(c),
+    );
+    this.eventPeopleRepo = getRepo(
+      options.eventPeopleRepo,
+      (c) => new EventPeopleRepository(c),
+    );
     // Note: EventPlacesRepository initialized for future use - events currently use single placeId field
-    this.eventPlacesRepo =
-      options.eventPlacesRepo || new EventPlacesRepository();
+    this.eventPlacesRepo = getRepo(
+      options.eventPlacesRepo,
+      (c) => new EventPlacesRepository(c),
+    );
     void this.eventPlacesRepo; // Mark as intentionally unused for now
 
     // Services

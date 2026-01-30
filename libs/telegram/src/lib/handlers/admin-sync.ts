@@ -9,7 +9,11 @@
 import type { Telegraf, Context } from 'telegraf';
 import type { Update, ChatMember } from 'telegraf/types';
 import { createLogger } from '@sobremesa/shared-utils';
-import { FamilyRepository, IdentityRepository } from '@sobremesa/database';
+import {
+  FamilyRepository,
+  IdentityRepository,
+  type DatabaseClient,
+} from '@sobremesa/database';
 import {
   TelegramChatAdminRepository,
   type TelegramAdminInfo,
@@ -44,10 +48,10 @@ export class AdminSyncHandler {
   private identityRepo: IdentityRepository;
   private logger: pino.Logger;
 
-  constructor(logger?: pino.Logger) {
-    this.familyRepo = new FamilyRepository();
-    this.chatAdminRepo = new TelegramChatAdminRepository();
-    this.identityRepo = new IdentityRepository();
+  constructor(dbClient: DatabaseClient, logger?: pino.Logger) {
+    this.familyRepo = new FamilyRepository(dbClient);
+    this.chatAdminRepo = new TelegramChatAdminRepository(dbClient);
+    this.identityRepo = new IdentityRepository(dbClient);
     this.logger = logger || createLogger({ name: 'admin-sync' });
   }
 

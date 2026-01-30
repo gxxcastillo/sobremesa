@@ -7,6 +7,7 @@ import {
   ConversationEventRepository,
   FamilyRepository,
   ImageRepository,
+  type DatabaseClient,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type { AIProvider } from '@sobremesa/ai-provider';
@@ -22,6 +23,8 @@ import { SCRIBE_JSON_SCHEMA } from './schema';
  * Options for creating a ScribeAgent.
  */
 export interface ScribeAgentOptions {
+  /** Database client (required if repositories not provided) */
+  dbClient?: DatabaseClient;
   /** AI provider for completions */
   provider: AIProvider;
   /** Model to use */
@@ -53,11 +56,35 @@ export class ScribeAgent {
   private config: ScribeConfig;
 
   constructor(options: ScribeAgentOptions) {
+    const { dbClient } = options;
+
+    if (options.eventRepo) {
+      this.eventRepo = options.eventRepo;
+    } else if (dbClient) {
+      this.eventRepo = new ConversationEventRepository(dbClient);
+    }
+
+    if (options.familyRepo) {
+      this.familyRepo = options.familyRepo;
+    } else if (dbClient) {
+      this.familyRepo = new FamilyRepository(dbClient);
+    }
+
+    if (options.imageRepo) {
+      this.imageRepo = options.imageRepo;
+    } else if (dbClient) {
+      this.imageRepo = new ImageRepository(dbClient);
+    }
+
+    // @ts-expect-error TS wants these to have been defined already
+    if (!this.eventRepo || !this.familyRepo || !this.imageRepo) {
+      throw new Error(
+        'ScribeAgent requires either dbClient or all repository instances',
+      );
+    }
+
     this.provider = options.provider;
     this.model = options.model;
-    this.eventRepo = options.eventRepo || new ConversationEventRepository();
-    this.familyRepo = options.familyRepo || new FamilyRepository();
-    this.imageRepo = options.imageRepo || new ImageRepository();
     this.logger = options.logger || createLogger({ name: 'scribe' });
     this.config = { ...DEFAULT_SCRIBE_CONFIG, ...options.config };
   }

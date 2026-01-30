@@ -1,6 +1,5 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { Identity, ChatProvider } from '@sobremesa/shared-types';
-import { getServiceClient } from '../client.js';
 import { mapRowToCamelCase } from '../base-repository.js';
 
 /**
@@ -12,10 +11,10 @@ import { mapRowToCamelCase } from '../base-repository.js';
  */
 export class IdentityRepository {
   protected tableName = 'identities';
-  protected client: SupabaseClient;
+  protected client: DatabaseClient;
 
-  constructor(client?: SupabaseClient) {
-    this.client = client ?? getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   // ===========================================================================

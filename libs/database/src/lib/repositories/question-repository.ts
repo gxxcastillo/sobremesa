@@ -1,6 +1,5 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { Question, GeneratedQuestion } from '@sobremesa/shared-types';
-import { getServiceClient } from '../client.js';
 import { mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
 
 /**
@@ -8,11 +7,11 @@ import { mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
  * Note: Does not extend BaseRepository as Question has a different structure.
  */
 export class QuestionRepository {
-  protected client: SupabaseClient;
+  protected client: DatabaseClient;
   protected tableName = 'questions';
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   /**

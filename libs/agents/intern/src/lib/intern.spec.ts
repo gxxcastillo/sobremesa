@@ -1290,6 +1290,8 @@ describe('InternAgent', () => {
       const agent = new InternAgent({
         provider: mockProvider,
         model: 'claude-3-5-haiku-20241022',
+        eventRepo: mockEventRepo as any,
+        imageRepo: mockImageRepo as any,
       });
 
       expect(agent).toBeDefined();

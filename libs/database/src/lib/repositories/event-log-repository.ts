@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type {
   EventLogEntry,
   EventLogType,
@@ -6,7 +6,6 @@ import type {
   ActorType,
   Severity,
 } from '@sobremesa/shared-types';
-import { getServiceClient } from '../client.js';
 import { mapRowToCamelCase } from '../base-repository.js';
 
 /**
@@ -14,11 +13,11 @@ import { mapRowToCamelCase } from '../base-repository.js';
  * Append-only - no updates or deletes.
  */
 export class EventLogRepository {
-  private client: SupabaseClient;
+  private client: DatabaseClient;
   private tableName = 'event_log';
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   /**

@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { Image } from '@sobremesa/shared-types';
 import {
   BaseRepository,
@@ -10,8 +10,8 @@ import {
  * Repository for images and documents.
  */
 export class ImageRepository extends BaseRepository<Image> {
-  constructor(client?: SupabaseClient) {
-    super('images', client);
+  constructor(client: DatabaseClient) {
+    super(client, 'images');
   }
 
   /**

@@ -6,6 +6,7 @@ import {
   FamilyRepository,
   AllowedChatRepository,
   IdentityRepository,
+  type DatabaseClient,
 } from '@sobremesa/database';
 import {
   createAccessPass,
@@ -160,6 +161,7 @@ function isLanguageCode(value: string): value is LanguageCode {
 export class ChatbotHandler implements BotHandler {
   readonly role = BotRole.CHATBOT;
 
+  private dbClient: DatabaseClient;
   private familyRepo: FamilyRepository;
   private allowedChatRepo: AllowedChatRepository;
   private ingester: MessageIngester;
@@ -167,14 +169,18 @@ export class ChatbotHandler implements BotHandler {
   private logger: pino.Logger;
   private studioBaseUrl: string;
 
-  constructor(logger?: pino.Logger) {
-    this.familyRepo = new FamilyRepository();
-    this.allowedChatRepo = new AllowedChatRepository();
-    this.logger = logger || createLogger({ name: 'chatbot' });
-    this.ingester = new MessageIngester(this.logger);
-    this.adminSyncHandler = new AdminSyncHandler(this.logger);
-    this.studioBaseUrl =
-      process.env.STUDIO_URL || 'https://studio.sobremesa.app';
+  constructor(options: {
+    dbClient: DatabaseClient;
+    studioUrl: string;
+    logger?: pino.Logger;
+  }) {
+    this.dbClient = options.dbClient;
+    this.studioBaseUrl = options.studioUrl;
+    this.familyRepo = new FamilyRepository(this.dbClient);
+    this.allowedChatRepo = new AllowedChatRepository(this.dbClient);
+    this.logger = options.logger || createLogger({ name: 'chatbot' });
+    this.ingester = new MessageIngester(this.dbClient, this.logger);
+    this.adminSyncHandler = new AdminSyncHandler(this.dbClient, this.logger);
   }
 
   /**
@@ -742,14 +748,14 @@ export class ChatbotHandler implements BotHandler {
       const role = determineRoleFromAdminStatus(isAdmin);
 
       // Look up global identity for this user (may not exist if they've never messaged)
-      const identityRepo = new IdentityRepository();
+      const identityRepo = new IdentityRepository(this.dbClient);
       const identity = await identityRepo.findByProviderUserId(
         'telegram',
         String(user.id),
       );
 
       // Create access pass (no profile data stored - only lookup fields)
-      const result = await createAccessPass({
+      const result = await createAccessPass(this.dbClient, {
         familyId,
         role,
         provider: 'telegram',

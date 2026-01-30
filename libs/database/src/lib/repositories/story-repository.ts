@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { Story, Confidence, LanguageCode } from '@sobremesa/shared-types';
 import {
   BaseRepository,
@@ -10,8 +10,8 @@ import {
  * Repository for coherent narrative fragments.
  */
 export class StoryRepository extends BaseRepository<Story> {
-  constructor(client?: SupabaseClient) {
-    super('stories', client);
+  constructor(client: DatabaseClient) {
+    super(client, 'stories');
   }
 
   /**

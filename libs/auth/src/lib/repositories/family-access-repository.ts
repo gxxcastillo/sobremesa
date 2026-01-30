@@ -1,3 +1,4 @@
+import type { DatabaseClient } from '@sobremesa/database';
 /**
  * FamilyAccess Repository
  *
@@ -5,7 +6,7 @@
  * a family via the web/Studio app. Also stores person claims.
  */
 
-import { getServiceClient, mapRowToCamelCase } from '@sobremesa/database';
+import { mapRowToCamelCase } from '@sobremesa/database';
 import type {
   FamilyAccess,
   FamilyRole,
@@ -15,6 +16,12 @@ import type {
 } from '../types';
 
 export class FamilyAccessRepository {
+  private client: DatabaseClient;
+
+  constructor(client: DatabaseClient) {
+    this.client = client;
+  }
+
   /**
    * Find access by identity ID and family ID
    */
@@ -26,7 +33,7 @@ export class FamilyAccessRepository {
       statusFilter?: FamilyAccessStatus[];
     },
   ): Promise<FamilyAccess | null> {
-    const client = getServiceClient();
+    const client = this.client;
 
     let query = client
       .from('family_access')
@@ -61,7 +68,7 @@ export class FamilyAccessRepository {
       statusFilter?: FamilyAccessStatus[];
     },
   ): Promise<FamilyAccess[]> {
-    const client = getServiceClient();
+    const client = this.client;
 
     let query = client
       .from('family_access')
@@ -96,7 +103,7 @@ export class FamilyAccessRepository {
       statusFilter?: FamilyAccessStatus[];
     },
   ): Promise<FamilyAccess[]> {
-    const client = getServiceClient();
+    const client = this.client;
 
     let query = client
       .from('family_access')
@@ -128,7 +135,7 @@ export class FamilyAccessRepository {
     identityId: string,
     options?: { statusFilter?: FamilyAccessStatus[] },
   ): Promise<FamilyWithRole[]> {
-    const client = getServiceClient();
+    const client = this.client;
 
     let query = client
       .from('family_access')
@@ -181,7 +188,7 @@ export class FamilyAccessRepository {
       notes?: string;
     },
   ): Promise<FamilyAccess> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('family_access')
@@ -272,7 +279,7 @@ export class FamilyAccessRepository {
    * Update access role
    */
   async updateRole(accessId: string, role: FamilyRole): Promise<FamilyAccess> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('family_access')
@@ -299,7 +306,7 @@ export class FamilyAccessRepository {
       reason?: string;
     },
   ): Promise<FamilyAccess> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const updateData: Record<string, unknown> = { status };
 
@@ -338,7 +345,7 @@ export class FamilyAccessRepository {
     accessId: string,
     newRole?: FamilyRole,
   ): Promise<FamilyAccess> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const updateData: Record<string, unknown> = {
       status: 'active' as FamilyAccessStatus,
@@ -401,7 +408,7 @@ export class FamilyAccessRepository {
     familyId: string,
     personId: string,
   ): Promise<FamilyAccess> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('family_access')
@@ -425,7 +432,7 @@ export class FamilyAccessRepository {
     identityId: string,
     familyId: string,
   ): Promise<FamilyAccess> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('family_access')
@@ -446,7 +453,7 @@ export class FamilyAccessRepository {
    * Delete access record permanently (use revoke() for soft delete)
    */
   async delete(accessId: string): Promise<boolean> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { error } = await client
       .from('family_access')
@@ -463,7 +470,7 @@ export class FamilyAccessRepository {
     identityId: string,
     familyId: string,
   ): Promise<boolean> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { error } = await client
       .from('family_access')
@@ -505,7 +512,7 @@ export class FamilyAccessRepository {
    * Count users with active access to a family
    */
   async countActiveUsers(familyId: string): Promise<number> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { count, error } = await client
       .from('family_access')
@@ -524,7 +531,7 @@ export class FamilyAccessRepository {
    * Count admins with active access to a family
    */
   async countAdmins(familyId: string): Promise<number> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { count, error } = await client
       .from('family_access')

@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import {
   Confidence,
   type Relationship,
@@ -9,18 +9,17 @@ import {
   normalizeRelationship,
   getRelationshipPerspective,
 } from '@sobremesa/shared-types';
-import { getServiceClient } from '../client.js';
 import { mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
 
 /**
  * Repository for relationships between people.
  */
 export class RelationshipRepository {
-  protected client: SupabaseClient;
+  protected client: DatabaseClient;
   protected tableName = 'relationships';
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   /**

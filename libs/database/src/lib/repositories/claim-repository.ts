@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { Claim, ExtractedClaim } from '@sobremesa/shared-types';
 import {
   BaseRepository,
@@ -10,8 +10,8 @@ import {
  * Repository for atomic factual claims with provenance.
  */
 export class ClaimRepository extends BaseRepository<Claim> {
-  constructor(client?: SupabaseClient) {
-    super('claims', client);
+  constructor(client: DatabaseClient) {
+    super(client, 'claims');
   }
 
   /**

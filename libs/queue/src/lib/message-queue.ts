@@ -30,14 +30,14 @@ export class MessageQueue {
   private pollIntervalMs: number;
   private pollTimeout?: ReturnType<typeof setTimeout>;
 
-  constructor(options?: {
-    repository?: ProcessingQueueRepository;
+  constructor(options: {
+    repository: ProcessingQueueRepository;
     workerId?: string;
     queueOptions?: Partial<QueueOptions>;
     pollIntervalMs?: number;
     loggerOptions?: LoggerOptions;
   }) {
-    this.repository = options?.repository || new ProcessingQueueRepository();
+    this.repository = options.repository;
     this.workerId =
       options?.workerId ||
       `worker-${Date.now()}-${Math.random().toString(36).slice(2)}`;

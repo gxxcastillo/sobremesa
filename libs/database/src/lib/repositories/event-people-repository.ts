@@ -1,17 +1,16 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { EventPerson } from '@sobremesa/shared-types';
-import { getServiceClient } from '../client.js';
 import { mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
 
 /**
  * Repository for event-person relationships (many-to-many join table).
  */
 export class EventPeopleRepository {
-  protected client: SupabaseClient;
+  protected client: DatabaseClient;
   protected tableName = 'event_people';
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   async findByEvent(familyId: string, eventId: string): Promise<EventPerson[]> {

@@ -1,4 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { TimelineEvent, ExtractedEvent } from '@sobremesa/shared-types';
 import {
   BaseRepository,
@@ -10,8 +10,8 @@ import {
  * Repository for timeline events derived from claims.
  */
 export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
-  constructor(client?: SupabaseClient) {
-    super('events', client);
+  constructor(client: DatabaseClient) {
+    super(client, 'events');
   }
 
   /**

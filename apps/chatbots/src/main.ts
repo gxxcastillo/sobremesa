@@ -13,19 +13,35 @@ import { InternAgent, INTERN_VERSION } from '@sobremesa/agents-intern';
 import { ScribeAgent, SCRIBE_VERSION } from '@sobremesa/agents-scribe';
 import { RegistrarAgent } from '@sobremesa/agents-registrar';
 import { FacilitatorAgent } from '@sobremesa/agents-facilitator';
+import {
+  createDatabaseClient,
+  ProcessingQueueRepository,
+} from '@sobremesa/database';
 
 const logger = createLogger({ name: 'chatbots' });
 
-function validateEnv(): { token: string; anthropicApiKey?: string } {
+function validateEnv(): {
+  token: string;
+  anthropicApiKey?: string;
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  supabaseServiceRoleKey: string;
+  studioUrl: string;
+} {
   const missing: string[] = [];
 
   const token = process.env['TELEGRAM_BOT_TOKEN'];
   if (!token) missing.push('TELEGRAM_BOT_TOKEN');
 
-  if (!process.env['SUPABASE_URL']) missing.push('SUPABASE_URL');
-  if (!process.env['SUPABASE_ANON_KEY']) missing.push('SUPABASE_ANON_KEY');
-  if (!process.env['SUPABASE_SERVICE_ROLE_KEY'])
-    missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  const supabaseUrl = process.env['SUPABASE_URL'];
+  if (!supabaseUrl) missing.push('SUPABASE_URL');
+
+  const supabaseAnonKey = process.env['SUPABASE_ANON_KEY'];
+  if (!supabaseAnonKey) missing.push('SUPABASE_ANON_KEY');
+
+  const supabaseServiceRoleKey = process.env['SUPABASE_SERVICE_ROLE_KEY'];
+  if (!supabaseServiceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+
   if (!process.env['ACCESS_PASS_SECRET']) missing.push('ACCESS_PASS_SECRET');
 
   if (missing.length > 0) {
@@ -38,17 +54,41 @@ function validateEnv(): { token: string; anthropicApiKey?: string } {
     logger.warn('ANTHROPIC_API_KEY not set - agents will not process messages');
   }
 
-  return { token: token as string, anthropicApiKey };
+  const studioUrl = process.env['STUDIO_URL'] || 'https://studio.sobremesa.app';
+
+  return {
+    token: token as string,
+    anthropicApiKey,
+    supabaseUrl: supabaseUrl as string,
+    supabaseAnonKey: supabaseAnonKey as string,
+    supabaseServiceRoleKey: supabaseServiceRoleKey as string,
+    studioUrl,
+  };
 }
 
 async function main() {
   logger.info('Starting Sobremesa conversation gateway...');
 
-  const { token, anthropicApiKey } = validateEnv();
+  const {
+    token,
+    anthropicApiKey,
+    supabaseUrl,
+    supabaseAnonKey,
+    supabaseServiceRoleKey,
+    studioUrl,
+  } = validateEnv();
+
+  // Initialize database client
+  logger.debug('Creating database client...');
+  const dbClient = createDatabaseClient({
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
+    serviceRoleKey: supabaseServiceRoleKey,
+  });
 
   try {
     logger.debug('Creating BotManager...');
-    const botManager = new BotManager({ token, logger });
+    const botManager = new BotManager({ token, dbClient, studioUrl, logger });
 
     // Get bot info for mention detection
     logger.debug('Fetching bot info...');
@@ -56,11 +96,12 @@ async function main() {
     logger.info({ username: botInfo.username }, 'Bot info retrieved');
 
     logger.debug('Creating MessageProcessor...');
-    const processor = new MessageProcessor();
+    const processor = new MessageProcessor({ dbClient });
 
     // Configure Admin agent (doesn't require AI)
     logger.debug('Configuring Admin agent...');
     const admin = new AdminAgent({
+      dbClient,
       messageSender: botManager,
     });
     processor.setAdminProcessor((eventId, familyId, subtype) =>
@@ -101,6 +142,7 @@ async function main() {
       ? aiFactory.getProviderForAgent('facilitator')
       : undefined;
     const facilitator = new FacilitatorAgent({
+      dbClient,
       messageSender: botManager,
       provider: facilitatorProvider,
       model: aiFactory.getModelForAgent('facilitator'),
@@ -115,16 +157,19 @@ async function main() {
       );
 
       const intern = new InternAgent({
+        dbClient,
         provider: aiFactory.getProviderForAgent('intern'),
         model: aiFactory.getModelForAgent('intern'),
         config: { botUsername: botInfo.username },
       });
       const scribe = new ScribeAgent({
+        dbClient,
         provider: aiFactory.getProviderForAgent('scribe'),
         model: aiFactory.getModelForAgent('scribe'),
       });
-      const registrar = new RegistrarAgent();
+      const registrar = new RegistrarAgent({ dbClient });
       const historian = new HistorianAgent({
+        dbClient,
         provider: aiFactory.getProviderForAgent('historian'),
         model: aiFactory.getModelForAgent('historian'),
       });
@@ -200,7 +245,9 @@ async function main() {
     }
 
     logger.debug('Starting MessageQueue...');
-    const queue = new MessageQueue();
+    const queue = new MessageQueue({
+      repository: new ProcessingQueueRepository(dbClient),
+    });
     queue.setHandler(processor.createHandler());
     await queue.start();
     logger.info('Message queue started');

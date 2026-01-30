@@ -31,10 +31,11 @@ export {
 
 // Middleware
 export {
-  authPlugin,
+  createAuthPlugin,
   createSessionToken,
   verifySessionToken,
   type AuthenticatedContext,
+  type AuthPluginConfig,
   requireAuth,
   requireSuperAdmin,
   requireFamilyMember,

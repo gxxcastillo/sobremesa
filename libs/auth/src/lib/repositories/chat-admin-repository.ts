@@ -1,3 +1,4 @@
+import type { DatabaseClient } from '@sobremesa/database';
 /**
  * TelegramChatAdmin Repository
  *
@@ -5,7 +6,7 @@
  * Telegram chat admin status (queries with source='telegram')
  */
 
-import { getServiceClient, mapRowToCamelCase } from '@sobremesa/database';
+import { mapRowToCamelCase } from '@sobremesa/database';
 import type { TelegramChatAdmin } from '../types';
 
 export interface TelegramAdminInfo {
@@ -17,6 +18,12 @@ export interface TelegramAdminInfo {
 }
 
 export class TelegramChatAdminRepository {
+  private client: DatabaseClient;
+
+  constructor(client: DatabaseClient) {
+    this.client = client;
+  }
+
   /**
    * Find admin record by family, chat, and user
    */
@@ -25,7 +32,7 @@ export class TelegramChatAdminRepository {
     chatId: string,
     telegramUserId: number,
   ): Promise<TelegramChatAdmin | null> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('chat_admins')
@@ -47,7 +54,7 @@ export class TelegramChatAdminRepository {
    * Find all admins for a family
    */
   async findByFamily(familyId: string): Promise<TelegramChatAdmin[]> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('chat_admins')
@@ -71,7 +78,7 @@ export class TelegramChatAdminRepository {
     familyId: string,
     chatId: string,
   ): Promise<TelegramChatAdmin[]> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('chat_admins')
@@ -96,7 +103,7 @@ export class TelegramChatAdminRepository {
     familyId: string,
     telegramUserId: number,
   ): Promise<boolean> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { data, error } = await client
       .from('chat_admins')
@@ -122,7 +129,7 @@ export class TelegramChatAdminRepository {
     chatId: string,
     adminInfo: TelegramAdminInfo,
   ): Promise<TelegramChatAdmin> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const permissions: Record<string, boolean> = {};
     if (adminInfo.canManageChat !== undefined) {
@@ -168,7 +175,7 @@ export class TelegramChatAdminRepository {
     chatId: string,
     admins: TelegramAdminInfo[],
   ): Promise<void> {
-    const client = getServiceClient();
+    const client = this.client;
 
     // Get all current users in this chat
     const { data: currentRecords } = await client
@@ -203,7 +210,7 @@ export class TelegramChatAdminRepository {
    * Delete all records for a family
    */
   async deleteByFamily(familyId: string): Promise<boolean> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { error } = await client
       .from('chat_admins')
@@ -218,7 +225,7 @@ export class TelegramChatAdminRepository {
    * Delete all records for a chat
    */
   async deleteByChat(familyId: string, chatId: string): Promise<boolean> {
-    const client = getServiceClient();
+    const client = this.client;
 
     const { error } = await client
       .from('chat_admins')

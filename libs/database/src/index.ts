@@ -1,10 +1,7 @@
 // Client
 export {
-  getClient,
-  getServiceClient,
   createDatabaseClient,
-  resetClients,
-  getDatabaseConfig,
+  type DatabaseClient,
   type DatabaseConfig,
 } from './lib/client';
 

@@ -1,17 +1,16 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { DatabaseClient } from '../client';
 import type { StoryConversationEvent } from '@sobremesa/shared-types';
-import { getServiceClient } from '../client.js';
 import { mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
 
 /**
  * Repository for story-conversation_event relationships (provenance tracking).
  */
 export class StoryConversationEventsRepository {
-  protected client: SupabaseClient;
+  protected client: DatabaseClient;
   protected tableName = 'story_conversation_events';
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || getServiceClient();
+  constructor(client: DatabaseClient) {
+    this.client = client;
   }
 
   /**
