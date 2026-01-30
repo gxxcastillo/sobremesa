@@ -142,7 +142,7 @@ export class RelationshipRepository {
       category: normalized.category,
       status: options?.status || 'active',
       qualifier: options?.qualifier,
-      confidence: options?.confidence || Confidence.MEDIUM,
+      confidence: options?.confidence || 'medium',
       conversationEventId: options?.conversationEventId,
       claimedBy: options?.claimedBy,
       extractionVersion: options?.extractionVersion,

@@ -110,6 +110,103 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
   }
 
   /**
+   * Find a similar event by title, people involved, and optional date.
+   * Used for deduplication - matches if title/date match and at least one person overlaps.
+   */
+  async findSimilar(
+    familyId: string,
+    title: string,
+    personIds: string[],
+    dateYear?: number,
+  ): Promise<TimelineEvent | null> {
+    if (personIds.length === 0) {
+      // No people to match - can't deduplicate without people
+      return null;
+    }
+
+    // Find events involving ANY of the specified people
+    const { data: eventPeopleData, error: epError } = await this.client
+      .from('event_people')
+      .select('event_id')
+      .eq('family_id', familyId)
+      .in('person_id', personIds);
+
+    if (epError) {
+      throw new Error(`Failed to query event_people: ${epError.message}`);
+    }
+
+    if (!eventPeopleData || eventPeopleData.length === 0) {
+      return null;
+    }
+
+    // Get unique event IDs (any event with at least one person match)
+    const candidateEventIds = [
+      ...new Set(eventPeopleData.map((row) => row.event_id)),
+    ];
+
+    // Find events with similar title among the candidates
+    let query = this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('redacted', false)
+      .in('id', candidateEventIds)
+      .ilike('title', `%${title}%`);
+
+    // If date provided, allow ±2 year tolerance
+    if (dateYear !== undefined) {
+      query = query
+        .gte('date_year', dateYear - 2)
+        .lte('date_year', dateYear + 2);
+    }
+
+    const { data, error } = await query.limit(1).maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to find similar event: ${error.message}`);
+    }
+
+    return data ? this.mapFromDb(data) : null;
+  }
+
+  /**
+   * Find or create an event, with deduplication based on title + people + date.
+   */
+  async findOrCreate(
+    familyId: string,
+    extracted: ExtractedEvent,
+    personIds: string[],
+    placeId: string | undefined,
+    conversationEventId: string,
+    claimedBy?: string,
+    extractionVersion?: string,
+  ): Promise<{ event: TimelineEvent; created: boolean }> {
+    // Check for existing similar event
+    const existing = await this.findSimilar(
+      familyId,
+      extracted.title,
+      personIds,
+      extracted.dateYear,
+    );
+
+    if (existing) {
+      return { event: existing, created: false };
+    }
+
+    // Create new event
+    const event = await this.createFromExtracted(
+      familyId,
+      extracted,
+      placeId,
+      conversationEventId,
+      claimedBy,
+      extractionVersion,
+    );
+
+    return { event, created: true };
+  }
+
+  /**
    * Create a timeline event from extracted data.
    */
   async createFromExtracted(

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProcessingQueueRepository } from './processing-queue-repository';
+import { QueuePriority } from '@sobremesa/shared-types';
 
 // Mock Supabase client
 const mockSupabaseClient = {
@@ -103,18 +104,20 @@ describe('ProcessingQueueRepository - enqueue', () => {
       conversation_event_id: 'event-1',
       status: 'queued',
       attempts: 0,
-      priority: 50,
+      priority: QueuePriority.HIGH,
       queued_at: new Date().toISOString(),
     };
 
     const chain = createChainableMock({ data: queuedItem, error: null });
     mockSupabaseClient.from.mockReturnValue(chain);
 
-    await queueRepo.enqueue('fam1', 'event-1', { priority: 50 });
+    await queueRepo.enqueue('fam1', 'event-1', {
+      priority: QueuePriority.HIGH,
+    });
 
     expect(chain.insert).toHaveBeenCalledWith(
       expect.objectContaining({
-        priority: 50,
+        priority: QueuePriority.HIGH,
       }),
     );
   });

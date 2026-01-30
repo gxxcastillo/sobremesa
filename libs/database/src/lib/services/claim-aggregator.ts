@@ -1,5 +1,4 @@
-import type { ClaimWithAnalysis } from '@sobremesa/shared-types';
-import { Confidence } from '@sobremesa/shared-types';
+import type { ClaimWithAnalysis, Confidence } from '@sobremesa/shared-types';
 import { ClaimEntityRepository } from '../repositories/claim-entity-repository.js';
 import { ClaimAnalysisRepository } from '../repositories/claim-analysis-repository.js';
 
@@ -206,7 +205,7 @@ export class ClaimAggregatorService {
     if (topGroup.totalStrength / totalWeight > 0.7) {
       return {
         value: topGroup.value,
-        confidence: Confidence.HIGH,
+        confidence: 'high',
         supportingClaimIds: topGroup.claims.map((c) => c.id),
         reasoning: `Consensus: ${topGroup.claims.length} claim(s) agree on ${topGroup.value} (${Math.round((topGroup.totalStrength / totalWeight) * 100)}% confidence)`,
       };
@@ -228,7 +227,7 @@ export class ClaimAggregatorService {
 
         return {
           value: weightedAvg,
-          confidence: Confidence.MEDIUM,
+          confidence: 'medium',
           supportingClaimIds: allClaims.map((c) => c.id),
           reasoning: `Weighted average of close values: ${group1.value} (${group1.claims.length} claim(s)) and ${group2.value} (${group2.claims.length} claim(s))`,
         };
@@ -237,9 +236,7 @@ export class ClaimAggregatorService {
 
     // Strategy 3: Conflicting data - use highest-strength claim
     const confidence =
-      topGroup.totalStrength / totalWeight > 0.5
-        ? Confidence.MEDIUM
-        : Confidence.LOW;
+      topGroup.totalStrength / totalWeight > 0.5 ? 'medium' : 'low';
 
     return {
       value: topGroup.value,
@@ -318,11 +315,11 @@ export class ClaimAggregatorService {
     const weightRatio = topGroup.totalStrength / totalWeight;
 
     if (weightRatio > 0.8) {
-      confidence = Confidence.HIGH;
+      confidence = 'high';
     } else if (weightRatio > 0.6) {
-      confidence = Confidence.MEDIUM;
+      confidence = 'medium';
     } else {
-      confidence = Confidence.LOW;
+      confidence = 'low';
     }
 
     return {

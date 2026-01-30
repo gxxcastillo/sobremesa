@@ -1,10 +1,10 @@
 import type { Telegraf } from 'telegraf';
 import type pino from 'pino';
-import { BotRole, type OutgoingMessage } from '@sobremesa/shared-types';
+import type { BotRole, OutgoingMessage } from '@sobremesa/shared-types';
 import type { DatabaseClient } from '@sobremesa/database';
 
 // Re-export from shared-types for consumers
-export { BotRole, type OutgoingMessage };
+export type { BotRole, OutgoingMessage };
 
 /**
  * Configuration for a single bot.

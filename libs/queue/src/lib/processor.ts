@@ -1,9 +1,8 @@
-import {
-  Confidence,
-  type ProcessingResult,
-  type ScribeDomainModel,
-  type LanguageCode,
-  type RawImageReference,
+import type {
+  ProcessingResult,
+  ScribeDomainModel,
+  LanguageCode,
+  RawImageReference,
 } from '@sobremesa/shared-types';
 import {
   ConversationEventRepository,
@@ -884,7 +883,7 @@ export class MessageProcessor {
             {
               imageId: linkResult.imageId,
               referenceType: linkResult.referenceType,
-              confidence: Confidence.MEDIUM, // Intern detection is medium confidence
+              confidence: 'medium', // Intern detection is medium confidence
               peopleIdentified: [], // No people identified from Intern linking
             },
           ];

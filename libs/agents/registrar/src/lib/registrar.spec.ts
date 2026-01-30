@@ -4,7 +4,6 @@ import type {
   ScribeDomainModel,
   ImageReference,
 } from '@sobremesa/shared-types';
-import { Confidence } from '@sobremesa/shared-types';
 
 // Mock repositories
 const mockPersonRepo = {
@@ -20,6 +19,7 @@ const mockPlaceRepo = {
 
 const mockEventRepo = {
   createFromExtracted: vi.fn(),
+  findOrCreate: vi.fn(),
 };
 
 const mockStoryRepo = {
@@ -94,6 +94,8 @@ const mockStoryConversationEventsRepo = {
 
 const mockEventPeopleRepo = {
   addPerson: vi.fn(),
+  createMany: vi.fn(),
+  findByEvent: vi.fn(),
 };
 
 const mockEventPlacesRepo = {
@@ -205,14 +207,14 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           imageId: 'img-123',
           referenceType: 'identifies_people',
           peopleIdentified: ['Maria', 'Roberto'],
-          confidence: Confidence.HIGH,
+          confidence: 'high',
         },
       ]);
 
       // Add people to the domain model so they get added to personIdMap
       domainModel.people = [
-        { name: 'Maria', aliases: [], confidence: Confidence.HIGH },
-        { name: 'Roberto', aliases: [], confidence: Confidence.HIGH },
+        { name: 'Maria', aliases: [], confidence: 'high' },
+        { name: 'Roberto', aliases: [], confidence: 'high' },
       ];
 
       await registrar.persist(domainModel, 'family-abc');
@@ -236,7 +238,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           imageId: 'img-123',
           referenceType: 'identifies_people',
           peopleIdentified: ['Maria'],
-          confidence: Confidence.HIGH,
+          confidence: 'high',
         },
       ]);
 
@@ -262,7 +264,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           imageId: 'img-123',
           referenceType: 'identifies_people',
           peopleIdentified: ['Unknown Person'],
-          confidence: Confidence.LOW,
+          confidence: 'low',
         },
       ]);
 
@@ -277,7 +279,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           imageId: 'img-123',
           referenceType: 'identifies_people',
           peopleIdentified: [],
-          confidence: Confidence.MEDIUM,
+          confidence: 'medium',
         },
       ]);
 
@@ -291,7 +293,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-123',
           referenceType: 'identifies_people',
-          confidence: Confidence.MEDIUM,
+          confidence: 'medium',
         },
       ]);
 
@@ -309,7 +311,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           referenceType: 'provides_context',
           contextProvided:
             'This was taken at the wedding in Buenos Aires, 1962',
-          confidence: Confidence.HIGH,
+          confidence: 'high',
         },
       ]);
 
@@ -329,7 +331,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           imageId: 'img-456',
           referenceType: 'provides_context',
           contextProvided: '',
-          confidence: Confidence.MEDIUM,
+          confidence: 'medium',
         },
       ]);
 
@@ -343,7 +345,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-456',
           referenceType: 'provides_context',
-          confidence: Confidence.MEDIUM,
+          confidence: 'medium',
         },
       ]);
 
@@ -361,7 +363,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           referenceType: 'describes',
           contextProvided:
             'A family gathering with about 20 people at a long table',
-          confidence: Confidence.MEDIUM,
+          confidence: 'medium',
         },
       ]);
 
@@ -382,7 +384,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-999',
           referenceType: 'asks_about',
-          confidence: Confidence.MEDIUM,
+          confidence: 'medium',
         },
       ]);
 
@@ -408,20 +410,18 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           imageId: 'img-bad',
           referenceType: 'identifies_people',
           peopleIdentified: ['Maria'],
-          confidence: Confidence.HIGH,
+          confidence: 'high',
         },
         {
           imageId: 'img-good',
           referenceType: 'provides_context',
           contextProvided: 'Some context',
-          confidence: Confidence.HIGH,
+          confidence: 'high',
         },
       ]);
 
       // Add person so it gets resolved
-      domainModel.people = [
-        { name: 'Maria', aliases: [], confidence: Confidence.HIGH },
-      ];
+      domainModel.people = [{ name: 'Maria', aliases: [], confidence: 'high' }];
 
       // Should not throw
       await registrar.persist(domainModel, 'family-abc');
@@ -453,18 +453,18 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           imageId: 'img-123',
           referenceType: 'identifies_people',
           peopleIdentified: ['Grandma Maria'],
-          confidence: Confidence.HIGH,
+          confidence: 'high',
         },
         {
           imageId: 'img-123',
           referenceType: 'provides_context',
           contextProvided: 'Wedding photo from 1962',
-          confidence: Confidence.HIGH,
+          confidence: 'high',
         },
       ]);
 
       domainModel.people = [
-        { name: 'Grandma Maria', aliases: [], confidence: Confidence.HIGH },
+        { name: 'Grandma Maria', aliases: [], confidence: 'high' },
       ];
 
       await registrar.persist(domainModel, 'family-abc');
@@ -489,12 +489,12 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           referenceType: 'identifies_people',
           peopleIdentified: ['Uncle Roberto'],
           contextProvided: 'This is at his birthday party',
-          confidence: Confidence.HIGH,
+          confidence: 'high',
         },
       ]);
 
       domainModel.people = [
-        { name: 'Uncle Roberto', aliases: [], confidence: Confidence.HIGH },
+        { name: 'Uncle Roberto', aliases: [], confidence: 'high' },
       ];
 
       await registrar.persist(domainModel, 'family-abc');
@@ -513,18 +513,18 @@ describe('RegistrarAgent - Image Reference Handling', () => {
           imageId: 'img-1',
           referenceType: 'provides_context',
           contextProvided: 'Context 1',
-          confidence: Confidence.HIGH,
+          confidence: 'high',
         },
         {
           imageId: 'img-2',
           referenceType: 'provides_context',
           contextProvided: 'Context 2',
-          confidence: Confidence.HIGH,
+          confidence: 'high',
         },
         {
           imageId: 'img-3',
           referenceType: 'asks_about',
-          confidence: Confidence.MEDIUM,
+          confidence: 'medium',
         },
       ]);
 
@@ -561,5 +561,217 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       expect(mockImageRepo.addConnectedPeople).not.toHaveBeenCalled();
       expect(mockImageRepo.addContext).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('RegistrarAgent - Event Deduplication', () => {
+  let registrar: RegistrarAgent;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockConversationEventRepo.findById.mockResolvedValue({
+      id: 'event-123',
+      actorDisplayName: 'Test User',
+      actorUsername: 'testuser',
+    });
+
+    mockPersonRepo.findBestMatch.mockResolvedValue(null);
+    mockPersonRepo.findOrCreate.mockImplementation(
+      async (_familyId, person) => ({
+        id: `person-${person.name.toLowerCase().replace(/\\s+/g, '-')}`,
+        ...person,
+      }),
+    );
+
+    mockPlaceRepo.findOrCreate.mockImplementation(async (_familyId, place) => ({
+      id: `place-${place.name.toLowerCase().replace(/\\s+/g, '-')}`,
+      ...place,
+      createdAt: new Date(Date.now() - 10000),
+    }));
+
+    mockEventLog.log.mockResolvedValue(undefined);
+    mockEventPeopleRepo.createMany.mockResolvedValue([]);
+    mockEventPeopleRepo.findByEvent.mockResolvedValue([]);
+
+    registrar = new RegistrarAgent({
+      personRepo: mockPersonRepo as any,
+      placeRepo: mockPlaceRepo as any,
+      eventRepo: mockEventRepo as any,
+      storyRepo: mockStoryRepo as any,
+      claimRepo: mockClaimRepo as any,
+      claimAnalysisRepo: mockClaimAnalysisRepo as any,
+      relationshipRepo: mockRelationshipRepo as any,
+      eventLog: mockEventLog as any,
+      conversationEventRepo: mockConversationEventRepo as any,
+      imageRepo: mockImageRepo as any,
+      entityMergeRepo: mockEntityMergeRepo as any,
+      claimEntityRepo: mockClaimEntityRepo as any,
+      claimRelationshipRepo: mockClaimRelationshipRepo as any,
+      storyPeopleRepo: mockStoryPeopleRepo as any,
+      storyPlacesRepo: mockStoryPlacesRepo as any,
+      storyEventsRepo: mockStoryEventsRepo as any,
+      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
+      eventPeopleRepo: mockEventPeopleRepo as any,
+      eventPlacesRepo: mockEventPlacesRepo as any,
+      llmQueueRepo: mockLlmQueueRepo as any,
+      logger: mockLogger as any,
+    });
+  });
+
+  const createEventDomainModel = (): ScribeDomainModel => ({
+    conversationEventId: 'event-123',
+    familyId: 'family-abc',
+    processedAt: new Date(),
+    people: [
+      { name: 'Maria', aliases: [], confidence: 'high' },
+      { name: 'Roberto', aliases: [], confidence: 'high' },
+    ],
+    places: [],
+    events: [
+      {
+        title: 'Leaving Cuba',
+        eventType: 'migration',
+        dateYear: 1959,
+        peopleInvolved: ['Maria', 'Roberto'],
+        confidence: 'high',
+      },
+    ],
+    relationships: [],
+    claims: [],
+    questions: [],
+    answers: [],
+    conflicts: [],
+    imageReferences: [],
+    detectedLanguage: 'en',
+  });
+
+  it('should link all people when creating a new event', async () => {
+    mockEventRepo.findOrCreate.mockResolvedValue({
+      event: { id: 'new-event-1', title: 'Leaving Cuba' },
+      created: true,
+    });
+
+    const domainModel = createEventDomainModel();
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockEventRepo.findOrCreate).toHaveBeenCalledWith(
+      'family-abc',
+      expect.objectContaining({ title: 'Leaving Cuba' }),
+      expect.arrayContaining(['person-maria', 'person-roberto']),
+      undefined,
+      'event-123',
+      'Test User',
+      expect.any(String),
+    );
+
+    expect(mockEventPeopleRepo.createMany).toHaveBeenCalledWith([
+      {
+        familyId: 'family-abc',
+        eventId: 'new-event-1',
+        personId: 'person-maria',
+      },
+      {
+        familyId: 'family-abc',
+        eventId: 'new-event-1',
+        personId: 'person-roberto',
+      },
+    ]);
+  });
+
+  it('should link additional people to existing event when duplicate found', async () => {
+    // Event already exists with Maria linked
+    mockEventRepo.findOrCreate.mockResolvedValue({
+      event: { id: 'existing-event-1', title: 'Leaving Cuba' },
+      created: false,
+    });
+
+    // Maria is already linked to the event
+    mockEventPeopleRepo.findByEvent.mockResolvedValue([
+      {
+        familyId: 'family-abc',
+        eventId: 'existing-event-1',
+        personId: 'person-maria',
+      },
+    ]);
+
+    const domainModel = createEventDomainModel();
+    await registrar.persist(domainModel, 'family-abc');
+
+    // Should only link Roberto (Maria already linked)
+    expect(mockEventPeopleRepo.createMany).toHaveBeenCalledWith([
+      {
+        familyId: 'family-abc',
+        eventId: 'existing-event-1',
+        personId: 'person-roberto',
+      },
+    ]);
+
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventTitle: 'Leaving Cuba',
+        existingEventId: 'existing-event-1',
+        newPeopleLinked: 1,
+      }),
+      'Linked additional people to existing event',
+    );
+  });
+
+  it('should not create duplicate links when all people already linked', async () => {
+    mockEventRepo.findOrCreate.mockResolvedValue({
+      event: { id: 'existing-event-1', title: 'Leaving Cuba' },
+      created: false,
+    });
+
+    // Both Maria and Roberto are already linked
+    mockEventPeopleRepo.findByEvent.mockResolvedValue([
+      {
+        familyId: 'family-abc',
+        eventId: 'existing-event-1',
+        personId: 'person-maria',
+      },
+      {
+        familyId: 'family-abc',
+        eventId: 'existing-event-1',
+        personId: 'person-roberto',
+      },
+    ]);
+
+    const domainModel = createEventDomainModel();
+    await registrar.persist(domainModel, 'family-abc');
+
+    // createMany should not be called since no new people to link
+    expect(mockEventPeopleRepo.createMany).not.toHaveBeenCalled();
+
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventTitle: 'Leaving Cuba',
+        existingEventId: 'existing-event-1',
+      }),
+      'Skipping duplicate event (all people already linked)',
+    );
+  });
+
+  it('should handle event with no people involved', async () => {
+    mockEventRepo.findOrCreate.mockResolvedValue({
+      event: { id: 'new-event-1', title: 'Hurricane' },
+      created: true,
+    });
+
+    const domainModel = createEventDomainModel();
+    domainModel.events = [
+      {
+        title: 'Hurricane',
+        eventType: 'natural_disaster',
+        dateYear: 1960,
+        peopleInvolved: [],
+        confidence: 'medium',
+      },
+    ];
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    // Should not call createMany when no people involved
+    expect(mockEventPeopleRepo.createMany).not.toHaveBeenCalled();
   });
 });

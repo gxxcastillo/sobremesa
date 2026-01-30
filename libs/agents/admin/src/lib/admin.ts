@@ -196,7 +196,7 @@ export class AdminAgent {
 
     // Send reply (user-triggered, high priority)
     await this.messageSender.sendMessage(
-      BotRole.ADMIN,
+      'admin',
       {
         chatId: event.conversationId,
         text: statusMessage,
@@ -241,7 +241,7 @@ export class AdminAgent {
 
     // User-triggered, high priority
     await this.messageSender.sendMessage(
-      BotRole.ADMIN,
+      'admin',
       {
         chatId: event.conversationId,
         text: helpMessage,
@@ -294,7 +294,7 @@ export class AdminAgent {
       );
 
       await this.messageSender.sendMessage(
-        BotRole.ADMIN,
+        'admin',
         {
           chatId: event.conversationId,
           text: notificationMessage,
@@ -374,7 +374,7 @@ export class AdminAgent {
 
     // Send the notification
     await this.messageSender.sendMessage(
-      BotRole.ADMIN,
+      'admin',
       {
         chatId: conversationId,
         text: notificationMessage,
@@ -449,7 +449,7 @@ export class AdminAgent {
 
     // User-triggered, high priority
     await this.messageSender.sendMessage(
-      BotRole.ADMIN,
+      'admin',
       {
         chatId: event.conversationId,
         text: response,

@@ -1,11 +1,7 @@
 /**
  * Confidence levels for claims and extracted data.
  */
-export enum Confidence {
-  HIGH = 'high',
-  MEDIUM = 'medium',
-  LOW = 'low',
-}
+export type Confidence = 'high' | 'medium' | 'low';
 
 /**
  * Certainty language indicators from source text.
@@ -50,21 +46,21 @@ export function detectConfidence(text: string): Confidence {
 
   for (const indicator of CERTAINTY_INDICATORS.high) {
     if (lowerText.includes(indicator.toLowerCase())) {
-      return Confidence.HIGH;
+      return 'high';
     }
   }
 
   for (const indicator of CERTAINTY_INDICATORS.low) {
     if (lowerText.includes(indicator.toLowerCase())) {
-      return Confidence.LOW;
+      return 'low';
     }
   }
 
   for (const indicator of CERTAINTY_INDICATORS.medium) {
     if (lowerText.includes(indicator.toLowerCase())) {
-      return Confidence.MEDIUM;
+      return 'medium';
     }
   }
 
-  return Confidence.MEDIUM;
+  return 'medium';
 }

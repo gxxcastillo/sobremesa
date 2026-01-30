@@ -14,7 +14,7 @@ import {
   determineRoleFromAdminStatus,
 } from '@sobremesa/auth';
 import type pino from 'pino';
-import { BotRole, type BotHandler } from './types';
+import type { BotHandler } from './types';
 import {
   MessageIngester,
   type TextMessageInput,
@@ -159,7 +159,7 @@ function isLanguageCode(value: string): value is LanguageCode {
  * No business logic except family registration bootstrap.
  */
 export class ChatbotHandler implements BotHandler {
-  readonly role = BotRole.CHATBOT;
+  readonly role = 'chatbot';
 
   private dbClient: DatabaseClient;
   private familyRepo: FamilyRepository;

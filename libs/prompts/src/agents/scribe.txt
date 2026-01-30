@@ -29,34 +29,6 @@ NOTE: Pronouns already resolved to names by preprocessing.
 - **identity**: `{"real_name": "Tim", "descriptive_name": "Ralphy's friend"}`
 - **relationship/location/detail**: `{"relationshipType": "sibling"}` or plain string
 
-**Examples:**
-```
-"grandfather arrived around 1889" → {
-  claim_type: "date",
-  subject: "grandfather's arrival",
-  claim_value: "{"year": 1889, "text": "around 1889"}",
-  claimed_by: "Betty",
-  claimed_by_source: "direct",
-  certainty_language: "around"
-}
-
-"Mom said his name is Tim" → {
-  claim_type: "identity",
-  subject: "Ralphy's friend",
-  claim_value: "{"real_name": "Tim"}",
-  claimed_by: "Mom",
-  claimed_by_source: "attributed"
-}
-
-"my parents were great" → {
-  claim_type: "detail",
-  subject: "Betty's parents",
-  claim_value: "{"value": "great"}",
-  claimed_by: "Betty",
-  claimed_by_source: "direct"
-}
-```
-
 ## Language
 
 Store text verbatim. Never translate: {CULTURAL_TERMS}

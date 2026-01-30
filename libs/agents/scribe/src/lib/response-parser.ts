@@ -1,14 +1,14 @@
-import {
+import type {
   Confidence,
-  type ScribeDomainModel,
-  type ExtractedPerson,
-  type ExtractedPlace,
-  type ExtractedEvent,
-  type ExtractedRelationship,
-  type ExtractedClaim,
-  type ImageReference,
-  type RawImageReference,
-  type LanguageCode,
+  ScribeDomainModel,
+  ExtractedPerson,
+  ExtractedPlace,
+  ExtractedEvent,
+  ExtractedRelationship,
+  ExtractedClaim,
+  ImageReference,
+  RawImageReference,
+  LanguageCode,
 } from '@sobremesa/shared-types';
 import { createLogger } from '@sobremesa/shared-utils';
 import { RawScribeResponseSchema, type RawScribeResponse } from './schema';
@@ -19,14 +19,14 @@ const logger = createLogger({ name: 'scribe-parser' });
  * Infer confidence from certainty language.
  */
 function inferConfidence(certaintyLanguage?: string): Confidence {
-  if (!certaintyLanguage) return Confidence.MEDIUM;
+  if (!certaintyLanguage) return 'medium';
   const lower = certaintyLanguage.toLowerCase();
   if (
     lower.includes('definitely') ||
     lower.includes('certainly') ||
     lower.includes('always')
   ) {
-    return Confidence.HIGH;
+    return 'high';
   }
   if (
     lower.includes('maybe') ||
@@ -34,9 +34,9 @@ function inferConfidence(certaintyLanguage?: string): Confidence {
     lower.includes('possibly') ||
     lower.includes('not sure')
   ) {
-    return Confidence.LOW;
+    return 'low';
   }
-  return Confidence.MEDIUM;
+  return 'medium';
 }
 
 /**
@@ -136,7 +136,7 @@ export function parseScribeResponse(
     aliases: p.aliases,
     birthYear: p.birth_year,
     deathYear: p.death_year,
-    confidence: Confidence.MEDIUM,
+    confidence: 'medium',
   }));
 
   // Parse places
@@ -146,7 +146,7 @@ export function parseScribeResponse(
     city: p.city,
     region: p.region,
     country: p.country,
-    confidence: Confidence.MEDIUM,
+    confidence: 'medium',
   }));
 
   // Parse events
@@ -157,7 +157,7 @@ export function parseScribeResponse(
     dateYear: extractYear(e.date),
     peopleInvolved: e.people_involved,
     placeName: e.place,
-    confidence: Confidence.MEDIUM,
+    confidence: 'medium',
   }));
 
   // Parse relationships (confidence removed from schema)
@@ -165,7 +165,7 @@ export function parseScribeResponse(
     personAName: r.person_a,
     personBName: r.person_b,
     relationshipType: r.relationship_type,
-    confidence: Confidence.MEDIUM,
+    confidence: 'medium',
   }));
 
   // Parse claims (infer confidence from certainty_language)
@@ -197,7 +197,7 @@ export function parseScribeResponse(
       referenceType: parseImageReferenceType(r.reference_type),
       peopleIdentified: r.people_identified,
       contextProvided: r.context_provided,
-      confidence: Confidence.MEDIUM,
+      confidence: 'medium',
     }),
   );
 
@@ -206,7 +206,7 @@ export function parseScribeResponse(
     ? preprocessed.imageReferences.map((ref) => ({
         peopleIdentified: [],
         ...ref,
-        confidence: Confidence.MEDIUM,
+        confidence: 'medium',
       }))
     : imageReferences;
 

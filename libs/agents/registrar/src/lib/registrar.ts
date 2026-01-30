@@ -400,7 +400,7 @@ export class RegistrarAgent {
         }
       }
 
-      // 3. Process Events
+      // 3. Process Events (with deduplication)
       const createdEventIds: string[] = [];
       for (const event of domainModel.events) {
         // Resolve place ID
@@ -408,33 +408,71 @@ export class RegistrarAgent {
           ? placeIdMap.get(event.placeName)
           : undefined;
 
-        // Create event without people associations
-        const createdEvent = await this.eventRepo.createFromExtracted(
+        // Resolve people IDs first (needed for deduplication)
+        const peopleIds = event.peopleInvolved
+          .map((name) => personIdMap.get(name))
+          .filter((id): id is string => !!id);
+
+        // Find or create event (deduplicates based on title + people + date)
+        const { event: dbEvent, created } = await this.eventRepo.findOrCreate(
           familyId,
           event,
+          peopleIds,
           placeId,
           conversationEventId,
           claimedBy,
           extractionVersion,
         );
-        createdEventIds.push(createdEvent.id);
+        createdEventIds.push(dbEvent.id);
 
-        // Link people via event_people join table
-        const peopleIds = event.peopleInvolved
-          .map((name) => personIdMap.get(name))
-          .filter((id): id is string => !!id);
-
-        if (peopleIds.length > 0) {
-          await this.eventPeopleRepo.createMany(
-            peopleIds.map((personId) => ({
-              familyId,
-              eventId: createdEvent.id,
-              personId,
-            })),
+        if (created) {
+          // New event - link all people
+          if (peopleIds.length > 0) {
+            await this.eventPeopleRepo.createMany(
+              peopleIds.map((personId) => ({
+                familyId,
+                eventId: dbEvent.id,
+                personId,
+              })),
+            );
+          }
+          result.eventsCreated++;
+        } else {
+          // Existing event - link any new people not already linked
+          const existingLinks = await this.eventPeopleRepo.findByEvent(
+            familyId,
+            dbEvent.id,
           );
-        }
+          const existingPersonIds = new Set(
+            existingLinks.map((l) => l.personId),
+          );
+          const newPersonIds = peopleIds.filter(
+            (id) => !existingPersonIds.has(id),
+          );
 
-        result.eventsCreated++;
+          if (newPersonIds.length > 0) {
+            await this.eventPeopleRepo.createMany(
+              newPersonIds.map((personId) => ({
+                familyId,
+                eventId: dbEvent.id,
+                personId,
+              })),
+            );
+            this.logger.debug(
+              {
+                eventTitle: event.title,
+                existingEventId: dbEvent.id,
+                newPeopleLinked: newPersonIds.length,
+              },
+              'Linked additional people to existing event',
+            );
+          } else {
+            this.logger.debug(
+              { eventTitle: event.title, existingEventId: dbEvent.id },
+              'Skipping duplicate event (all people already linked)',
+            );
+          }
+        }
       }
 
       // 4. Process Relationships

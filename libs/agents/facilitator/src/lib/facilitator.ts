@@ -296,7 +296,7 @@ export class FacilitatorAgent {
 
     // Bot-initiated question, low priority (shouldn't interrupt user interactions)
     return await this.messageSender.sendMessage(
-      BotRole.FACILITATOR,
+      'facilitator',
       {
         chatId: family.chatId,
         text: message,
@@ -492,7 +492,7 @@ export class FacilitatorAgent {
 
       // 3. Send the response via Facilitator bot (bot-initiated, low priority)
       await this.messageSender.sendMessage(
-        BotRole.FACILITATOR,
+        'facilitator',
         {
           chatId,
           text: formattedResponse,
