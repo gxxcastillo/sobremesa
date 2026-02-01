@@ -12,21 +12,34 @@ export interface LoggerOptions {
   name: string;
   level?: LogLevel;
   familyId?: string;
+  /** Enable pretty printing (colorized, human-readable output) */
+  pretty?: boolean;
 }
 
 /**
  * Create a configured logger instance.
+ *
+ * @example
+ * // Basic usage with defaults
+ * const logger = createLogger({ name: 'my-app' });
+ *
+ * @example
+ * // With environment-based config (in app entry point)
+ * const logger = createLogger({
+ *   name: 'my-app',
+ *   level: process.env.LOG_LEVEL as LogLevel,
+ *   pretty: process.env.NODE_ENV !== 'production',
+ * });
  */
 export function createLogger(options: LoggerOptions): pino.Logger {
-  const { name, level = 'info', familyId } = options;
+  const { name, level = 'info', familyId, pretty = false } = options;
 
   const baseConfig: pino.LoggerOptions = {
     name,
-    level: process.env['LOG_LEVEL'] || level,
+    level,
   };
 
-  // Add pretty printing in development
-  if (process.env['NODE_ENV'] !== 'production') {
+  if (pretty) {
     baseConfig.transport = {
       target: 'pino-pretty',
       options: {
@@ -39,7 +52,6 @@ export function createLogger(options: LoggerOptions): pino.Logger {
 
   const logger = pino(baseConfig);
 
-  // Bind familyId if provided
   if (familyId) {
     return logger.child({ familyId });
   }
@@ -48,7 +60,8 @@ export function createLogger(options: LoggerOptions): pino.Logger {
 }
 
 /**
- * Default application logger.
+ * Default application logger with minimal defaults.
+ * For production use, create a logger with explicit config in your app entry point.
  */
 export const logger = createLogger({ name: 'sobremesa' });
 

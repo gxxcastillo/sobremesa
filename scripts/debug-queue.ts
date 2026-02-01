@@ -3,10 +3,14 @@
  * Debug the queue dequeue logic
  */
 import 'dotenv/config';
-import { getServiceClient } from '../libs/database/src/lib/client.js';
+import { createDatabaseClient } from '../libs/database/src/lib/client.js';
 
 async function main() {
-  const client = getServiceClient();
+  const client = createDatabaseClient({
+    url: process.env['SUPABASE_URL']!,
+    anonKey: process.env['SUPABASE_ANON_KEY']!,
+    serviceRoleKey: process.env['SUPABASE_SERVICE_ROLE_KEY'],
+  });
   const lockExpiry = new Date(Date.now() - 300000).toISOString();
   const workerId = 'debug-worker-' + Date.now();
 

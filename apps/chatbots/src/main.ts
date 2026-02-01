@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createLogger } from '@sobremesa/shared-utils';
+import { createLogger, type LogLevel } from '@sobremesa/shared-utils';
 import {
   loadAIConfig,
   createAIProviderFactory,
@@ -18,7 +18,11 @@ import {
   ProcessingQueueRepository,
 } from '@sobremesa/database';
 
-const logger = createLogger({ name: 'chatbots' });
+const logger = createLogger({
+  name: 'chatbots',
+  level: (process.env['LOG_LEVEL'] as LogLevel) || 'info',
+  pretty: process.env['NODE_ENV'] !== 'production',
+});
 
 function validateEnv(): {
   token: string;

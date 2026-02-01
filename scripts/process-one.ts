@@ -4,6 +4,7 @@
  * Run with: npx tsx scripts/process-one.ts
  */
 import 'dotenv/config';
+import { createDatabaseClient } from '../libs/database/src/lib/client.js';
 import { ProcessingQueueRepository } from '../libs/database/src/lib/repositories/processing-queue-repository.js';
 import { ScribeAgent } from '../libs/agents/scribe/src/lib/scribe.js';
 import { RegistrarAgent } from '../libs/agents/registrar/src/lib/registrar.js';
@@ -17,16 +18,23 @@ async function main() {
     process.exit(1);
   }
 
-  const queueRepo = new ProcessingQueueRepository();
+  const client = createDatabaseClient({
+    url: process.env['SUPABASE_URL']!,
+    anonKey: process.env['SUPABASE_ANON_KEY']!,
+    serviceRoleKey: process.env['SUPABASE_SERVICE_ROLE_KEY'],
+  });
+
+  const queueRepo = new ProcessingQueueRepository(client);
   const provider = new AnthropicProvider({ apiKey: anthropicApiKey });
   const scribe = new ScribeAgent({
+    dbClient: client,
     provider,
     model: 'claude-sonnet-4-5-20250929',
   });
-  const registrar = new RegistrarAgent();
+  const registrar = new RegistrarAgent({ dbClient: client });
 
   // Set up processor
-  const processor = new MessageProcessor();
+  const processor = new MessageProcessor({ dbClient: client });
   processor.setScribe((eventId, familyId) => scribe.process(eventId, familyId));
   processor.setRegistrar((model, familyId) =>
     registrar.persist(model, familyId),
@@ -76,10 +84,6 @@ async function main() {
 
   // Check questions table
   console.log('\n=== Checking questions table ===\n');
-  const { getServiceClient } = await import(
-    '../libs/database/src/lib/client.js'
-  );
-  const client = getServiceClient();
   const { data: questions } = await client
     .from('questions')
     .select('id, content_original, priority, status')

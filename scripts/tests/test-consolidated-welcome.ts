@@ -4,13 +4,13 @@
  * Simulates multiple members joining within the debounce window
  * and verifies they're consolidated into a single welcome message.
  *
- * Run with: npx tsx scripts/test-consolidated-welcome.ts
+ * Run with: npx tsx scripts/tests/test-consolidated-welcome.ts
  */
 import 'dotenv/config';
+import { createDatabaseClient } from '../../libs/database/src/lib/client.js';
 import { MessageIngester } from '../../libs/ingester/src/lib/ingester.js';
 import { ProcessingQueueRepository } from '../../libs/database/src/lib/repositories/processing-queue-repository.js';
 import { ConversationEventRepository } from '../../libs/database/src/lib/repositories/conversation-event-repository.js';
-import { getServiceClient } from '../../libs/database/src/lib/client.js';
 import { formatMemberJoinPluralMessage } from '../../libs/agents/admin/src/lib/messages.js';
 
 const TEST_FAMILY_ID = '00000000-0000-0000-0000-000000000001';
@@ -19,10 +19,15 @@ const TEST_CHAT_ID = 'test-chat-consolidated-123';
 async function main() {
   console.log('=== Testing Consolidated Welcome Messages ===\n');
 
-  const ingester = new MessageIngester();
-  const queueRepo = new ProcessingQueueRepository();
-  const eventRepo = new ConversationEventRepository();
-  const client = getServiceClient();
+  const client = createDatabaseClient({
+    url: process.env['SUPABASE_URL']!,
+    anonKey: process.env['SUPABASE_ANON_KEY']!,
+    serviceRoleKey: process.env['SUPABASE_SERVICE_ROLE_KEY'],
+  });
+
+  const ingester = new MessageIngester({ dbClient: client });
+  const queueRepo = new ProcessingQueueRepository(client);
+  const eventRepo = new ConversationEventRepository(client);
 
   // 1. Create a test family
   console.log('--- Step 1: Creating test family ---\n');

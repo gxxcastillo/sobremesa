@@ -10,8 +10,8 @@ export class ConversationEventProcessingRepository {
   protected tableName = 'conversation_event_processing';
   protected client: SupabaseClient;
 
-  constructor(client?: SupabaseClient) {
-    this.client = client || require('../client').getServiceClient();
+  constructor(client: SupabaseClient) {
+    this.client = client;
   }
 
   /**

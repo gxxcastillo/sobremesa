@@ -8,7 +8,6 @@ import {
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 import {
-  BotRole,
   type Family,
   type FamilyConfig,
   type MessageSender,

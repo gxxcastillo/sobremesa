@@ -3,9 +3,9 @@
  * Debug why Facilitator isn't asking questions
  */
 import 'dotenv/config';
+import { createDatabaseClient } from '../libs/database/src/lib/client.js';
 import { FamilyRepository } from '../libs/database/src/lib/repositories/family-repository.js';
 import { QuestionRepository } from '../libs/database/src/lib/repositories/question-repository.js';
-import { getServiceClient } from '../libs/database/src/lib/client.js';
 
 async function main() {
   console.log('=== Environment Check ===\n');
@@ -15,9 +15,13 @@ async function main() {
   );
   console.log('');
 
-  const familyRepo = new FamilyRepository();
-  const questionRepo = new QuestionRepository();
-  const client = getServiceClient();
+  const client = createDatabaseClient({
+    url: process.env['SUPABASE_URL']!,
+    anonKey: process.env['SUPABASE_ANON_KEY']!,
+    serviceRoleKey: process.env['SUPABASE_SERVICE_ROLE_KEY'],
+  });
+  const familyRepo = new FamilyRepository(client);
+  const questionRepo = new QuestionRepository(client);
 
   // Get family
   const families = await familyRepo.findAllActive();

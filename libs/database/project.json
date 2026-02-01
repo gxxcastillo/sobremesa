@@ -17,7 +17,7 @@
     "check-db": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "npx tsx libs/database/src/lib/check-db.ts"
+        "command": "npx tsx scripts/check-db.ts"
       }
     },
     "test": {

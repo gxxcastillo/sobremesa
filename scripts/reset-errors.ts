@@ -1,9 +1,13 @@
 #!/usr/bin/env npx tsx
 import 'dotenv/config';
-import { getServiceClient } from '../libs/database/src/lib/client.js';
+import { createDatabaseClient } from '../libs/database/src/lib/client.js';
 
 async function main() {
-  const client = getServiceClient();
+  const client = createDatabaseClient({
+    url: process.env['SUPABASE_URL']!,
+    anonKey: process.env['SUPABASE_ANON_KEY']!,
+    serviceRoleKey: process.env['SUPABASE_SERVICE_ROLE_KEY'],
+  });
 
   // Find and reset error items
   const { data, error } = await client

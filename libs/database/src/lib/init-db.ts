@@ -1,40 +1,12 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { createDatabaseClient, type DatabaseClient } from './client';
-
-/**
- * Create database client from environment variables.
- * Used by CLI tools.
- */
-function createClientFromEnv(): DatabaseClient {
-  const url = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const anonKey = process.env.SUPABASE_ANON_KEY;
-
-  if (!url) {
-    throw new Error('Missing required environment variable: SUPABASE_URL');
-  }
-
-  if (!serviceRoleKey && !anonKey) {
-    throw new Error(
-      'Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY',
-    );
-  }
-
-  return createDatabaseClient({
-    url,
-    anonKey: anonKey || '',
-    serviceRoleKey,
-  });
-}
+import { type DatabaseClient } from './client';
 
 /**
  * Initialize the database schema.
  * Reads the migration file and executes it against Supabase.
  */
-export async function initDb(dbClient?: DatabaseClient): Promise<void> {
-  const client = dbClient || createClientFromEnv();
-
+export async function initDb(dbClient: DatabaseClient): Promise<void> {
   // Find schema file relative to project root
   const schemaPath = join(
     process.cwd(),
@@ -55,7 +27,7 @@ export async function initDb(dbClient?: DatabaseClient): Promise<void> {
   console.log('Initializing database...');
 
   // Execute the schema SQL
-  const { error } = await client.rpc('exec_sql', { sql: schemaSql });
+  const { error } = await dbClient.rpc('exec_sql', { sql: schemaSql });
 
   if (error) {
     // If the RPC doesn't exist, fall back to running statements individually
@@ -85,13 +57,11 @@ export async function initDb(dbClient?: DatabaseClient): Promise<void> {
  * Check if the database is initialized by checking for required tables.
  */
 export async function isDbInitialized(
-  dbClient?: DatabaseClient,
+  dbClient: DatabaseClient,
 ): Promise<boolean> {
-  const client = dbClient || createClientFromEnv();
-
   try {
     // Try to query the families table
-    const { error } = await client.from('families').select('id').limit(1);
+    const { error } = await dbClient.from('families').select('id').limit(1);
 
     return !error;
   } catch {
@@ -103,9 +73,8 @@ export async function isDbInitialized(
  * Get list of missing tables.
  */
 export async function getMissingTables(
-  dbClient?: DatabaseClient,
+  dbClient: DatabaseClient,
 ): Promise<string[]> {
-  const client = dbClient || createClientFromEnv();
   const requiredTables = [
     'families',
     'conversation_events',
@@ -123,7 +92,7 @@ export async function getMissingTables(
 
   for (const table of requiredTables) {
     try {
-      const { error } = await client.from(table).select('*').limit(0);
+      const { error } = await dbClient.from(table).select('*').limit(0);
       if (error) {
         missing.push(table);
       }
@@ -133,14 +102,4 @@ export async function getMissingTables(
   }
 
   return missing;
-}
-
-// CLI entry point
-if (process.argv[1]?.includes('init-db')) {
-  initDb()
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error(err.message);
-      process.exit(1);
-    });
 }

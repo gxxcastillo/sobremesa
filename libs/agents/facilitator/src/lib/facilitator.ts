@@ -10,7 +10,6 @@ import { createLogger } from '@sobremesa/shared-utils';
 import type { AIProvider } from '@sobremesa/ai-provider';
 import type pino from 'pino';
 import {
-  BotRole,
   type Question,
   type Family,
   type MessageSender,
