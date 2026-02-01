@@ -393,6 +393,9 @@ CREATE INDEX IF NOT EXISTS idx_conv_events_reply_to
   ON conversation_events(family_id, source, conversation_id, external_reply_to_id)
   WHERE external_reply_to_id IS NOT NULL;
 
+CREATE INDEX IF NOT EXISTS idx_conv_events_family_ingested
+  ON conversation_events(family_id, ingested_at DESC);
+
 -- ----------------------------------------------------------------------------
 -- Automatic sequence number assignment trigger
 -- ----------------------------------------------------------------------------
@@ -1974,6 +1977,24 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION cleanup_expired_evaluation_locks IS 'Release expired locks and return claims to pending status. Run periodically (e.g., every minute) via cron or scheduler.';
 
+-- Auto-cleanup function for expired access passes
+CREATE OR REPLACE FUNCTION cleanup_expired_access_passes()
+RETURNS INTEGER AS $$
+DECLARE
+  rows_updated INTEGER;
+BEGIN
+  UPDATE access_passes
+  SET status = 'expired'
+  WHERE status = 'pending'
+    AND expires_at < NOW();
+
+  GET DIAGNOSTICS rows_updated = ROW_COUNT;
+  RETURN rows_updated;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION cleanup_expired_access_passes IS 'Mark expired pending access passes as expired. Run periodically (e.g., every hour) via cron or scheduler.';
+
 -- ============================================================================
 -- CLAIMS IMMUTABILITY (Core fields never change after creation)
 -- ============================================================================
@@ -2852,6 +2873,8 @@ ALTER TABLE ingestion_batches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE entity_merges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE claim_entities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE claim_relationships ENABLE ROW LEVEL SECURITY;
+ALTER TABLE claim_analysis ENABLE ROW LEVEL SECURITY;
+ALTER TABLE llm_evaluation_queue ENABLE ROW LEVEL SECURITY;
 
 -- Phase 2 join tables
 ALTER TABLE story_people ENABLE ROW LEVEL SECURITY;
@@ -3199,6 +3222,22 @@ CREATE POLICY "claim_relationships_select" ON claim_relationships
 -- Note: INSERT/UPDATE via service-role only (managed by Registrar)
 
 -- --------------------------------------------------------------------------
+-- CLAIM_ANALYSIS policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "claim_analysis_select" ON claim_analysis
+  FOR SELECT USING (family_id IN (SELECT * FROM get_user_family_ids()));
+
+-- Note: INSERT/UPDATE via service-role only (system-computed metadata)
+
+-- --------------------------------------------------------------------------
+-- LLM_EVALUATION_QUEUE policies
+-- --------------------------------------------------------------------------
+CREATE POLICY "llm_evaluation_queue_select" ON llm_evaluation_queue
+  FOR SELECT USING (family_id IN (SELECT * FROM get_user_family_ids()));
+
+-- Note: INSERT/UPDATE via service-role only (managed by LLM workers)
+
+-- --------------------------------------------------------------------------
 -- JOIN TABLE policies (story_people, story_places, story_events, event_people, event_places)
 -- --------------------------------------------------------------------------
 CREATE POLICY "story_people_select" ON story_people
@@ -3417,7 +3456,7 @@ BEGIN
 
     -- Subject is EVENT: find participants involved
     SELECT vp.participant_id, vp.participant_name,
-      'involved in event: ' || e.name, 'event_participant'::TEXT
+      'involved in event: ' || e.title, 'event_participant'::TEXT
     FROM verified_participants vp
     JOIN event_people ep ON ep.family_id = p_family_id
       AND ep.person_id = vp.participant_id AND ep.event_id = p_subject_id
@@ -3428,7 +3467,7 @@ BEGIN
 
     -- Subject is PLACE: find participants via events at that place
     SELECT DISTINCT vp.participant_id, vp.participant_name,
-      'connected via event: ' || e.name, 'event_participant'::TEXT
+      'connected via event: ' || e.title, 'event_participant'::TEXT
     FROM verified_participants vp
     JOIN event_people ep ON ep.family_id = p_family_id
       AND ep.person_id = vp.participant_id
