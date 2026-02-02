@@ -25,7 +25,12 @@ export type GlobalRole = 'user' | 'super_admin';
 export type FamilyRole = 'admin' | 'member' | 'viewer';
 
 // Access pass status
-export type AccessPassStatus = 'pending' | 'redeemed' | 'expired' | 'revoked';
+export type AccessPassStatus =
+  | 'pending'
+  | 'processing'
+  | 'redeemed'
+  | 'expired'
+  | 'revoked';
 
 // Family access status
 export type FamilyAccessStatus = 'pending' | 'active' | 'revoked' | 'suspended';
@@ -96,9 +101,9 @@ export interface AccessPass {
 }
 
 /**
- * Telegram chat admin record (from telegram_chat_admins table)
+ * Chat admin record (from chat_admins table)
  */
-export interface TelegramChatAdmin {
+export interface ChatAdmin {
   id: string;
   familyId: string;
   chatId: string;

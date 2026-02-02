@@ -17,23 +17,34 @@ All access is scoped by family with role-based permissions.
 
 ## Database Tables
 
-**`auth_identities`** - Web authentication accounts
+**`users`** - Global user accounts for web authentication
 
-- Provider (currently Telegram), user ID, global role, profile
+- Global role (`user` or `super_admin`), display name, avatar, email
+- One user can have multiple linked identities (cross-provider)
+
+**`identities`** - Chat provider accounts (global)
+
+- Provider (Telegram, WhatsApp, etc.), provider user ID, profile info
+- Optionally linked to a `users` record for web login
+- Created when user sends a message or logs in
 
 **`family_access`** - Family-scoped access control
 
-- Links auth identity to family with role and status (active/revoked/suspended)
+- Links identity to family with role (`admin`/`member`/`viewer`) and status
+- Stores person claim (`person_id`) - who this user is in the family tree
 - Audit trail for grants and revocations
 
 **`access_passes`** - One-time access tokens
 
 - 24-hour expiry, single-use, family-scoped
 - Generated via bot, redeemed on web
+- Status: `pending` → `processing` → `redeemed` (or `expired`/`revoked`)
 
-**`telegram_chat_admins`** - Cached admin status
+**`chat_admins`** - Cached admin status from chat providers
 
-- Avoids repeated Telegram API calls
+- Synced from Telegram's `getChatAdministrators()` API
+- Used at login to determine initial `family_access.role`
+- NOT used for authorization (family_access is authoritative)
 
 ---
 
@@ -61,19 +72,19 @@ All access is scoped by family with role-based permissions.
 
 1. User clicks "Login with Telegram" on Studio
 2. Telegram widget authenticates and returns signed data with HMAC
-3. API verifies HMAC, creates/finds auth identity
-4. API loads active family access records
-5. Returns JWT with identity, role, families
+3. API verifies HMAC, finds or creates identity + user
+4. If new user, checks `chat_admins` cache to assign initial family roles
+5. Returns JWT with userId, identityId, role, families
 6. Frontend stores token, redirects to dashboard
 
 ### Access Pass (from Bot)
 
 1. User runs `/sobremesa studio-link` in Telegram
-2. Bot checks admin status, generates JWT (24hr expiry)
+2. Bot checks admin status, generates access pass (24hr expiry)
 3. Bot inserts access pass record, sends DM with link
-4. User clicks link, API validates and redeems pass
-5. API creates/updates family access, returns session JWT
-6. Frontend stores token, redirects to dashboard
+4. User clicks link, API atomically claims and validates pass
+5. API creates/updates user, identity, and family access
+6. Returns session JWT, frontend stores token, redirects to dashboard
 
 ---
 

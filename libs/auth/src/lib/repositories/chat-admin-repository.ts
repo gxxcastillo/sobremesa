@@ -1,13 +1,13 @@
 import type { DatabaseClient } from '@sobremesa/database';
 /**
- * TelegramChatAdmin Repository
+ * ChatAdmin Repository
  *
  * Manages chat_admins table operations for caching
  * Telegram chat admin status (queries with source='telegram')
  */
 
 import { mapRowToCamelCase } from '@sobremesa/database';
-import type { TelegramChatAdmin } from '../types';
+import { type ChatAdmin } from '../types';
 
 export interface TelegramAdminInfo {
   telegramUserId: number;
@@ -17,7 +17,7 @@ export interface TelegramAdminInfo {
   canDeleteMessages?: boolean;
 }
 
-export class TelegramChatAdminRepository {
+export class ChatAdminRepository {
   private client: DatabaseClient;
 
   constructor(client: DatabaseClient) {
@@ -31,7 +31,7 @@ export class TelegramChatAdminRepository {
     familyId: string,
     chatId: string,
     telegramUserId: number,
-  ): Promise<TelegramChatAdmin | null> {
+  ): Promise<ChatAdmin | null> {
     const client = this.client;
 
     const { data, error } = await client
@@ -47,13 +47,13 @@ export class TelegramChatAdminRepository {
       return null;
     }
 
-    return this.mapToTelegramChatAdmin(data);
+    return this.mapToChatAdmin(data);
   }
 
   /**
    * Find all admins for a family
    */
-  async findByFamily(familyId: string): Promise<TelegramChatAdmin[]> {
+  async findByFamily(familyId: string): Promise<ChatAdmin[]> {
     const client = this.client;
 
     const { data, error } = await client
@@ -68,16 +68,13 @@ export class TelegramChatAdminRepository {
       return [];
     }
 
-    return data.map((row) => this.mapToTelegramChatAdmin(row));
+    return data.map((row) => this.mapToChatAdmin(row));
   }
 
   /**
    * Find all admins for a chat
    */
-  async findByChat(
-    familyId: string,
-    chatId: string,
-  ): Promise<TelegramChatAdmin[]> {
+  async findByChat(familyId: string, chatId: string): Promise<ChatAdmin[]> {
     const client = this.client;
 
     const { data, error } = await client
@@ -93,7 +90,7 @@ export class TelegramChatAdminRepository {
       return [];
     }
 
-    return data.map((row) => this.mapToTelegramChatAdmin(row));
+    return data.map((row) => this.mapToChatAdmin(row));
   }
 
   /**
@@ -128,7 +125,7 @@ export class TelegramChatAdminRepository {
     familyId: string,
     chatId: string,
     adminInfo: TelegramAdminInfo,
-  ): Promise<TelegramChatAdmin> {
+  ): Promise<ChatAdmin> {
     const client = this.client;
 
     const permissions: Record<string, boolean> = {};
@@ -163,7 +160,7 @@ export class TelegramChatAdminRepository {
       throw new Error(`Failed to upsert admin status: ${error.message}`);
     }
 
-    return this.mapToTelegramChatAdmin(data);
+    return this.mapToChatAdmin(data);
   }
 
   /**
@@ -238,16 +235,16 @@ export class TelegramChatAdminRepository {
   }
 
   /**
-   * Map database row to TelegramChatAdmin type
+   * Map database row to ChatAdmin type
    */ // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private mapToTelegramChatAdmin(row: any): TelegramChatAdmin {
-    const mapped = mapRowToCamelCase<TelegramChatAdmin>(row);
+  private mapToChatAdmin(row: any): ChatAdmin {
+    const mapped = mapRowToCamelCase<ChatAdmin>(row);
     const perms = mapped.permissions || {};
     return {
       ...mapped,
       telegramUserId: parseInt(mapped.providerUserId, 10),
       canManageChat: perms.can_manage_chat || false,
       canDeleteMessages: perms.can_delete_messages || false,
-    } as TelegramChatAdmin;
+    } as ChatAdmin;
   }
 }

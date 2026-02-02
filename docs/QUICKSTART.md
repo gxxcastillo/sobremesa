@@ -7,7 +7,7 @@ Get Sobremesa running locally in under 30 minutes.
 ## Prerequisites
 
 - **Node.js** 22 LTS ([Download](https://nodejs.org/))
-- **pnpm** - `npm install -g pnpm`
+- **bun** - `curl -fsSL https://bun.com/install | bash`
 - **Supabase Account** - [supabase.com](https://supabase.com/) (free tier works)
 - **Claude API Key** - [console.anthropic.com](https://console.anthropic.com/)
 - **Telegram Bot** - Create via [@BotFather](https://t.me/botfather)
@@ -18,7 +18,7 @@ Get Sobremesa running locally in under 30 minutes.
 
 ```bash
 cd sobremesa
-pnpm install
+bun install
 ```
 
 ---

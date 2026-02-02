@@ -134,7 +134,7 @@ export function validateAccessPass(pass: AccessPass): {
     return {
       valid: false,
       error:
-        pass.status === 'redeemed'
+        pass.status === 'redeemed' || pass.status === 'processing'
           ? 'This access pass has already been used'
           : pass.status === 'expired'
             ? 'This access pass has expired'
@@ -153,7 +153,55 @@ export function validateAccessPass(pass: AccessPass): {
 }
 
 /**
- * Mark an access pass as redeemed
+ * Atomically claim an access pass for redemption.
+ * This prevents race conditions by marking the pass as 'processing'
+ * in the same operation that validates it.
+ */
+export async function claimAccessPass(
+  client: DatabaseClient,
+  token: string,
+): Promise<
+  { success: true; pass: AccessPass } | { success: false; error: string }
+> {
+  const tokenHash = hashToken(token);
+
+  // Atomically update status from 'pending' to 'processing' and return the pass
+  const { data, error } = await client
+    .from('access_passes')
+    .update({ status: 'processing' })
+    .eq('token_hash', tokenHash)
+    .eq('status', 'pending')
+    .gt('expires_at', new Date().toISOString())
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    // Check if pass exists but was already claimed
+    const existing = await findAccessPassByToken(client, token);
+    if (!existing) {
+      return { success: false, error: 'Access pass not found' };
+    }
+    if (existing.status === 'redeemed' || existing.status === 'processing') {
+      return {
+        success: false,
+        error: 'This access pass has already been used',
+      };
+    }
+    if (
+      existing.status === 'expired' ||
+      new Date(existing.expiresAt) < new Date()
+    ) {
+      return { success: false, error: 'This access pass has expired' };
+    }
+    return { success: false, error: 'This access pass has been revoked' };
+  }
+
+  return { success: true, pass: mapRowToCamelCase(data) as AccessPass };
+}
+
+/**
+ * Mark an access pass as redeemed.
+ * Expects the pass to be in 'processing' status (from claimAccessPass).
  */
 export async function markAccessPassRedeemed(
   client: DatabaseClient,
@@ -168,7 +216,7 @@ export async function markAccessPassRedeemed(
       redeemed_by_identity_id: identityId,
     })
     .eq('id', passId)
-    .eq('status', 'pending');
+    .eq('status', 'processing');
 
   return !error;
 }

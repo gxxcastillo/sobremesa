@@ -14,6 +14,7 @@ export {
   createAccessPass,
   findAccessPassByToken,
   validateAccessPass,
+  claimAccessPass,
   markAccessPassRedeemed,
   expireOldPasses,
   buildAccessPassUrl,
@@ -25,7 +26,7 @@ export {
   UserRepository,
   AuthIdentityRepository,
   FamilyAccessRepository,
-  TelegramChatAdminRepository,
+  ChatAdminRepository,
   type TelegramAdminInfo,
 } from './lib/repositories';
 

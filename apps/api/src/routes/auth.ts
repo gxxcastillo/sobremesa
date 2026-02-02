@@ -14,8 +14,7 @@ import {
   verifyTelegramLogin,
   AuthIdentityRepository,
   FamilyAccessRepository,
-  findAccessPassByToken,
-  validateAccessPass,
+  claimAccessPass,
   markAccessPassRedeemed,
   createSessionToken,
   type TelegramLoginData,
@@ -110,9 +109,10 @@ export function authRoutes<T extends AnyElysia>(dbClient: DatabaseClient) {
           if (isNew) {
             // Find all families where this user is a cached admin
             const { data: adminRecords } = await dbClient
-              .from('telegram_chat_admins')
+              .from('chat_admins')
               .select('family_id, is_admin')
-              .eq('telegram_user_id', telegramData.id);
+              .eq('source', 'telegram')
+              .eq('provider_user_id', String(telegramData.id));
 
             if (adminRecords) {
               for (const record of adminRecords) {
@@ -198,30 +198,26 @@ export function authRoutes<T extends AnyElysia>(dbClient: DatabaseClient) {
         '/pass/:token',
         async ({ params: { token }, set }) => {
           try {
-            // Find access pass
-            console.log('[Auth] Looking up access pass...');
-            const pass = await findAccessPassByToken(dbClient, token);
+            // Atomically claim the access pass (validates + marks as processing)
+            console.log('[Auth] Claiming access pass...');
+            const claimResult = await claimAccessPass(dbClient, token);
 
-            if (!pass) {
-              console.log('[Auth] Access pass not found');
-              set.status = 404;
-              return { error: 'Access pass not found' };
-            }
-
-            console.log('[Auth] Found access pass for family:', pass.familyId);
-
-            // Validate pass
-            const validation = validateAccessPass(pass);
-            if (!validation.valid) {
+            if (claimResult.success === false) {
               console.log(
-                '[Auth] Access pass validation failed:',
-                validation.error,
+                '[Auth] Access pass claim failed:',
+                claimResult.error,
               );
-              set.status = 400;
-              return { error: validation.error };
+              set.status =
+                claimResult.error === 'Access pass not found' ? 404 : 400;
+              return { error: claimResult.error };
             }
 
-            console.log('[Auth] Access pass validated, looking up identity...');
+            const pass = claimResult.pass;
+            console.log(
+              '[Auth] Access pass claimed for family:',
+              pass.familyId,
+            );
+            console.log('[Auth] Looking up identity...');
 
             // Find or create user and identity
             const authIdentityRepo = new AuthIdentityRepository(dbClient);

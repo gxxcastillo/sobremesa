@@ -120,7 +120,7 @@ export function parseScribeResponse(
     raw = parseResult.data;
   } catch (error) {
     logger.warn(
-      { error, rawText: rawText.slice(0, 500) },
+      { err: error, rawText: rawText.slice(0, 500) },
       'Failed to parse Scribe response JSON',
     );
     return createEmptyDomainModel(

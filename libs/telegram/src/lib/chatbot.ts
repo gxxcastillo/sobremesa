@@ -218,7 +218,7 @@ export class ChatbotHandler implements BotHandler {
         await this.handleTextMessage(ctx);
       } catch (error) {
         this.logger.error(
-          { error, messageId: ctx.message.message_id },
+          { err: error, messageId: ctx.message.message_id },
           'Failed to ingest text message',
         );
       }
@@ -230,7 +230,7 @@ export class ChatbotHandler implements BotHandler {
         await this.handlePhotoMessage(ctx);
       } catch (error) {
         this.logger.error(
-          { error, messageId: ctx.message.message_id },
+          { err: error, messageId: ctx.message.message_id },
           'Failed to ingest photo message',
         );
       }
@@ -242,7 +242,7 @@ export class ChatbotHandler implements BotHandler {
         await this.handleDocumentMessage(ctx);
       } catch (error) {
         this.logger.error(
-          { error, messageId: ctx.message.message_id },
+          { err: error, messageId: ctx.message.message_id },
           'Failed to ingest document message',
         );
       }
@@ -532,7 +532,7 @@ export class ChatbotHandler implements BotHandler {
           `• Bot Settings → Group Privacy → Turn off`,
       );
     } catch (error) {
-      this.logger.error({ error, chatId }, 'Failed to register family');
+      this.logger.error({ err: error, chatId }, 'Failed to register family');
       await ctx.reply(
         'Sorry, something went wrong while setting up your family archive. Please try again.',
       );
@@ -828,7 +828,7 @@ export class ChatbotHandler implements BotHandler {
       }
     } catch (error) {
       this.logger.error(
-        { error, userId: user.id, familyId, chatId },
+        { err: error, userId: user.id, familyId, chatId },
         'Error handling studio-link command',
       );
       await ctx.reply('Sorry, something went wrong. Please try again later.');

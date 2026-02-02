@@ -21,24 +21,20 @@ libs/admin        → Shared operations library
 - **Permissions**: Role-based (queue:read/write, event:read/write/redact, etc.)
 - **Audit**: All admin actions logged to `admin_actions` table
 
-## Database Additions
+## Database (Existing Tables)
+
+Admin authentication uses the existing auth system:
+
+- **`users`** - Global user accounts (role: `user` or `super_admin`)
+- **`identities`** - Telegram accounts linked to users
+- **`family_access`** - Per-family permissions (role: `admin`/`member`/`viewer`)
 
 ```sql
--- Admin users with Telegram auth
-CREATE TABLE admin_users (
-  id UUID PRIMARY KEY,
-  telegram_user_id TEXT UNIQUE,
-  display_name TEXT NOT NULL,
-  permissions TEXT[] DEFAULT '{}',
-  family_ids UUID[] DEFAULT '{}',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Audit trail for corrections
+-- Audit trail for admin corrections (to be added)
 CREATE TABLE admin_actions (
   id UUID PRIMARY KEY,
   family_id UUID REFERENCES families(id),
-  admin_id UUID REFERENCES admin_users(id),
+  user_id UUID REFERENCES users(id),  -- Uses existing users table
   action_type TEXT,      -- 'edit', 'merge', 'delete', 'redact', 'retry'
   entity_type TEXT,      -- 'event', 'story', 'person', 'relationship', 'claim', 'queue'
   entity_id UUID,
@@ -48,6 +44,11 @@ CREATE TABLE admin_actions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
+
+**Note:** Admin permissions are determined by:
+
+- `users.role = 'super_admin'` → Full access to all families
+- `family_access.role = 'admin'` → Admin access to specific family
 
 ## UI Pages
 

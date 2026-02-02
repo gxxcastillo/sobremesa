@@ -14,10 +14,7 @@ import {
   IdentityRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
-import {
-  TelegramChatAdminRepository,
-  type TelegramAdminInfo,
-} from '@sobremesa/auth';
+import { ChatAdminRepository, type TelegramAdminInfo } from '@sobremesa/auth';
 import type pino from 'pino';
 
 /**
@@ -44,13 +41,13 @@ function isAdminStatus(status: ChatMember['status']): boolean {
  */
 export class AdminSyncHandler {
   private familyRepo: FamilyRepository;
-  private chatAdminRepo: TelegramChatAdminRepository;
+  private chatAdminRepo: ChatAdminRepository;
   private identityRepo: IdentityRepository;
   private logger: pino.Logger;
 
   constructor(dbClient: DatabaseClient, logger?: pino.Logger) {
     this.familyRepo = new FamilyRepository(dbClient);
-    this.chatAdminRepo = new TelegramChatAdminRepository(dbClient);
+    this.chatAdminRepo = new ChatAdminRepository(dbClient);
     this.identityRepo = new IdentityRepository(dbClient);
     this.logger = logger || createLogger({ name: 'admin-sync' });
   }
@@ -106,7 +103,7 @@ export class AdminSyncHandler {
       );
     } catch (error) {
       this.logger.error(
-        { error, chatId, familyId },
+        { err: error, chatId, familyId },
         'Failed to sync chat admins',
       );
     }
@@ -180,7 +177,7 @@ export class AdminSyncHandler {
       return isAdmin;
     } catch (error) {
       this.logger.error(
-        { error, chatId, telegramUserId },
+        { err: error, chatId, telegramUserId },
         'Failed to fetch user admin status',
       );
       // Fall back to cached value if available

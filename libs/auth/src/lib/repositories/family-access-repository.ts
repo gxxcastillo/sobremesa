@@ -339,7 +339,8 @@ export class FamilyAccessRepository {
   }
 
   /**
-   * Activate access (set status to 'active')
+   * Activate access (set status to 'active').
+   * If newRole is provided, only upgrades the role (never downgrades).
    */
   async activate(
     accessId: string,
@@ -354,8 +355,31 @@ export class FamilyAccessRepository {
       revoke_reason: null,
     };
 
+    // If newRole is provided, only upgrade (never downgrade)
     if (newRole) {
-      updateData.role = newRole;
+      // Fetch current access to compare roles
+      const { data: current, error: fetchError } = await client
+        .from('family_access')
+        .select('role')
+        .eq('id', accessId)
+        .single();
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch access: ${fetchError.message}`);
+      }
+
+      const roleHierarchy: Record<FamilyRole, number> = {
+        viewer: 1,
+        member: 2,
+        admin: 3,
+      };
+
+      const currentRole = current.role as FamilyRole;
+      const shouldUpgrade = roleHierarchy[newRole] > roleHierarchy[currentRole];
+
+      if (shouldUpgrade) {
+        updateData.role = newRole;
+      }
     }
 
     const { data, error } = await client
@@ -401,7 +425,8 @@ export class FamilyAccessRepository {
   }
 
   /**
-   * Claim person identity in a family
+   * Claim person identity in a family.
+   * Validates that the person belongs to the same family.
    */
   async claimPerson(
     identityId: string,
@@ -409,6 +434,24 @@ export class FamilyAccessRepository {
     personId: string,
   ): Promise<FamilyAccess> {
     const client = this.client;
+
+    // Validate that the person belongs to this family
+    const { data: person, error: personError } = await client
+      .from('people')
+      .select('id, family_id')
+      .eq('id', personId)
+      .single();
+
+    if (personError) {
+      if (personError.code === 'PGRST116') {
+        throw new Error('Person not found');
+      }
+      throw new Error(`Failed to validate person: ${personError.message}`);
+    }
+
+    if (person.family_id !== familyId) {
+      throw new Error('Person does not belong to this family');
+    }
 
     const { data, error } = await client
       .from('family_access')

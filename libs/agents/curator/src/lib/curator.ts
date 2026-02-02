@@ -175,7 +175,10 @@ export class Curator {
       return analysis;
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.logger.error({ imageId, error, duration }, 'Image analysis failed');
+      this.logger.error(
+        { imageId, err: error, duration },
+        'Image analysis failed',
+      );
       throw error;
     }
   }

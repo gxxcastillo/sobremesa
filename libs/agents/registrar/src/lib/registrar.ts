@@ -760,7 +760,7 @@ export class RegistrarAgent {
                   );
                 } catch (error) {
                   this.logger.warn(
-                    { error, personId: descriptivePerson.id },
+                    { err: error, personId: descriptivePerson.id },
                     'Failed to update person name from identity claim',
                   );
                 }

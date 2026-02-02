@@ -4,7 +4,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "clean": "pnpm clean:modules && pnpm clean:dist",
+    "clean": "bun clean:modules && bun clean:dist",
     "clean:modules": "find . -name 'node_modules' -print -type d -prune -exec rm -rf '{}' + ",
     "clean:dist": "find . -name 'dist' -print -type d -prune -exec rm -rf '{}' + ",
     "prepare": "husky",

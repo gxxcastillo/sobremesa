@@ -57,6 +57,9 @@ export class AuthIdentityRepository {
    * Creates a users record for web auth, links identity to it.
    *
    * Returns both the identity (as `authIdentity` for backward compatibility) and user.
+   *
+   * Uses retry logic to handle race conditions when two concurrent requests
+   * try to create users and link the same identity.
    */
   async findOrCreateFromTelegramLogin(
     telegramData: TelegramLoginData,
@@ -66,6 +69,7 @@ export class AuthIdentityRepository {
       telegramData.first_name,
       telegramData.last_name,
     );
+    const avatarUrl = telegramData.photo_url || null;
 
     // Find or create the identity
     const { identity, isNew } = await this.identityRepo.findOrCreate(
@@ -73,10 +77,10 @@ export class AuthIdentityRepository {
       providerUserId,
       telegramData.username || null,
       displayName,
-      telegramData.photo_url || null,
+      avatarUrl,
     );
 
-    // If identity has a user, fetch it
+    // If identity already has a user, use it
     if (identity.userId) {
       const user = await this.userRepo.findById(identity.userId);
       if (user) {
@@ -84,7 +88,7 @@ export class AuthIdentityRepository {
         const syncedUser = await this.userRepo.syncProfileFromIdentity(
           user.id,
           displayName,
-          telegramData.photo_url || null,
+          avatarUrl,
         );
         return {
           user: syncedUser || user,
@@ -94,27 +98,56 @@ export class AuthIdentityRepository {
       }
     }
 
-    // Create a new user and link to identity
-    const user = await this.userRepo.create({
-      displayName,
-      avatarUrl: telegramData.photo_url || null,
-    });
+    // Atomically create user and link to identity
+    // Use a retry loop to handle race conditions where another request links first
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        // Create a new user
+        const user = await this.userRepo.create({
+          displayName,
+          avatarUrl,
+        });
 
-    // Link identity to user
-    const linkedIdentity = await this.identityRepo.linkToUser(
-      identity.id,
-      user.id,
-    );
+        // Try to link identity to user (this can fail if another request linked it)
+        const linkedIdentity = await this.identityRepo.linkToUser(
+          identity.id,
+          user.id,
+        );
 
-    // Update last login
-    await this.identityRepo.updateLastLogin(linkedIdentity.id);
+        // Success!
+        await this.identityRepo.updateLastLogin(linkedIdentity.id);
+        return { user, authIdentity: linkedIdentity, isNew };
+      } catch (err) {
+        // If linking failed, check if identity was linked by another request
+        const refreshedIdentity = await this.identityRepo.findById(identity.id);
+        if (refreshedIdentity?.userId) {
+          // Another request linked it - use that user
+          const existingUser = await this.userRepo.findById(
+            refreshedIdentity.userId,
+          );
+          if (existingUser) {
+            return {
+              user: existingUser,
+              authIdentity: refreshedIdentity,
+              isNew: false,
+            };
+          }
+        }
 
-    return { user, authIdentity: linkedIdentity, isNew };
+        // If this was the last attempt, throw
+        if (attempt === 2) throw err;
+      }
+    }
+
+    throw new Error('Failed to link identity after retries');
   }
 
   /**
    * Find or create from any provider.
    * Creates user + identity if new, updates existing if found.
+   *
+   * Uses retry logic to handle race conditions when two concurrent requests
+   * try to create users and link the same identity.
    */
   async findOrCreateFromProvider(
     provider: ChatProvider,
@@ -132,7 +165,7 @@ export class AuthIdentityRepository {
       avatarUrl,
     );
 
-    // If identity has a user, fetch it
+    // If identity already has a user, use it
     if (identity.userId) {
       const user = await this.userRepo.findById(identity.userId);
       if (user) {
@@ -150,20 +183,48 @@ export class AuthIdentityRepository {
       }
     }
 
-    // Create a new user and link to identity
+    // Atomically create user and link to identity
+    // Use a retry loop to handle race conditions where another request links first
     const actualDisplayName = displayName || `User ${providerUserId}`;
-    const user = await this.userRepo.create({
-      displayName: actualDisplayName,
-      avatarUrl: avatarUrl || null,
-    });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        // Create a new user
+        const user = await this.userRepo.create({
+          displayName: actualDisplayName,
+          avatarUrl: avatarUrl || null,
+        });
 
-    // Link identity to user
-    const linkedIdentity = await this.identityRepo.linkToUser(
-      identity.id,
-      user.id,
-    );
+        // Try to link identity to user (this can fail if another request linked it)
+        const linkedIdentity = await this.identityRepo.linkToUser(
+          identity.id,
+          user.id,
+        );
 
-    return { user, authIdentity: linkedIdentity, isNew };
+        // Success!
+        return { user, authIdentity: linkedIdentity, isNew };
+      } catch (err) {
+        // If linking failed, check if identity was linked by another request
+        const refreshedIdentity = await this.identityRepo.findById(identity.id);
+        if (refreshedIdentity?.userId) {
+          // Another request linked it - use that user
+          const existingUser = await this.userRepo.findById(
+            refreshedIdentity.userId,
+          );
+          if (existingUser) {
+            return {
+              user: existingUser,
+              authIdentity: refreshedIdentity,
+              isNew: false,
+            };
+          }
+        }
+
+        // If this was the last attempt, throw
+        if (attempt === 2) throw err;
+      }
+    }
+
+    throw new Error('Failed to link identity after retries');
   }
 
   /**

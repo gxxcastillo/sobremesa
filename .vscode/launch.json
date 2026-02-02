@@ -5,7 +5,7 @@
       "type": "node",
       "request": "launch",
       "name": "Debug chatbots with Nx",
-      "runtimeExecutable": "pnpm exec",
+      "runtimeExecutable": "bun exec",
       "runtimeArgs": ["nx", "serve", "chatbots"],
       "env": {
         "NODE_OPTIONS": "--inspect=9229"

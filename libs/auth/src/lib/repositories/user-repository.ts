@@ -27,7 +27,16 @@ export class UserRepository {
       .eq('id', id)
       .single();
 
-    if (error || !data) {
+    if (error) {
+      // PGRST116 = "not found" - return null
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      // Other errors are real DB errors - throw
+      throw new Error(`Failed to find user: ${error.message}`);
+    }
+
+    if (!data) {
       return null;
     }
 
@@ -46,7 +55,16 @@ export class UserRepository {
       .eq('email', email)
       .single();
 
-    if (error || !data) {
+    if (error) {
+      // PGRST116 = "not found" - return null
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      // Other errors are real DB errors - throw
+      throw new Error(`Failed to find user by email: ${error.message}`);
+    }
+
+    if (!data) {
       return null;
     }
 
@@ -65,7 +83,16 @@ export class UserRepository {
       .eq('id', identityId)
       .single();
 
-    if (error || !data || !data.user_id) {
+    if (error) {
+      // PGRST116 = "not found" - return null
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      // Other errors are real DB errors - throw
+      throw new Error(`Failed to find identity: ${error.message}`);
+    }
+
+    if (!data || !data.user_id) {
       return null;
     }
 
@@ -137,7 +164,16 @@ export class UserRepository {
       .select()
       .single();
 
-    if (error || !data) {
+    if (error) {
+      // PGRST116 = "not found" - return null
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      // Other errors are real DB errors - throw
+      throw new Error(`Failed to update user: ${error.message}`);
+    }
+
+    if (!data) {
       return null;
     }
 

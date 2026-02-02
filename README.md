@@ -20,7 +20,7 @@ A pipeline of specialized AI agents processes incoming chat messages: extracting
 
 ```bash
 # Install
-pnpm install
+bun install
 
 # Set up environment
 cp .env.example .env

@@ -80,17 +80,17 @@ Database (Supabase PostgreSQL)
 
 ```
 Message: "Gabriel's cousin Rosa arrived from Argentina"
-Source: Telegram (ID: 123456789)
+Provider: Telegram (ID: 123456789)
 From: @gabriel_dev (first_name: Gabriel)
 
 → MessageIngester.findOrCreate()
 → Identity created/updated:
    {
-     source: 'telegram',
+     provider: 'telegram',
      provider_user_id: '123456789',
      display_name: 'Gabriel',
-     username: '@gabriel_dev',
-     person_id: NULL
+     provider_username: '@gabriel_dev',
+     user_id: NULL  // Not linked to web user yet
    }
 ```
 
@@ -156,9 +156,9 @@ Registrar receives DomainModel
     claimedBy: 'Gabriel'
   }
 
-→ Link identity to person:
-  - Identity.person_id = gabriel_id
-  - Now facilitator knows this Telegram user is Gabriel
+→ Link identity to person via family_access:
+  - family_access.person_id = gabriel_id
+  - Now facilitator knows this Telegram user is Gabriel in this family
 ```
 
 **Result:**
@@ -310,14 +310,16 @@ See [ADR-025](adr/025-claims-based-data-architecture.md) for architecture decisi
 
 ## Common Queries
 
-### "Who is sending messages from Telegram?"
+### "Who is sending messages from Telegram in this family?"
 
 ```sql
-SELECT i.display_name, p.name
+SELECT i.display_name, p.name AS claimed_person_name
 FROM identities i
-LEFT JOIN people p ON i.person_id = p.id
-WHERE i.source = 'telegram'
-  AND i.family_id = ?
+JOIN family_access fa ON fa.identity_id = i.id
+LEFT JOIN people p ON fa.person_id = p.id
+WHERE i.provider = 'telegram'
+  AND fa.family_id = ?
+  AND fa.status = 'active'
   AND i.is_active = TRUE
 ORDER BY i.display_name;
 ```

@@ -794,7 +794,7 @@ CREATE TABLE IF NOT EXISTS family_access (
     ON DELETE SET NULL
 );
 
-COMMENT ON TABLE family_access IS 'Per-family permissions and person claims. Replaces auth_identities as the per-family relationship.';
+COMMENT ON TABLE family_access IS 'AUTHORITATIVE source for per-family permissions. Initial role may come from chat_admins cache, but this table is the source of truth for authorization.';
 COMMENT ON COLUMN family_access.role IS 'Family-scoped role: admin (full access), member (view data), viewer (read-only)';
 COMMENT ON COLUMN family_access.status IS 'Access status: pending (chat user), active (web authenticated), revoked, suspended';
 COMMENT ON COLUMN family_access.person_id IS 'User-claimed identity: who this user is in this family genealogy';
@@ -2523,7 +2523,7 @@ CREATE TABLE IF NOT EXISTS access_passes (
 
   -- Expiration and usage
   expires_at TIMESTAMPTZ NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'redeemed', 'expired', 'revoked')),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'redeemed', 'expired', 'revoked')),
   redeemed_at TIMESTAMPTZ,
   redeemed_by_identity_id UUID REFERENCES identities(id) ON DELETE SET NULL,
 
@@ -2553,7 +2553,24 @@ CREATE INDEX IF NOT EXISTS idx_access_passes_pending
   WHERE status = 'pending';
 
 -- ============================================================================
--- TELEGRAM CHAT ADMINS (Cached Admin Status)
+-- CHAT ADMINS (Cached Admin Status as reported by Chat Providers)
+-- ============================================================================
+-- Purpose: Cache of admin status from chat providers (Telegram, Discord, etc.)
+--
+-- This table bridges external chat admin status with internal authorization:
+--   1. Synced from provider APIs (e.g., Telegram's getChatAdministrators)
+--   2. Checked during user login to determine initial family_access.role
+--   3. If user is admin in chat → family_access.role = 'admin'
+--   4. If user is not admin → family_access.role = 'member'
+--
+-- Difference from family_access:
+--   - chat_admins: READ-ONLY cache of external (provider) admin status
+--   - family_access: AUTHORITATIVE source for internal permissions
+--
+-- A user's chat_admins.is_admin status is used ONCE (at first login) to
+-- set their family_access.role. After that, family_access is the source
+-- of truth for authorization. Admins can manually change family_access
+-- roles independent of chat provider status.
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS chat_admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2585,7 +2602,7 @@ CREATE TABLE IF NOT EXISTS chat_admins (
   )
 );
 
-COMMENT ON TABLE chat_admins IS 'Cached chat admin status from provider APIs for role determination. Provider-neutral with JSONB permissions.';
+COMMENT ON TABLE chat_admins IS 'Cache of admin status from chat providers (Telegram, etc.). Used to set initial family_access.role on first login. NOT used for authorization - family_access is authoritative.';
 COMMENT ON COLUMN chat_admins.is_admin IS 'Whether user is admin/creator of the chat';
 COMMENT ON COLUMN chat_admins.permissions IS 'Provider-specific permissions as JSONB. Telegram: {can_manage_chat, can_delete_messages}. Discord: {administrator, manage_channels}.';
 
@@ -2955,11 +2972,23 @@ CREATE POLICY "access_passes_select" ON access_passes
   FOR SELECT USING (is_family_admin(family_id));
 
 -- --------------------------------------------------------------------------
--- TELEGRAM_CHAT_ADMINS policies
+-- CHAT_ADMINS policies
 -- --------------------------------------------------------------------------
 -- Family members can see chat admins for their family
 CREATE POLICY "chat_admins_select" ON chat_admins
   FOR SELECT USING (family_id IN (SELECT * FROM get_user_family_ids()));
+
+-- Backend services (using service_role) sync chat admin status
+-- These policies allow writes; service_role bypasses RLS but these
+-- document intent and support any authenticated backend operations
+CREATE POLICY "chat_admins_insert" ON chat_admins
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "chat_admins_update" ON chat_admins
+  FOR UPDATE USING (true);
+
+CREATE POLICY "chat_admins_delete" ON chat_admins
+  FOR DELETE USING (true);
 
 -- --------------------------------------------------------------------------
 -- FAMILIES policies

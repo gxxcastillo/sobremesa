@@ -10,7 +10,7 @@ Complete technical specification for Sobremesa implementation.
 
 - **TypeScript** 5.x (latest stable)
 - **Node.js** 22 LTS
-- **Package Manager:** pnpm
+- **Package Manager:** bun
 
 ### Monorepo Framework
 
@@ -308,7 +308,7 @@ messageQueue.process(async (job) => {
 
 ```bash
 # Install dependencies
-pnpm install
+bun install
 
 # Run bot locally
 nx serve telegram-bot
@@ -428,7 +428,8 @@ const logger = pino({
 });
 
 logger.info({ familyId, messageId, agent: 'scribe' }, 'Processing message');
-logger.error({ error, familyId }, 'Failed to save claim');
+logger.error({ err: error, familyId }, 'Failed to save claim');
+// Note: Use 'err' key (not 'error') for proper Error object serialization
 ```
 
 ### Metrics to Track
