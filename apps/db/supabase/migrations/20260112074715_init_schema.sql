@@ -2395,14 +2395,14 @@ CREATE INDEX IF NOT EXISTS idx_event_log_family_actor
 -- ============================================================================
 -- CONVERSATION EVENT PROCESSING (Preprocessing artifacts)
 -- ============================================================================
--- Stores preprocessing results (pronoun resolution, language detection, etc.)
+-- Stores preprocessing results (language detection, image references, etc.)
 -- Separate from conversation_events to keep original events fully immutable
+-- Note: Pronoun resolution is handled by Scribe agent during extraction
 CREATE TABLE IF NOT EXISTS conversation_event_processing (
   conversation_event_id UUID PRIMARY KEY,
   family_id UUID NOT NULL,
 
   -- Preprocessing results
-  content_processed TEXT,                      -- Content after pronoun resolution
   detected_language VARCHAR(10),               -- Language detected by preprocessing (if different from original)
   image_references JSONB,                      -- Image references extracted from message
 
@@ -2419,9 +2419,7 @@ CREATE TABLE IF NOT EXISTS conversation_event_processing (
 );
 
 COMMENT ON TABLE conversation_event_processing IS
-  'Preprocessing artifacts for conversation events. Mutable - can be reprocessed. Original events remain immutable in conversation_events.';
-COMMENT ON COLUMN conversation_event_processing.content_processed IS
-  'Content after pronoun resolution. This is what the Scribe agent processes for extraction.';
+  'Preprocessing artifacts for conversation events. Stores language detection and image references.';
 COMMENT ON COLUMN conversation_event_processing.detected_language IS
   'Language detected during preprocessing. May differ from language_original if preprocessing improves detection.';
 COMMENT ON COLUMN conversation_event_processing.image_references IS

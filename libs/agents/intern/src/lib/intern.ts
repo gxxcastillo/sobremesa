@@ -77,16 +77,6 @@ export interface ImageLinkResult {
 }
 
 /**
- * Result of pronoun resolution task.
- */
-export interface PronounResolutionResult {
-  /** Message with pronouns replaced by actual names */
-  resolvedMessage: string;
-  /** Tokens used for this call */
-  tokensUsed?: number;
-}
-
-/**
  * Configuration for the Intern agent.
  */
 export interface InternConfig {
@@ -776,82 +766,6 @@ export class InternAgent {
       return {
         action: 'scribe',
         reason: `Routing error: ${errorMessage}`,
-      };
-    }
-  }
-
-  /**
-   * Resolve pronouns in a message by replacing them with actual names from context.
-   * Uses Haiku 4.5 for focused pronoun resolution task.
-   */
-  async resolvePronouns(
-    messageText: string,
-    senderName: string,
-    context: MessageContext,
-  ): Promise<PronounResolutionResult> {
-    try {
-      // Build prompt with context messages (already filtered by character limit in processor)
-      const contextLines = context.recentMessages
-        .map((msg) => `- ${msg.content}`)
-        .join('\n');
-
-      const systemPrompt = loadPrompt('internPronouns');
-      const userPrompt = `SENDER: ${senderName}
-
-CONTEXT (newest first):
-${contextLines}
-
-MESSAGE to rewrite:
-"${messageText}"
-
-Rewrite this message by replacing ALL pronouns (I/me/my/we/us/our/he/she/they/his/her/their) with actual names. Output only the rewritten message.`;
-
-      this.logger.debug(
-        {
-          senderName,
-          messageLength: messageText.length,
-          contextMessages: context.recentMessages.length,
-          contextPreview: contextLines.slice(0, 200), // Show first 200 chars
-          messageText,
-        },
-        'Resolving pronouns',
-      );
-
-      const response = await this.provider.complete({
-        model: this.model,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-        maxTokens: 200, // Short output, just the rewritten message
-      });
-
-      const resolvedMessage = response.content
-        .trim()
-        .replace(/^["']|["']$/g, ''); // Remove surrounding quotes if present
-
-      this.logger.info(
-        {
-          original: messageText,
-          resolved: resolvedMessage,
-          changed: messageText !== resolvedMessage,
-          tokensUsed: response.usage.totalTokens,
-        },
-        'Pronouns resolved',
-      );
-
-      return {
-        resolvedMessage,
-        tokensUsed: response.usage.totalTokens,
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      this.logger.error(
-        { error: errorMessage },
-        'Pronoun resolution error, returning original message',
-      );
-      // On error, return original message unchanged
-      return {
-        resolvedMessage: messageText,
       };
     }
   }

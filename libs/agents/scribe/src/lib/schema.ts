@@ -81,6 +81,8 @@ const ImageReferenceSchema = z.object({
 });
 
 export const RawScribeResponseSchema = z.object({
+  // Debug field: message with pronouns resolved (for debugging extraction issues)
+  understood_message: z.string().optional(),
   people: z.array(PersonSchema).default([]),
   places: z.array(PlaceSchema).default([]),
   events: z.array(EventSchema).default([]),

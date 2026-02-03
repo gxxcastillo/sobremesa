@@ -118,6 +118,14 @@ export function parseScribeResponse(
     }
 
     raw = parseResult.data;
+
+    // Log understood message for debugging pronoun resolution
+    if (raw.understood_message) {
+      logger.debug(
+        { conversationEventId, understoodMessage: raw.understood_message },
+        'Scribe understood message',
+      );
+    }
   } catch (error) {
     logger.warn(
       { err: error, rawText: rawText.slice(0, 500) },

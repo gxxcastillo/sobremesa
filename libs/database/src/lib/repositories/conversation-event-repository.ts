@@ -64,7 +64,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       ? `
         *,
         redacted:conversation_redactions(id),
-        processing:conversation_event_processing(content_processed, detected_language)
+        processing:conversation_event_processing(detected_language)
       `
       : `
         *,

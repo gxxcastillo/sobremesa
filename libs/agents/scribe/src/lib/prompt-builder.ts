@@ -89,7 +89,7 @@ export function buildUserMessage(
   parts.push(messageContent);
   parts.push('');
   parts.push(
-    'Extract from this MESSAGE. CRITICAL: Replace all pronouns (he/she/they) with actual names from CONTEXT. Never output a pronoun as subject. Short follow-ups like "and beets" contain information—use context to interpret.',
+    'Extract from this MESSAGE. Short follow-ups like "and beets" contain information—use context to interpret.',
   );
 
   const finalMessage = parts.join('\n');
@@ -101,6 +101,4 @@ export function buildUserMessage(
   );
 
   return finalMessage;
-
-  return parts.join('\n');
 }

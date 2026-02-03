@@ -106,38 +106,16 @@ export type FilterProcessor = (
 ) => Promise<FilterProcessorResult>;
 
 /**
- * Pronoun resolver result.
- */
-export interface PronounResolverResult {
-  /** Message with pronouns replaced by actual names */
-  resolvedMessage: string;
-  /** Tokens used for this call */
-  tokensUsed?: number;
-}
-
-/**
- * Pronoun resolver processor function type.
- * Implementations should resolve pronouns in messages using context.
- * Optional context parameter allows sharing pre-fetched context.
- */
-export type PronounResolverProcessor = (
-  messageText: string,
-  senderName: string,
-  context: MessageContext,
-) => Promise<PronounResolverResult>;
-
-/**
  * Scribe processor function type.
  * Implementations should extract domain model from a conversation event.
- * Optional context parameter allows sharing pre-fetched context.
- * Optional preprocessed parameter provides preprocessing results (pronouns, language, images).
+ * Scribe handles pronoun resolution internally using context.
+ * Optional preprocessed parameter provides preprocessing results (language, images).
  */
 export type ScribeProcessor = (
   eventId: string,
   familyId: string,
   context?: MessageContext,
   preprocessed?: {
-    contentProcessed?: string;
     detectedLanguage?: LanguageCode;
     imageReferences?: RawImageReference[];
   },
@@ -258,7 +236,6 @@ export class MessageProcessor {
   private adminProcessor?: AdminProcessor;
   private historianProcessor?: HistorianProcessor;
   private filter?: FilterProcessor;
-  private pronounResolver?: PronounResolverProcessor;
   private imageLinker?: ImageLinkerProcessor;
   private scribe?: ScribeProcessor;
   private registrar?: RegistrarProcessor;
@@ -363,14 +340,6 @@ export class MessageProcessor {
   }
 
   /**
-   * Set the Pronoun Resolver processor.
-   * The pronoun resolver preprocesses messages to replace pronouns with actual names.
-   */
-  setPronounResolver(pronounResolver: PronounResolverProcessor): void {
-    this.pronounResolver = pronounResolver;
-  }
-
-  /**
    * Set the Image Linker processor.
    * The image linker runs after Scribe to detect image references that Scribe may have missed.
    */
@@ -431,20 +400,6 @@ export class MessageProcessor {
       ),
     ]);
 
-    // Fetch processing data for all recent events (batch)
-    const processingDataList = await Promise.all(
-      recentEvents.map((e) =>
-        this.processingRepo.findByEventId(familyId, e.id),
-      ),
-    );
-
-    // Create a map of eventId -> processing data for quick lookup
-    const processingMap = new Map(
-      processingDataList
-        .filter((p): p is NonNullable<typeof p> => p !== null)
-        .map((p) => [p.conversationEventId, p]),
-    );
-
     // Transform to context format, accumulating until character limit
     const recentMessages = [];
     let totalChars = 0;
@@ -452,8 +407,8 @@ export class MessageProcessor {
     for (const e of recentEvents) {
       if (!e.contentOriginal) continue;
 
-      const processing = processingMap.get(e.id);
-      const content = processing?.contentProcessed || e.contentOriginal || '';
+      // Use original content - Scribe handles pronoun resolution internally
+      const content = e.contentOriginal || '';
 
       // Check if adding this message would exceed limit
       if (
@@ -775,53 +730,8 @@ export class MessageProcessor {
       }
     }
 
-    // Run Pronoun Resolver (if configured and filter passed)
-    let resolvedContent: string | undefined;
-    let detectedLanguage: LanguageCode | undefined;
-    if (this.pronounResolver && shouldProcess) {
-      // Load the event to get the message text
-      const event = await this.eventRepo.findById(familyId, eventId);
-      if (event?.contentOriginal) {
-        this.logger.debug({ eventId }, 'Running Pronoun Resolver');
-        // Exclude current message from context to avoid circular reference
-        const contextWithoutCurrent = {
-          ...context,
-          recentMessages: context.recentMessages.filter(
-            (msg) => msg.id !== eventId,
-          ),
-        };
-        const senderName =
-          event.actorDisplayName || event.actorUsername || 'Unknown';
-        const resolveResult = await this.pronounResolver(
-          event.contentOriginal,
-          senderName,
-          contextWithoutCurrent,
-        );
-
-        resolvedContent = resolveResult.resolvedMessage;
-
-        // Store preprocessing results in conversation_event_processing
-        await this.processingRepo.upsert({
-          conversationEventId: eventId,
-          familyId,
-          contentProcessed: resolvedContent,
-          processedBy: 'intern',
-          processingMetadata: {
-            tokensUsed: resolveResult.tokensUsed,
-          },
-        });
-
-        this.logger.debug(
-          {
-            eventId,
-            tokensUsed: resolveResult.tokensUsed,
-          },
-          'Pronouns resolved and stored',
-        );
-      }
-    }
-
     // Store detected language from filter if different from original
+    let detectedLanguage: LanguageCode | undefined;
     if (shouldProcess && filterResult?.language) {
       detectedLanguage = filterResult.language;
       const event = await this.eventRepo.findById(familyId, eventId);
@@ -832,18 +742,17 @@ export class MessageProcessor {
           conversationEventId: eventId,
           familyId,
           detectedLanguage,
-          contentProcessed: resolvedContent, // Include if already resolved
           processedBy: 'intern',
         });
       }
     }
 
     // Run Scribe (if configured and filter passed)
+    // Note: Scribe now handles pronoun resolution internally
     let domainModel: ScribeDomainModel | undefined;
     if (this.scribe && shouldProcess) {
       this.logger.debug({ eventId }, 'Running Scribe');
       domainModel = await this.scribe(eventId, familyId, context, {
-        contentProcessed: resolvedContent,
         detectedLanguage,
       });
 

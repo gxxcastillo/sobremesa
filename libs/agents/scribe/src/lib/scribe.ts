@@ -100,7 +100,6 @@ export class ScribeAgent {
     familyId: string,
     preloadedContext?: MessageContext,
     preprocessed?: {
-      contentProcessed?: string;
       detectedLanguage?: LanguageCode;
       imageReferences?: RawImageReference[];
     },
@@ -113,9 +112,8 @@ export class ScribeAgent {
       throw new Error(`Event not found: ${eventId}`);
     }
 
-    // Use preprocessed content if available, otherwise fall back to original
-    const contentToProcess =
-      preprocessed?.contentProcessed || event.contentOriginal;
+    // Scribe handles pronoun resolution internally, use original content
+    const contentToProcess = event.contentOriginal;
 
     // Use detected language from preprocessing, event, or parameter
     const detectedLanguage =

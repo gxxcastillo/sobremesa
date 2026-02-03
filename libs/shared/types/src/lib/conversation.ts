@@ -78,7 +78,6 @@ export interface ConversationEventProcessing {
   familyId: string;
 
   // Preprocessing results
-  contentProcessed?: string;
   detectedLanguage?: LanguageCode;
   imageReferences?: RawImageReference[];
 
