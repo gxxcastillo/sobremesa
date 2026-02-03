@@ -59,38 +59,39 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - uses: nrwl/nx-set-shas@v4
+        id: nx-shas
 
       - name: Determine affected projects
         id: affected
         run: |
-          AFFECTED=$(npx nx show projects --affected --json | jq -r '.[]' 2>/dev/null || echo "")
-
-          if echo "$AFFECTED" | grep -q "^api$"; then
-            echo "api=true" >> $GITHUB_OUTPUT
-          else
-            echo "api=false" >> $GITHUB_OUTPUT
+          # Fallback: if no base SHA, deploy all
+          if [ -z "$NX_BASE" ] || [ "$NX_BASE" = "$NX_HEAD" ]; then
+            echo "No base SHA - deploying all"
+            {
+              echo "api=true"
+              echo "chatbots=true"
+              echo "db=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-          if echo "$AFFECTED" | grep -q "^chatbots$"; then
-            echo "chatbots=true" >> $GITHUB_OUTPUT
-          else
-            echo "chatbots=false" >> $GITHUB_OUTPUT
-          fi
+          AFFECTED=$(npx nx show projects --affected --json 2>/dev/null | jq -r '.[]' 2>/dev/null || echo "")
 
-          if echo "$AFFECTED" | grep -q "^db$"; then
-            echo "db=true" >> $GITHUB_OUTPUT
-          else
-            echo "db=false" >> $GITHUB_OUTPUT
-          fi
+          API=$(echo "$AFFECTED" | grep -q "^api$" && echo "true" || echo "false")
+          CHATBOTS=$(echo "$AFFECTED" | grep -q "^chatbots$" && echo "true" || echo "false")
+          DB=$(echo "$AFFECTED" | grep -q "^db$" && echo "true" || echo "false")
 
-          echo "Affected projects:"
-          echo "  api: $(echo "$AFFECTED" | grep -q "^api$" && echo "yes" || echo "no")"
-          echo "  chatbots: $(echo "$AFFECTED" | grep -q "^chatbots$" && echo "yes" || echo "no")"
-          echo "  db: $(echo "$AFFECTED" | grep -q "^db$" && echo "yes" || echo "no")"
+          {
+            echo "api=$API"
+            echo "chatbots=$CHATBOTS"
+            echo "db=$DB"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Affected: api=$API chatbots=$CHATBOTS db=$DB"
 
   deploy-api:
     needs: check-affected
-    if: needs.check-affected.outputs.api == 'true'
+    if: fromJSON(needs.check-affected.outputs.api)
     uses: ./.github/workflows/deploy-api.yml
     with:
       run_ci: false
@@ -98,7 +99,7 @@ jobs:
 
   deploy-chatbots:
     needs: check-affected
-    if: needs.check-affected.outputs.chatbots == 'true'
+    if: fromJSON(needs.check-affected.outputs.chatbots)
     uses: ./.github/workflows/deploy-chatbots.yml
     with:
       run_ci: false
@@ -106,7 +107,7 @@ jobs:
 
   deploy-db:
     needs: check-affected
-    if: needs.check-affected.outputs.db == 'true'
+    if: fromJSON(needs.check-affected.outputs.db)
     uses: ./.github/workflows/deploy-supabase.yml
     with:
       run_ci: false

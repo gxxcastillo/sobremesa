@@ -5,6 +5,7 @@ WORKDIR /app
 
 # Copy the API app and its workspace dependencies
 COPY apps/api ./apps/api
+COPY libs/auth ./libs/auth
 COPY libs/database ./libs/database
 COPY libs/shared/types ./libs/shared/types
 COPY libs/shared/utils ./libs/shared/utils
