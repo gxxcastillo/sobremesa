@@ -24,15 +24,20 @@ export interface LoggerOptions {
  * const logger = createLogger({ name: 'my-app' });
  *
  * @example
- * // With environment-based config (in app entry point)
+ * // Override pretty mode explicitly
  * const logger = createLogger({
  *   name: 'my-app',
  *   level: process.env.LOG_LEVEL as LogLevel,
- *   pretty: process.env.NODE_ENV !== 'production',
+ *   pretty: false, // force JSON output
  * });
  */
 export function createLogger(options: LoggerOptions): pino.Logger {
-  const { name, level = 'info', familyId, pretty = false } = options;
+  const {
+    name,
+    level = 'info',
+    familyId,
+    pretty = process.env['NODE_ENV'] !== 'production',
+  } = options;
 
   const baseConfig: pino.LoggerOptions = {
     name,

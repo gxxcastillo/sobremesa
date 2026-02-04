@@ -1,5 +1,8 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { ConversationEventProcessing } from '@sobremesa/shared-types';
+import type {
+  ConversationEventProcessing,
+  ProcessingMetadata,
+} from '@sobremesa/shared-types';
 import { mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
 
 /**
@@ -82,6 +85,38 @@ export class ConversationEventProcessingRepository {
         `Failed to delete event processing data: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Update processing metadata for an event, merging with existing metadata.
+   * Creates a new processing record if one doesn't exist.
+   */
+  async updateMetadata(
+    eventId: string,
+    familyId: string,
+    metadata: Partial<ProcessingMetadata>,
+    processedBy?: string,
+  ): Promise<ConversationEventProcessing> {
+    // First check if record exists
+    const existing = await this.findByEventId(familyId, eventId);
+
+    const mergedMetadata: ProcessingMetadata = {
+      ...(existing?.processingMetadata || {}),
+      ...metadata,
+    };
+
+    return this.upsert({
+      conversationEventId: eventId,
+      familyId,
+      ...(existing?.detectedLanguage && {
+        detectedLanguage: existing.detectedLanguage,
+      }),
+      ...(existing?.imageReferences && {
+        imageReferences: existing.imageReferences,
+      }),
+      processingMetadata: mergedMetadata,
+      processedBy: processedBy || existing?.processedBy || 'unknown',
+    });
   }
 
   protected mapFromDb(

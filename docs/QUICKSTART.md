@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get Sobremesa running locally in under 30 minutes.
+Get Sobremesa running locally.
 
 ---
 
@@ -8,7 +8,7 @@ Get Sobremesa running locally in under 30 minutes.
 
 - **Node.js** 22 LTS ([Download](https://nodejs.org/))
 - **bun** - `curl -fsSL https://bun.com/install | bash`
-- **Supabase Account** - [supabase.com](https://supabase.com/) (free tier works)
+- **Supabase CLI** - `brew install supabase/tap/supabase` (for local dev)
 - **Claude API Key** - [console.anthropic.com](https://console.anthropic.com/)
 - **Telegram Bot** - Create via [@BotFather](https://t.me/botfather)
 
@@ -23,95 +23,83 @@ bun install
 
 ---
 
-## Step 2: Create Telegram Bots
+## Step 2: Create Telegram Bot
 
 Open Telegram and message [@BotFather](https://t.me/botfather):
 
-1. **Create Scribe Bot** (required)
+```
+/newbot
+Name: Sobremesa
+Username: your_sobremesa_bot
+```
 
-   ```
-   /newbot
-   Name: Sobremesa Scribe
-   Username: sobremesa_scribe_bot
-   ```
+Save the token. Then disable Privacy Mode so the bot can read group messages:
 
-   Save the token.
+```
+/mybots → Select your bot → Bot Settings → Group Privacy → Turn off
+```
 
-2. **Create Facilitator Bot** (required for questions)
-
-   ```
-   /newbot
-   Name: Sobremesa Facilitator
-   Username: sobremesa_facilitator_bot
-   ```
-
-   Save the token.
-
-3. **Create Admin Bot** (optional)
-   ```
-   /newbot
-   Name: Sobremesa Admin
-   Username: sobremesa_admin_bot
-   ```
-   Save the token.
+Sobremesa uses a **single bot** for all agent interactions (ingestion, facilitation, question answering).
 
 ---
 
 ## Step 3: Supabase Setup
 
-### Create Project
+### Local Development (Recommended)
 
-1. Go to [supabase.com](https://supabase.com/)
-2. Create new project
-3. Wait for project to initialize
+```bash
+# Start local Supabase (PostgreSQL + Studio)
+supabase start
 
-### Get Connection Info
-
-From Project Settings > API:
-
-- **Project URL** (SUPABASE_URL)
-- **anon public** key (SUPABASE_ANON_KEY)
-- **service_role** key (SUPABASE_SERVICE_ROLE_KEY)
-
-### Apply Schema
-
-1. Go to SQL Editor in Supabase dashboard
-2. Copy contents of `apps/db/supabase/migrations/20260112074715_init_schema.sql`
-3. Run the query
-
-### Create Test Family
-
-Run this SQL:
-
-```sql
-INSERT INTO families (name, config, is_active)
-VALUES (
-  'My Family',
-  '{"languages": {"primary": "en"}}'::jsonb,
-  true
-);
+# Apply schema
+psql postgresql://postgres:postgres@127.0.0.1:54322/postgres \
+  -f apps/db/supabase/migrations/20260112074715_init_schema.sql
 ```
 
-Note the family ID from the result.
+Local Supabase provides:
+
+- **SUPABASE_URL**: `http://127.0.0.1:54321`
+- **SUPABASE_ANON_KEY**: printed by `supabase start`
+- **SUPABASE_SERVICE_ROLE_KEY**: printed by `supabase start`
+
+### Cloud Development
+
+1. Go to [supabase.com](https://supabase.com/) and create a project
+2. From Project Settings > API, get the URL, anon key, and service role key
+3. Apply schema via SQL Editor (paste contents of `apps/db/supabase/migrations/20260112074715_init_schema.sql`)
 
 ---
 
 ## Step 4: Environment Variables
 
-Create `.env` in project root:
+Copy `.env.example` to `.env` and fill in values:
+
+```bash
+cp .env.example .env
+```
+
+Required variables:
 
 ```bash
 # Supabase
-SUPABASE_URL=https://xxxxx.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 # Claude API
-ANTHROPIC_API_KEY=sk-ant-api03-...
+ANTHROPIC_API_KEY=sk-ant-...
 
 # Telegram Bot
 TELEGRAM_BOT_TOKEN=123456789:AAF...
+
+# Access Pass Secret (for JWT signing)
+ACCESS_PASS_SECRET=your-secret-here
+
+# Studio URL (for access pass links)
+STUDIO_URL=https://sobremesa.x:3000
 ```
+
+See `.env.example` for optional settings (local LLM, per-agent provider overrides).
 
 ---
 
@@ -119,27 +107,17 @@ TELEGRAM_BOT_TOKEN=123456789:AAF...
 
 1. Create a new Telegram group
 2. Add the bot to the group
-3. Make sure the bot has permission to read messages
+3. Make sure the bot has permission to read messages (Privacy Mode disabled in Step 2)
 
 ---
 
-## Step 6: Register the Family
+## Step 6: Start the Chatbot
 
-1. Start the gateway:
+```bash
+nx dev chatbots
+```
 
-   ```bash
-   nx serve chatbots
-   ```
-
-2. In the Telegram group, send:
-
-   ```
-   /register YOUR_FAMILY_ID
-   ```
-
-   (Use the family ID from Step 3)
-
-3. You should see a confirmation message
+The bot will auto-create a family record when it receives its first message in a group.
 
 ---
 
@@ -153,20 +131,20 @@ My grandmother Rosa came to America from Poland in 1920.
 
 **Expected behavior:**
 
-1. Scribe bot ingests message
-2. Claude extracts: Rosa (person), Poland (place), America (place), immigration (event)
-3. Questions generated about gaps
-4. Facilitator may ask a follow-up question
+1. Bot ingests message into `conversation_events`
+2. Intern filters (relevant → pass to Scribe)
+3. Scribe extracts: Rosa (person), Poland (place), America (place), immigration (event), claims with provenance
+4. Registrar persists entities, claims, and links to database
 
 ### Verify in Database
 
-Check Supabase tables:
+Check Supabase tables (via Studio at `http://127.0.0.1:54323` for local):
 
 - `conversation_events` - Should have your message
-- `people` - Should have "Rosa" and "grandmother"
+- `people` - Should have "Rosa"
 - `places` - Should have "America" and "Poland"
-- `events` - Should have immigration event
-- `questions` - Should have follow-up questions
+- `timeline_events` - Should have immigration event
+- `claims` - Should have claims with provenance
 
 ### Run Summary
 
@@ -174,33 +152,31 @@ Check Supabase tables:
 npx tsx scripts/summary.ts
 ```
 
-This shows everything captured so far.
-
 ---
 
 ## Common Commands
 
 ```bash
-# Start the gateway
-nx serve chatbots
+# Start the chatbot
+nx dev chatbots
 
 # Build everything
 nx build chatbots
 
-# Run summary
+# Run summary for a family
 npx tsx scripts/summary.ts
 
-# Test Scribe extraction
-npx tsx scripts/test-scribe.ts
+# Simulate test messages (without a real Telegram group)
+npx tsx scripts/simulate-messages.ts                    # list scenarios
+npx tsx scripts/simulate-messages.ts trip-story --reset  # run scenario
 
-# Send a question manually
-npx tsx scripts/test-send-question.ts
-
-# Check answer detection status
-npx tsx scripts/test-answer-detection.ts
-
-# Debug Facilitator
+# Debug tools
 npx tsx scripts/debug-facilitator.ts
+npx tsx scripts/show-queue.ts
+npx tsx scripts/dump-db.ts <family-id>
+
+# Run tests
+bun check:all
 ```
 
 ---
@@ -210,34 +186,27 @@ npx tsx scripts/debug-facilitator.ts
 ### Bot not receiving messages
 
 1. Check bot is added to group
-2. Check bot has message permission (BotFather settings)
-3. Verify token in `.env`
-4. Check logs: `nx serve chatbots`
+2. Check Privacy Mode is **disabled** (BotFather → Bot Settings → Group Privacy → Turn off)
+3. Verify `TELEGRAM_BOT_TOKEN` in `.env`
+4. Check logs: `nx dev chatbots`
 
 ### Database connection failed
 
-1. Verify SUPABASE_URL format: `https://xxx.supabase.co`
-2. Check service role key (not anon key) for writes
-3. Verify project is running in Supabase dashboard
+1. Verify Supabase is running: `supabase status`
+2. Check `SUPABASE_URL` format
+3. Check service role key (not anon key) for writes
 
 ### Claude API errors
 
-1. Verify ANTHROPIC_API_KEY
+1. Verify `ANTHROPIC_API_KEY`
 2. Check API credits at console.anthropic.com
 3. Check rate limits
 
-### Questions not being asked
-
-1. Check TELEGRAM_BOT_TOKEN_FACILITATOR is set
-2. Run `npx tsx scripts/debug-facilitator.ts`
-3. Check rate limiting (5 min default between questions)
-4. Verify questions exist: `SELECT * FROM questions`
-
 ### No entities extracted
 
-1. Check ANTHROPIC_API_KEY is valid
+1. Check `ANTHROPIC_API_KEY` is valid
 2. Check logs for Scribe errors
-3. Run `npx tsx scripts/test-scribe.ts` to test extraction
+3. Test extraction with simulation: `npx tsx scripts/simulate-messages.ts ralphy-shoes --reset`
 
 ---
 
@@ -245,26 +214,37 @@ npx tsx scripts/debug-facilitator.ts
 
 ```
 apps/
-  chatbots/     # Main application entry point
+  chatbots/               # Main application entry point
+  studio/                 # Web UI (SolidJS)
+  api/                    # REST API (Elysia)
+  db/                     # Database migrations
 
 libs/
   agents/
-    scribe/                 # Claude-powered extraction
-    registrar/              # Database persistence
-    facilitator/            # Question asking
-  database/                 # Supabase repositories
-  queue/                    # Message processing
-  telegram/                 # Bot management
+    scribe/               # Entity/claim extraction (Sonnet)
+    registrar/            # Database persistence (no LLM)
+    facilitator/          # Question asking & response formatting
+    historian/            # Question answering from database
+    intern/               # Message filtering & routing (Haiku)
+    curator/              # Image analysis
+    admin/                # Celebrations, mediation, coaching
+  ai-provider/            # Multi-provider AI abstraction
+  database/               # Supabase client + repositories
+  queue/                  # Message processing queue
+  telegram/               # Telegram bot management
+  ingester/               # Message ingestion
+  api-client/             # Shared API client
+  auth/                   # Authentication (JWT, access passes)
+  prompts/                # Agent prompt templates
   shared/
-    types/                  # TypeScript types
-    utils/                  # Shared utilities
+    types/                # TypeScript types
+    utils/                # Shared utilities
 
 scripts/
-  summary.ts                # Show family knowledge
-  test-scribe.ts            # Test extraction
-  test-facilitator.ts       # Test question asking
-  test-send-question.ts     # Send real question
-  debug-facilitator.ts      # Debug issues
+  simulate-messages.ts    # Test scenarios without Telegram
+  summary.ts              # Show family knowledge
+  dump-db.ts              # Export family data as JSON
+  debug-facilitator.ts    # Debug facilitator decisions
 ```
 
 ---
@@ -274,17 +254,14 @@ scripts/
 Once basic flow is working:
 
 1. **Send family messages** - The more context, the better extraction
-2. **Answer questions** - Reply to Facilitator questions to mark them answered
-3. **Check summary** - Run `npx tsx scripts/summary.ts` periodically
-4. **Adjust rate limiting** - Edit `minMinutesBetweenQuestions` in main.ts
-
-See [IMPLEMENTATION.md](IMPLEMENTATION.md) for full feature roadmap.
+2. **Check summary** - Run `npx tsx scripts/summary.ts` periodically
+3. **Try simulation** - Run `npx tsx scripts/simulate-messages.ts family-history --reset --dump` for a rich test scenario
 
 ---
 
 ## Getting Help
 
-1. Check logs: `nx serve chatbots`
-2. Check event_log table in Supabase
+1. Check logs: `nx dev chatbots`
+2. Check `event_log` table in Supabase
 3. Run debug scripts in `scripts/`
 4. Review [ARCHITECTURE.md](ARCHITECTURE.md) for system design

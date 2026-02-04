@@ -1,16 +1,15 @@
-# Nx Monorepo Structure for Sobremesa
+# Nx Monorepo Structure
 
-Complete directory structure for Sobremesa in an Nx workspace.
+Sobremesa's actual workspace layout and Nx configuration.
 
-## Recommended Nx Monorepo Structure
+---
+
+## Workspace Structure
 
 ```
-sobremesa-workspace/
-├── .claudeproject                    ← Root level (Claude Code reads this)
-│
+sobremesa/
 ├── .claude/                          ← AI assistant context
-│   ├── NX.md                         ← Nx MCP instructions
-│   ├── CONFIGURATION.md              ← Config notes
+│   ├── CONFIGURATION.md
 │   └── settings.local.json
 │
 ├── docs/                             ← Human documentation
@@ -18,255 +17,143 @@ sobremesa-workspace/
 │   ├── AGENTS.md
 │   ├── WARMTH.md
 │   ├── CULTURE.md
-│   ├── IMPLEMENTATION.md
 │   └── adr/                          ← Architecture Decision Records
 │
-├── prompts/                          ← System prompts for agents
-│   ├── facilitator.md
-│   ├── admin.md
-│   ├── scribe.md
-│   └── curator.md
-│
 ├── apps/                             ← Nx applications
-│   ├── chatbots/         ← Telegram ingestion/orchestration app
+│   ├── chatbots/                     ← Main entry point (Telegram bot + queue worker)
 │   │   ├── src/
-│   │   │   ├── main.ts              ← Entry point
-│   │   │   ├── app/
-│   │   │   │   ├── bot.ts           ← Chat provider setup
-│   │   │   │   ├── handlers/        ← Message handlers
-│   │   │   │   └── workflows/       ← Orchestration
-│   │   │   └── config/
-│   │   │       └── default-config.json
-│   │   ├── project.json
-│   │   └── tsconfig.json
+│   │   │   └── main.ts              ← Entry point
+│   │   └── project.json
 │   │
-│   ├── api/                          ← Optional REST API (future)
+│   ├── api/                          ← REST API (Elysia)
 │   │   └── ...
 │   │
-│   └── dashboard/                    ← Optional web dashboard (future)
-│       └── ...
+│   ├── studio/                       ← Web UI (SolidJS + Vite)
+│   │   └── ...
+│   │
+│   └── db/                           ← Database
+│       └── supabase/
+│           └── migrations/
+│               └── 20260112074715_init_schema.sql
 │
 ├── libs/                             ← Nx libraries (reusable)
 │   │
 │   ├── agents/                       ← All AI agents
-│   │   ├── facilitator/
-│   │   │   ├── src/
-│   │   │   │   ├── index.ts
-│   │   │   │   ├── facilitator.ts   ← Main logic
-│   │   │   │   ├── decision-engine.ts
-│   │   │   │   └── warmth-validator.ts
-│   │   │   ├── project.json
-│   │   │   └── README.md
-│   │   │
-│   │   ├── admin/
-│   │   │   ├── src/
-│   │   │   │   ├── index.ts
-│   │   │   │   ├── admin.ts
-│   │   │   │   ├── celebration.ts
-│   │   │   │   ├── mediation.ts
-│   │   │   │   └── coaching/
-│   │   │   │       ├── coaching-module.ts
-│   │   │   │       └── performance-tracker.ts
-│   │   │   └── project.json
-│   │   │
-│   │   ├── scribe/
-│   │   │   ├── src/
-│   │   │   │   ├── index.ts
-│   │   │   │   ├── scribe.ts
-│   │   │   │   ├── extractors/
-│   │   │   │   │   ├── entity-extractor.ts
-│   │   │   │   │   ├── claim-creator.ts
-│   │   │   │   │   └── conflict-detector.ts
-│   │   │   │   └── translation/
-│   │   │   │       └── translator.ts
-│   │   │   └── project.json
-│   │   │
-│   │   ├── curator/
-│   │   │   ├── src/
-│   │   │   │   ├── index.ts
-│   │   │   │   ├── curator.ts
-│   │   │   │   ├── image-analyzer.ts
-│   │   │   │   └── ocr-extractor.ts
-│   │   │   └── project.json
-│   │   │
-│   │   ├── intern/                   ← Lightweight Haiku-based preprocessing
-│   │   │   ├── src/
-│   │   │   │   ├── index.ts
-│   │   │   │   └── intern.ts        ← Filter + image linking
-│   │   │   └── project.json
-│   │   │
-│   │   └── registrar/               ← Single writer (pure TypeScript)
-│   │       ├── src/
-│   │       │   ├── index.ts
-│   │       │   └── registrar.ts
-│   │       └── project.json
+│   │   ├── scribe/                   ← Entity/claim extraction (Sonnet)
+│   │   ├── registrar/                ← Database persistence (no LLM)
+│   │   ├── facilitator/              ← Question asking + response formatting
+│   │   ├── historian/                ← Question answering from database
+│   │   ├── intern/                   ← Message filtering & routing (Haiku)
+│   │   ├── curator/                  ← Image analysis
+│   │   └── admin/                    ← Celebrations, mediation, coaching
 │   │
-│   ├── database/                     ← Database layer
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── client.ts            ← Supabase client
-│   │   │   ├── repositories/        ← Data access
-│   │   │   │   ├── message-repository.ts
-│   │   │   │   ├── people-repository.ts
-│   │   │   │   ├── claim-repository.ts
-│   │   │   │   ├── question-repository.ts
-│   │   │   │   └── event-log-repository.ts
-│   │   │   ├── models/              ← TypeScript types
-│   │   │   │   ├── message.ts
-│   │   │   │   ├── person.ts
-│   │   │   │   ├── claim.ts
-│   │   │   │   └── domain-model.ts
-│   │   │   └── migrations/
-│   │   │       └── schema.sql       ← Copy from .claude/
+│   ├── ai-provider/                  ← Multi-provider AI abstraction
+│   │   ├── src/lib/
+│   │   │   ├── provider.interface.ts
+│   │   │   ├── types.ts
+│   │   │   ├── factory.ts
+│   │   │   ├── config.ts
+│   │   │   └── providers/
+│   │   │       ├── anthropic.ts
+│   │   │       ├── openai-compatible.ts
+│   │   │       └── mock.ts
 │   │   └── project.json
 │   │
-│   ├── data-writer/                  ← Single writer component
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── data-writer.ts
-│   │   │   ├── schema-mapper.ts     ← Domain model → DB
-│   │   │   ├── deduplicator.ts      ← Fuzzy matching
-│   │   │   └── web3/
-│   │   │       └── solana-writer.ts ← Optional
-│   │   └── project.json
-│   │
-│   ├── queue/                        ← Message queue
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── queue.ts             ← Ordered queue
-│   │   │   ├── processor.ts         ← Sequential processing
-│   │   │   └── retry-handler.ts
-│   │   └── project.json
-│   │
-│   ├── config/                       ← Configuration management
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── config-loader.ts
-│   │   │   ├── config-validator.ts
-│   │   │   ├── types/
-│   │   │   │   └── sobremesa-config.ts
-│   │   │   └── defaults/
-│   │   │       ├── nicaraguan-family.json
-│   │   │       ├── american-family.json
-│   │   │       └── japanese-family.json
-│   │   └── project.json
-│   │
-│   ├── prompts/                      ← Prompt management
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── prompt-loader.ts     ← Load from /prompts
-│   │   │   └── template-engine.ts   ← Replace placeholders
-│   │   └── project.json
-│   │
-│   ├── claude-api/                   ← Claude API wrapper
-│   │   ├── src/
-│   │   │   ├── index.ts
+│   ├── database/                     ← Supabase client + repositories
+│   │   ├── src/lib/
 │   │   │   ├── client.ts
-│   │   │   └── types.ts
+│   │   │   ├── base-repository.ts
+│   │   │   └── repositories/        ← Per-table data access
 │   │   └── project.json
 │   │
-│   ├── chat provider/                     ← Chat Provider utilities
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── client.ts
-│   │   │   ├── message-formatter.ts
-│   │   │   └── file-handler.ts
+│   ├── queue/                        ← Message processing queue
+│   │   └── project.json
+│   │
+│   ├── telegram/                     ← Telegram bot management (Telegraf)
+│   │   └── project.json
+│   │
+│   ├── ingester/                     ← Message ingestion (provider-agnostic)
+│   │   └── project.json
+│   │
+│   ├── api-client/                   ← Shared API client
+│   │   └── project.json
+│   │
+│   ├── auth/                         ← Authentication (JWT, access passes)
+│   │   └── project.json
+│   │
+│   ├── prompts/                      ← Agent prompt templates
+│   │   ├── src/agents/
+│   │   │   ├── scribe.txt
+│   │   │   ├── facilitator.txt
+│   │   │   ├── facilitator-response.txt
+│   │   │   ├── historian.txt
+│   │   │   ├── admin.txt
+│   │   │   ├── curator.txt
+│   │   │   ├── intern-filter.txt
+│   │   │   └── intern-image-link.txt
 │   │   └── project.json
 │   │
 │   └── shared/                       ← Shared utilities
 │       ├── types/                    ← Shared TypeScript types
-│       │   ├── src/
-│       │   │   ├── index.ts
-│       │   │   ├── bot-role.ts
+│       │   ├── src/lib/
+│       │   │   ├── domain-model.ts
 │       │   │   ├── confidence.ts
-│       │   │   └── languages.ts
+│       │   │   ├── languages.ts
+│       │   │   ├── relationships.ts
+│       │   │   └── conversation.ts
 │       │   └── project.json
 │       │
 │       └── utils/                    ← Shared utilities
-│           ├── src/
-│           │   ├── index.ts
-│           │   ├── logger.ts
-│           │   ├── date-utils.ts
-│           │   └── text-utils.ts
+│           ├── src/lib/
+│           │   └── logger.ts
 │           └── project.json
 │
-├── tools/                            ← Development tools
-│   ├── scripts/
-│   │   ├── setup-database.ts        ← Run schema.sql
-│   │   ├── seed-data.ts             ← Test data
-│   │   └── migrate.ts
-│   └── generators/                   ← Nx generators (optional)
+├── scripts/                          ← Development & testing scripts
+│   ├── simulate-messages.ts          ← Feed test scenarios into pipeline
+│   ├── summary.ts                    ← Show family knowledge
+│   ├── dump-db.ts                    ← Export family data as JSON
+│   ├── reset-db.ts                   ← Reset database
+│   ├── debug-facilitator.ts          ← Debug facilitator decisions
+│   ├── show-queue.ts                 ← Show queue status
+│   └── tests/                        ← Agent-specific test scripts
 │
-├── docs/                             ← Additional documentation
-│   └── api/                          ← API docs (if needed)
+├── __plans/                          ← Implementation plans
 │
-├── package.json                      ← Root package.json
+├── package.json                      ← Root package.json (bun workspaces)
 ├── nx.json                           ← Nx configuration
 ├── tsconfig.base.json                ← Base TypeScript config
 ├── .env.example                      ← Environment variables template
-├── .gitignore
-└── README.md
+└── .gitignore
 ```
-
----
-
-## File Placement Summary
-
-### Root Level Files (from your conversation)
-
-**Placed at root:**
-
-- `.claudeproject` → `/sobremesa-workspace/.claudeproject`
-
-**Placed in `.claude/` (AI assistant context):**
-
-- `NX.md` → Nx MCP server instructions
-- `CONFIGURATION.md` → Configuration notes
-
-**Placed in `docs/` (human documentation):**
-
-- `ARCHITECTURE.md`, `AGENTS.md`, `WARMTH.md`, `CULTURE.md`, `IMPLEMENTATION.md`
-- `adr/` → Architecture Decision Records
-
-**Database schema:**
-
-- `apps/db/supabase/migrations/` → Source of truth for schema
-
-**Placed in `prompts/`:**
-
-- `facilitator.txt` → `/sobremesa/prompts/facilitator.md`
-- `admin.txt` → `/sobremesa/prompts/admin.md`
-- `scribe.txt` → `/sobremesa/prompts/scribe.md`
-- `curator.txt` → `/sobremesa/prompts/curator.md`
 
 ---
 
 ## Nx Library Dependencies
 
-Visual dependency graph:
-
 ```
 apps/chatbots
     ↓
-    ├─→ libs/agents/facilitator
-    ├─→ libs/agents/admin
-    ├─→ libs/agents/scribe
-    ├─→ libs/agents/curator
-    ├─→ libs/agents/intern
-    ├─→ libs/agents/registrar
+    ├─→ libs/agents/* (all 7 agents)
     ├─→ libs/queue
     ├─→ libs/database
     ├─→ libs/telegram
-    └─→ libs/config
+    ├─→ libs/ingester
+    └─→ libs/ai-provider
 
-libs/agents/intern (uses Haiku)
+apps/api
     ↓
-    ├─→ libs/database (conversation_events, images)
+    ├─→ libs/database
+    ├─→ libs/auth
+    ├─→ libs/api-client
     └─→ libs/shared/types
 
-libs/agents/* (other agents use Sonnet)
+apps/studio
     ↓
-    ├─→ libs/claude-api
+    └─→ libs/api-client
+
+libs/agents/scribe
+    ↓
+    ├─→ libs/ai-provider
     ├─→ libs/prompts
     ├─→ libs/database
     └─→ libs/shared/types
@@ -276,200 +163,89 @@ libs/agents/registrar (no LLM)
     ├─→ libs/database
     └─→ libs/shared/types
 
-libs/queue
+libs/agents/intern
     ↓
-    └─→ libs/database
+    ├─→ libs/database
+    └─→ libs/shared/types
 
 libs/database
     ↓
     └─→ libs/shared/types
 
-libs/prompts
+libs/queue
     ↓
-    ├─→ libs/config
-    └─→ libs/shared/types
+    └─→ libs/database
 ```
 
 ---
 
 ## Key Nx Commands
 
-### Generate new library:
-
 ```bash
-nx generate @nx/node:library agents/facilitator --directory=libs/agents
-```
+# Development
+nx dev chatbots                   # Start chatbot with watch mode
+nx dev api                        # Start API server
+nx dev studio                     # Start Studio web app
 
-### Generate new app:
+# Building
+nx build chatbots                 # Build chatbot
+nx build api                      # Build API
 
-```bash
-nx generate @nx/node:application chat provider-bot --directory=apps
-```
+# Testing
+nx test agents-scribe             # Test single library
+bun test:all                      # Run all tests
+bun types:all                     # Type-check all projects
+bun check:all                     # Lint + types + test
 
-### Build specific library:
-
-```bash
-nx build agents-facilitator
-```
-
-### Build entire project:
-
-```bash
-nx build chat provider-bot
-```
-
-### Run tests:
-
-```bash
-nx test agents-facilitator
-nx test --all
-```
-
-### Dependency graph visualization:
-
-```bash
-nx graph
+# Dependency graph
+nx graph                          # Visualize dependencies
 ```
 
 ---
 
-## Benefits of This Structure
+## Workspace Configuration
 
-### 1. Clear Separation
+**Package manager:** bun (workspaces defined in `package.json`)
 
-- **Apps**: Runnable applications (Chat Provider bot, API, dashboard)
-- **Libs**: Reusable components (agents, database, queue)
-- **Docs**: All documentation in one place
-- **Prompts**: AI prompts separate and versioned
+**Nx version:** 22.x
 
-### 2. Nx Advantages
+**Nx plugins:**
 
-- **Incremental builds**: Only rebuild what changed
-- **Dependency graph**: Visual understanding
-- **Code sharing**: DRY across agents
-- **Testing**: Test individual components
-- **Monorepo tooling**: Unified commands
+- `@nx/js` - TypeScript libraries
+- `@nx/node` - Node.js applications
+- `@nx/vite` - Build tooling (Studio)
+- `@nx/esbuild` - Build tooling (chatbots, API)
+- `@nx/eslint` - Linting
+- `@nx/vitest` - Testing
 
-### 3. Scalability
-
-- Add new agent easily (`nx g library agents/new-agent`)
-- Add new app (dashboard, API) without affecting bot
-- Shared types prevent drift
-- Each library independently testable
-
-### 4. Team Collaboration
-
-- Clear ownership (each lib has owner)
-- No merge conflicts (libs are separated)
-- Can work on agents independently
-- Shared utilities prevent duplication
+**TypeScript:** 5.9.x with strict mode, path mapping via `tsconfig.base.json`
 
 ---
 
 ## Environment Variables
 
-Create `.env` at workspace root:
+See `.env.example` for the canonical list. Key variables:
 
 ```bash
-# Chat Provider
-CHAT PROVIDER_BOT_TOKEN=your_token_here
-CHAT PROVIDER_ADMIN_USER_ID=your_chat provider_id
+# Required
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+ANTHROPIC_API_KEY=sk-ant-...
+TELEGRAM_BOT_TOKEN=123:ABC
+ACCESS_PASS_SECRET=...
+STUDIO_URL=https://sobremesa.x:3000
 
-# Anthropic
-ANTHROPIC_API_KEY=your_anthropic_key
-
-# Supabase
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
-
-# Queue (optional, for Redis)
-REDIS_URL=redis://localhost:6379
-
-# Web3 (optional)
-SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
-SOLANA_WALLET_PRIVATE_KEY=your_private_key
-
-# Environment
-NODE_ENV=development
-LOG_LEVEL=debug
+# Optional (multi-provider AI)
+AI_PROVIDER_DEFAULT=anthropic
+LOCAL_LLM_BASE_URL=http://um890.local:11434/v1
+LOCAL_LLM_MODEL=llama3.2:latest
 ```
 
 ---
 
-## Getting Started
+## See Also
 
-### 1. Create Nx workspace:
-
-```bash
-npx create-nx-workspace@latest sobremesa-workspace \
-  --preset=ts \
-  --packageManager=npm
-```
-
-### 2. Copy documentation files:
-
-```bash
-# Copy all files from outputs to workspace root
-cp -r /path/to/.claudeproject sobremesa-workspace/
-cp -r /path/to/.claude sobremesa-workspace/
-cp -r /path/to/prompts sobremesa-workspace/
-```
-
-### 3. Generate initial libraries:
-
-```bash
-cd sobremesa-workspace
-
-# Generate agent libraries
-nx g @nx/node:library agents/facilitator --directory=libs
-nx g @nx/node:library agents/admin --directory=libs
-nx g @nx/node:library agents/scribe --directory=libs
-nx g @nx/node:library agents/curator --directory=libs
-nx g @nx/node:library agents/intern --directory=libs
-nx g @nx/node:library agents/registrar --directory=libs
-
-# Generate infrastructure libraries
-nx g @nx/node:library database --directory=libs
-nx g @nx/node:library queue --directory=libs
-nx g @nx/node:library data-writer --directory=libs
-nx g @nx/node:library config --directory=libs
-nx g @nx/node:library prompts --directory=libs
-
-# Generate utility libraries
-nx g @nx/node:library claude-api --directory=libs
-nx g @nx/node:library chat provider --directory=libs
-nx g @nx/node:library shared/types --directory=libs
-nx g @nx/node:library shared/utils --directory=libs
-
-# Generate main app
-nx g @nx/node:application chat provider-bot --directory=apps
-```
-
-### 4. Install dependencies:
-
-```bash
-npm install @anthropic-ai/sdk @supabase/supabase-js telegraf ioredis
-npm install -D @types/node
-```
-
-### 5. Set up database:
-
-```bash
-# Run schema.sql on Supabase
-# Copy apps/db/supabase/migrations/20260112074715_init_schema.sql to libs/database/src/migrations/
-```
-
----
-
-## Summary
-
-This Nx monorepo structure gives you:
-
-✅ **Clear organization** - Documentation, prompts, code all in their place  
-✅ **Nx power** - Incremental builds, dependency graphs, shared code  
-✅ **Scalability** - Add agents, apps, features independently  
-✅ **Testability** - Each library tested in isolation  
-✅ **Reusability** - Libraries used across multiple apps  
-✅ **Team-ready** - Clear ownership, no conflicts
-
-All your documentation and prompts are now positioned for Claude Code to start building!
+- [QUICKSTART.md](QUICKSTART.md) - Getting started guide
+- [TECH-STACK.md](TECH-STACK.md) - Technology stack details
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture

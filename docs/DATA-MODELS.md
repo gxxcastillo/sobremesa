@@ -42,16 +42,14 @@ Chat Messages
 ┌───────────────────────────────────────┐
 │ Scribe (LLM Agent)                    │
 ├───────────────────────────────────────┤
-│ 1. Extract persons mentioned          │
-│ 2. Find/create Person records         │
-│    - Fuzzy match against existing     │
-│    - Create placeholders if needed    │
+│ 1. Extract persons, places, events    │
+│ 2. Extract relationships              │
+│ 3. Extract claims with provenance     │
+│ 4. Resolve pronouns and ambiguity     │
+│ 5. Detect story fragments             │
 │                                       │
-│ 3. Extract relationships              │
-│    - Parent/spouse (store directly)   │
-│    - Extended (derive from graph)     │
-│                                       │
-│ 4. Create DomainModel (JSON)          │
+│ Output: ScribeDomainModel (JSON)      │
+│ (Scribe does NOT write to database)   │
 └───────────────────────────────────────┘
     ↓
 ┌───────────────────────────────────────┐
@@ -74,22 +72,22 @@ Database (Supabase PostgreSQL)
 
 ## Data Flow Example
 
-### Family Event: "Gabriel's cousin Rosa arrived from Argentina"
+### Family Event: "Donald's cousin Rosa arrived from Argentina"
 
 **Step 1: Chat Message → Identity**
 
 ```
-Message: "Gabriel's cousin Rosa arrived from Argentina"
+Message: "Donald's cousin Rosa arrived from Argentina"
 Provider: Telegram (ID: 123456789)
-From: @gabriel_dev (first_name: Gabriel)
+From: @donald_dev (first_name: Donald)
 
 → MessageIngester.findOrCreate()
 → Identity created/updated:
    {
      provider: 'telegram',
      provider_user_id: '123456789',
-     display_name: 'Gabriel',
-     provider_username: '@gabriel_dev',
+     display_name: 'Donald',
+     provider_username: '@donald_dev',
      user_id: NULL  // Not linked to web user yet
    }
 ```
@@ -97,10 +95,10 @@ From: @gabriel_dev (first_name: Gabriel)
 **Step 2: Scribe Extraction → Persons & Relationships**
 
 ```
-Scribe processes: "Gabriel's cousin Rosa arrived"
+Scribe processes: "Donald's cousin Rosa arrived"
 
 → Extract persons:
-  - "Gabriel" → PersonRepository.findByFuzzyMatch()
+  - "Donald" → PersonRepository.findByFuzzyMatch()
     → Found in system
 
   - "Rosa" → New person
@@ -112,19 +110,19 @@ Scribe processes: "Gabriel's cousin Rosa arrived"
       })
 
 → Extract relationship:
-  - Gabriel + Rosa are cousins
-  - Scribe records: (Gabriel, Rosa, 'cousin')
+  - Donald + Rosa are cousins
+  - Scribe records: (Donald, Rosa, 'cousin')
     → But 'cousin' is DERIVED, not stored
     → Registrar derives from structural rels
 
 → DomainModel output:
   {
     people: [
-      {name: 'Gabriel', aliases: [], ...},
+      {name: 'Donald', aliases: [], ...},
       {name: 'Rosa', aliases: [], ...}
     ],
     relationships: [
-      {personAName: 'Gabriel', personBName: 'Rosa', 'cousin', 'functional'}
+      {personAName: 'Donald', personBName: 'Rosa', 'cousin', 'functional'}
     ]
   }
 ```
@@ -140,33 +138,33 @@ Registrar receives DomainModel
 
 → For each relationship:
   - RelationshipRepository.findOrCreate()
-    - Gabriel ↔ Rosa don't have stored relationship
+    - Donald ↔ Rosa don't have stored relationship
     - Need to find structural path (via parents/spouses)
     - If no path: create placeholder for missing people
     - OR record narrative relationship (functional category)
 
 → Create relationships:
   {
-    personAId: gabriel_id,
+    personAId: donald_id,
     personBId: rosa_id,
     relationshipType: 'cousin',      ← narrative
     category: 'functional',
     status: 'active',
     sourceEventId: message_id,
-    claimedBy: 'Gabriel'
+    claimedBy: 'Donald'
   }
 
 → Link identity to person via family_access:
-  - family_access.person_id = gabriel_id
-  - Now facilitator knows this Telegram user is Gabriel in this family
+  - family_access.person_id = donald_id
+  - Now facilitator knows this Telegram user is Donald in this family
 ```
 
 **Result:**
 
-- ✅ Gabriel's Telegram identity linked to family tree
+- ✅ Donald's Telegram identity linked to family tree
 - ✅ Rosa added to family tree
 - ✅ Relationship recorded with full provenance
-- ✅ Facilitator can address Gabriel by name
+- ✅ Facilitator can address Donald by name
 - ✅ Can query Rosa's relationships, ask her follow-up questions
 
 ---
@@ -190,13 +188,13 @@ normalizeRelationship(personB, personA, 'child')
 Relationships can be viewed from either person's perspective:
 
 ```typescript
-// Stored: (Gabriel, Rosa, 'parent')
+// Stored: (Donald, Rosa, 'parent')
 
-// From Gabriel's perspective:
+// From Donald's perspective:
 {toPersonId: rosa_id, relationshipType: 'parent'}
 
 // From Rosa's perspective:
-{toPersonId: gabriel_id, relationshipType: 'child'}
+{toPersonId: donald_id, relationshipType: 'child'}
 
 // Computed by getRelationshipPerspective()
 ```
@@ -324,36 +322,36 @@ WHERE i.provider = 'telegram'
 ORDER BY i.display_name;
 ```
 
-### "What's Gabriel's relationship to Rosa?"
+### "What's Donald's relationship to Rosa?"
 
 ```sql
 SELECT *
 FROM relationships
 WHERE family_id = ?
-  AND ((person_a_id = gabriel_id AND person_b_id = rosa_id)
-    OR (person_a_id = rosa_id AND person_b_id = gabriel_id))
+  AND ((person_a_id = donald_id AND person_b_id = rosa_id)
+    OR (person_a_id = rosa_id AND person_b_id = donald_id))
 ```
 
-### "Who are Gabriel's parents?"
+### "Who are Donald's parents?"
 
 ```sql
 SELECT p.*
 FROM relationships r
 JOIN people p ON r.person_a_id = p.id
 WHERE r.family_id = ?
-  AND r.person_b_id = gabriel_id
+  AND r.person_b_id = donald_id
   AND r.relationship_type = 'parent'
   AND r.status = 'active'
 ```
 
-### "Who are Gabriel's children?"
+### "Who are Donald's children?"
 
 ```sql
 SELECT p.*
 FROM relationships r
 JOIN people p ON r.person_b_id = p.id
 WHERE r.family_id = ?
-  AND r.person_a_id = gabriel_id
+  AND r.person_a_id = donald_id
   AND r.relationship_type = 'parent'
   AND r.status = 'active'
 ```
@@ -419,7 +417,7 @@ INSERT INTO event_log (
   ?,
   'event_ingested',
   'user_action',
-  'Gabriel',
+  'Donald',
   {'messageType': 'text', 'textLength': 250},
   conversation_event_id
 );
@@ -537,5 +535,5 @@ See [ADR-027](adr/027-hybrid-claim-strength-scoring.md) for scoring approach and
 
 ---
 
-**Last Updated**: 2026-01-12
-**Status**: Relationships, Identities, and Placeholder systems complete
+**Last Updated**: 2026-02-04
+**Status**: Relationships, Identities, Placeholder, Claim-Entity Linking, and Entity Merge systems complete

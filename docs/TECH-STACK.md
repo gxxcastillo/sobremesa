@@ -1,6 +1,6 @@
 # Technology Stack
 
-Complete technical specification for Sobremesa implementation.
+Technical specification for Sobremesa's implementation.
 
 ---
 
@@ -8,82 +8,71 @@ Complete technical specification for Sobremesa implementation.
 
 ### Language & Runtime
 
-- **TypeScript** 5.x (latest stable)
+- **TypeScript** 5.9.x (strict mode)
 - **Node.js** 22 LTS
 - **Package Manager:** bun
 
 ### Monorepo Framework
 
-- **Nx** 22+ (latest stable)
+- **Nx** 22.x
 - **Nx Plugins:**
   - `@nx/js` - TypeScript libraries
   - `@nx/node` - Node.js applications
-  - `@nx/vite` - Build tooling
+  - `@nx/vite` - Build tooling (Studio)
+  - `@nx/esbuild` - Build tooling (chatbots, API)
   - `@nx/eslint` - Linting
+  - `@nx/vitest` - Testing
 
 ### Database
 
-- **Supabase** (PostgreSQL 14+)
+- **Supabase** (PostgreSQL)
   - Local development: Supabase CLI + Docker
   - Production: Supabase Cloud
 - **Extensions Required:**
   - `pgcrypto` - UUID generation
-  - `pg_trgm` (optional) - Fuzzy text matching for deduplication
+  - `pg_trgm` - Fuzzy text matching for deduplication
 
 ### AI Integration
 
-- **Anthropic Claude API**
-  - Primary model: Claude 3.5 Sonnet (or latest)
-  - Vision model: Claude 3.5 Sonnet (for Curator)
+- **AI Provider Abstraction** (`libs/ai-provider`) - Pluggable provider system
+  - `anthropic` - Anthropic Claude (production default)
+  - `openai-compatible` - Ollama, LM Studio, etc. (local development)
+  - `mock` - Mock provider for testing
+- **Primary model:** Claude Sonnet 4 (Scribe, Historian, Facilitator, Admin, Curator)
+- **Lightweight model:** Claude Haiku (Intern)
 - **SDK:** `@anthropic-ai/sdk`
 
 ### Message Queue
 
-**For POC/MVP:**
-
-- In-memory queue (simple array-based)
-- Persisted to database (`message_queue` table)
-
-**For Production:**
-
-- **Redis** (recommended)
-- Alternative: **BullMQ** (Redis-based job queue)
+- Database-backed queue (`processing_queue` table)
+- Sequential per-family processing with lock/release
+- Retry with exponential backoff, dead letter after 3 failures
 
 ### Chat Provider Integration
 
-- **Pluggable chat providers** - Telegram, WhatsApp, SMS, etc.
-- **Provider-specific SDKs** as needed
-- Webhook or polling-based message ingestion
+- **Telegram** via `telegraf` SDK
+- Single bot handles ingestion, facilitation, and responses
+- Webhook-based in production, polling in development
 
-### Translation (Optional)
+### Web UI
 
-- **DeepL API** (higher quality than Claude for pure translation)
-- Alternative: Claude API (multi-modal, can translate + preserve cultural terms)
-
-### Blockchain (Optional)
-
-- **Solana** @solana/kit (https://www.solanakit.com/)
-- Only if `config.web3Enabled = true`
-- Non-blocking async writes
+- **SolidJS** - Reactive web framework (Studio app)
+- **Vite** - Build tool and dev server
 
 ---
 
 ## Development Tools
 
-### Bundling
-
-- **Vite** - Fast build tool and development server
-
 ### Testing
 
 - **Vitest** - Unit & integration tests
-- **Workspace Config:** `vitest.workspace.ts` (already present)
-- Coverage target: 70%+ for core libraries
+- **Workspace Config:** `vitest.workspace.ts`
+- **Simulation:** `scripts/simulate-messages.ts` for end-to-end testing
 
 ### Linting & Formatting
 
-- **ESLint** 9+ (flat config: `eslint.config.mjs`)
-- **Prettier** (optional, personal preference)
+- **ESLint** 8.x (flat config: `eslint.config.mjs`)
+- **Prettier** for formatting
 
 ### Type Checking
 
@@ -91,14 +80,10 @@ Complete technical specification for Sobremesa implementation.
 - Strict mode enabled across all projects
 - Path mapping via `tsconfig.base.json`
 
-### Git Hooks (Optional)
+### Git Hooks
 
 - **Husky** - Pre-commit hooks
 - **lint-staged** - Run linters on staged files
-
-### UI
-
-- **SolidJs** (for building reactive user interfaces)
 
 ---
 
@@ -107,62 +92,77 @@ Complete technical specification for Sobremesa implementation.
 ```
 sobremesa/
 ├── apps/
-│   └── chatbots/  ← Telegram ingestion/orchestration app
+│   ├── chatbots/             ← Telegram bot + queue worker
+│   ├── api/                  ← REST API (Elysia)
+│   ├── studio/               ← Web UI (SolidJS)
+│   └── db/                   ← Database migrations
 ├── libs/
-│   ├── agents/                ← Facilitator, Admin, Scribe, Curator
-│   │   ├── facilitator/
-│   │   ├── admin/
-│   │   ├── scribe/
-│   │   └── curator/
-│   ├── database/              ← Supabase client + repositories
-│   ├── queue/                 ← Message queue abstraction
-│   ├── domain/                ← Shared domain models & types
-│   ├── config/                ← Configuration loading & validation
-│   ├── translation/           ← Translation utilities
-│   ├── ui/                    ← User interface components
-│   ├── utils/                 ← Utility functions
-│   └── web3/                  ← Blockchain integration (optional)
-├── scripts/                   ← Automation scripts
-└── tools/                     ← Development tools
+│   ├── agents/               ← All 7 AI agents
+│   │   ├── scribe/           ← Entity/claim extraction
+│   │   ├── registrar/        ← Database persistence
+│   │   ├── facilitator/      ← Question asking
+│   │   ├── historian/        ← Question answering
+│   │   ├── intern/           ← Filtering & routing
+│   │   ├── curator/          ← Image analysis
+│   │   └── admin/            ← Celebrations, coaching
+│   ├── ai-provider/          ← Multi-provider AI abstraction
+│   ├── database/             ← Supabase client + repositories
+│   ├── queue/                ← Message processing queue
+│   ├── telegram/             ← Telegram bot management
+│   ├── ingester/             ← Message ingestion
+│   ├── api-client/           ← Shared API client
+│   ├── auth/                 ← Authentication (JWT, access passes)
+│   ├── prompts/              ← Agent prompt templates
+│   └── shared/
+│       ├── types/            ← Shared TypeScript types
+│       └── utils/            ← Shared utilities (logger, etc.)
+├── scripts/                  ← Development & testing scripts
+└── __plans/                  ← Implementation plans
 ```
+
+See [NX-MONOREPO-STRUCTURE.md](NX-MONOREPO-STRUCTURE.md) for detailed layout.
 
 ---
 
 ## Environment Variables
 
+See `.env.example` for the canonical list.
+
 **Required:**
 
 ```bash
 # Database
-SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key  # For backend only
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 # Claude API
 ANTHROPIC_API_KEY=sk-ant-...
 
-# Chat Provider
-CHAT_PROVIDER_TYPE=telegram  # or whatsapp, sms, etc.
-CHAT_PROVIDER_BOT_TOKEN=your-bot-token
+# Telegram
+TELEGRAM_BOT_TOKEN=123:ABC
 
-# Application
-NODE_ENV=development|production
-LOG_LEVEL=debug|info|warn|error
-FAMILY_ID=uuid-of-family  # For single-family deployments
+# Auth
+ACCESS_PASS_SECRET=your-secret-key
+
+# Studio
+STUDIO_URL=https://sobremesa.x:3000
 ```
 
 **Optional:**
 
 ```bash
-# Translation
-DEEPL_API_KEY=your-deepl-key
+# AI Provider overrides (per-agent)
+AI_PROVIDER_DEFAULT=anthropic
+AI_PROVIDER_SCRIBE=anthropic
+AI_PROVIDER_INTERN=local
 
-# Redis (if using)
-REDIS_URL=redis://localhost:6379
+# Local LLM (OpenAI-compatible)
+LOCAL_LLM_BASE_URL=http://um890.local:11434/v1
+LOCAL_LLM_MODEL=llama3.2:latest
 
-# Solana (if web3 enabled)
-SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
-SOLANA_PRIVATE_KEY=base58-encoded-key
+# Application
+LOG_LEVEL=debug
 ```
 
 ---
@@ -172,180 +172,77 @@ SOLANA_PRIVATE_KEY=base58-encoded-key
 ### Local Development
 
 ```bash
-# Install Supabase CLI
-npm install -g supabase
-
-# Initialize Supabase
-supabase init
-
 # Start local Supabase (PostgreSQL + Studio)
 supabase start
 
 # Apply schema
-supabase db reset --db-url postgresql://postgres:postgres@localhost:54322/postgres
-# OR
-psql -h localhost -p 54322 -U postgres -d postgres -f apps/db/supabase/migrations/20260112074715_init_schema.sql
+psql postgresql://postgres:postgres@127.0.0.1:54322/postgres \
+  -f apps/db/supabase/migrations/20260112074715_init_schema.sql
 ```
 
 ### Production
 
 1. Create Supabase project at https://supabase.com
-2. Run schema migration:
-   ```bash
-   supabase db push
-   ```
-3. Enable Row Level Security (RLS) policies (see DATA-ISOLATION.md)
+2. Apply schema migration via SQL Editor or `supabase db push`
+3. Enable Row Level Security (RLS) policies (see [DATA-ISOLATION.md](DATA-ISOLATION.md))
 
 ---
 
 ## API Integrations
 
-### Claude API Setup
+### AI Provider Setup
 
 ```typescript
-import Anthropic from '@anthropic-ai/sdk';
+import { loadAIConfig, createAIProviderFactory } from '@sobremesa/ai-provider';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Load config from environment (AI_PROVIDER_DEFAULT, per-agent overrides)
+const aiConfig = loadAIConfig();
+const providerFactory = createAIProviderFactory(aiConfig);
 
-// For Scribe, Facilitator, Admin
-const response = await anthropic.messages.create({
-  model: 'claude-3-5-sonnet-20241022',
-  max_tokens: 4000,
+// Get provider for a specific agent
+const scribeProvider = providerFactory.getProvider('scribe');
+const response = await scribeProvider.complete({
+  model: aiConfig.agents.scribe.model,
   messages: [{ role: 'user', content: prompt }],
-});
-
-// For Curator (vision)
-const visionResponse = await anthropic.messages.create({
-  model: 'claude-3-5-sonnet-20241022',
-  max_tokens: 2000,
-  messages: [
-    {
-      role: 'user',
-      content: [
-        {
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: 'image/jpeg',
-            data: base64Image,
-          },
-        },
-        { type: 'text', text: 'Analyze this family photo...' },
-      ],
-    },
-  ],
+  maxTokens: 4096,
 });
 ```
 
-### Chat Provider Bot Setup
-
-**Example (Telegram):**
+### Telegram Bot Setup
 
 ```typescript
-import TelegramBot from 'node-telegram-bot-api';
+import { BotManager } from '@sobremesa/telegram';
 
-const bot = new TelegramBot(process.env.CHAT_PROVIDER_BOT_TOKEN, {
-  polling: true,
-});
-
-bot.on('message', async (msg) => {
-  // Store in database
-  await storeMessage(msg);
-
-  // Add to queue
-  await queueMessage(msg.message_id);
+const botManager = new BotManager({
+  token: process.env.TELEGRAM_BOT_TOKEN,
 });
 ```
 
 ---
 
-## Queue System Design
-
-### In-Memory (POC)
-
-```typescript
-class MessageQueue {
-  private queue: Map<string, string[]> = new Map(); // family_id -> message_ids
-
-  async enqueue(familyId: string, messageId: string) {
-    const familyQueue = this.queue.get(familyId) || [];
-    familyQueue.push(messageId);
-    this.queue.set(familyId, familyQueue);
-  }
-
-  async dequeue(familyId: string): Promise<string | null> {
-    const familyQueue = this.queue.get(familyId);
-    return familyQueue?.shift() || null;
-  }
-}
-```
-
-### Redis (Production)
-
-```typescript
-import Redis from 'ioredis';
-import Queue from 'bull';
-
-const redis = new Redis(process.env.REDIS_URL);
-
-const messageQueue = new Queue('message-processing', {
-  redis: process.env.REDIS_URL,
-});
-
-messageQueue.process(async (job) => {
-  const { familyId, messageId } = job.data;
-  await processMessage(familyId, messageId);
-});
-```
-
----
-
-## Build & Deployment
-
-### Development
+## Build & Development
 
 ```bash
 # Install dependencies
 bun install
 
-# Run bot locally
-nx serve telegram-bot
+# Start chatbot locally
+nx dev chatbots
 
-# Run tests
+# Start Studio web app
+nx dev studio
+
+# Run all checks
+bun check:all           # lint + types + test
+
+# Run specific tests
 nx test agents-scribe
-nx test agents-facilitator
+nx test agents-registrar
 
-# Lint
-nx lint telegram-bot
+# Build for production
+nx build chatbots
+nx build api
 ```
-
-### Production Build
-
-```bash
-# Build all projects
-nx build telegram-bot --prod
-
-# Output: dist/apps/telegram-bot
-```
-
-### Deployment Options
-
-**Option 1: Docker**
-
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY dist/apps/telegram-bot .
-CMD ["node", "main.js"]
-```
-
-**Option 2: Serverless**
-
-- AWS Lambda + API Gateway (webhook)
-- Vercel Serverless Functions
-- Railway, Render, Fly.io
 
 ---
 
@@ -355,64 +252,37 @@ CMD ["node", "main.js"]
 
 **Claude API:**
 
-- Tier 2: 50 requests/min
-- Implement exponential backoff
+- Implement exponential backoff via ai-provider
 - Queue requests if hitting limits
 
-**Chat Provider API:**
+**Telegram API:**
 
 - 30 messages/second per bot
-- Use message batching where possible
+- Rate limiting built into BotManager
 
 ### Database Optimization
 
-**Indexes (from schema):**
+**Indexes:**
 
-- `family_id` on ALL tables
-- `source_message_id` on claims
-- `status` on questions
+- `family_id` on ALL tables (primary isolation boundary)
 - Composite indexes for common queries
-
-**Query Optimization:**
-
-- Use database views for complex joins
-- Limit context loading (5 full + 15 summaries)
-- Paginate event log queries
+- `pg_trgm` for fuzzy text matching
 
 ### Caching Strategy
 
-**What to cache:**
+**What to cache:** Configuration (TTL: 1 hour), cultural terms (TTL: 24 hours)
 
-- Configuration (TTL: 1 hour)
-- Facilitator rules (TTL: 10 minutes)
-- Cultural terms (TTL: 24 hours)
-
-**What NOT to cache:**
-
-- Messages (always fresh)
-- Real-time levers (immediate)
-- Pending questions (stale risky)
+**What NOT to cache:** Messages, real-time levers, pending questions
 
 ---
 
-## Security Considerations
+## Security
 
-### Environment Variables
-
-- **Never commit** `.env` files
-- Use secret management (Vercel Secrets, AWS Secrets Manager)
-- Rotate API keys regularly
-
-### Database Security
-
-- **Row Level Security (RLS)** enabled on all tables
-- Service role key only in backend (never client)
-- Validate all inputs (prevent SQL injection)
-
-### API Keys
-
-- Restrict Claude API key to backend only
-- Use separate keys per environment (dev/staging/prod)
+- **JWT authentication** for Studio web app
+- **Row Level Security (RLS)** on all database tables
+- **Service role key** only in backend (never client-side)
+- **Access passes** for bot → web handoff (24hr expiry, single-use)
+- **Environment variables** for all secrets (never committed)
 
 ---
 
@@ -421,65 +291,35 @@ CMD ["node", "main.js"]
 ### Structured Logging
 
 ```typescript
-import pino from 'pino';
+import { createLogger } from '@sobremesa/shared-utils';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-});
-
-logger.info({ familyId, messageId, agent: 'scribe' }, 'Processing message');
-logger.error({ err: error, familyId }, 'Failed to save claim');
-// Note: Use 'err' key (not 'error') for proper Error object serialization
+const logger = createLogger({ name: 'scribe', level: 'info' });
+logger.info({ familyId, eventId }, 'Processing message');
+logger.error({ err: error, familyId }, 'Failed to extract claims');
 ```
 
-### Metrics to Track
-
-- Messages processed per hour
-- Queue depth per family
-- Question ask rate
-- Question answer rate
-- Claude API latency
-- Database write latency
-
-### Error Tracking
-
-- **Sentry** (recommended)
-- **LogRocket** (optional)
-- Custom event log queries
+Uses `pino` with structured JSON output. Use `pino-pretty` for readable dev output.
 
 ---
 
-## Dependencies Summary
+## Dependencies
 
-```json
-{
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
-    "@supabase/supabase-js": "^2.39.0",
-    "telegraf": "^4.16.0",
-    "ioredis": "^5.3.2",
-    "bull": "^4.12.0",
-    "zod": "^3.22.4",
-    "pino": "^8.17.0"
-  },
-  "devDependencies": {
-    "@nx/js": "^22.0.0",
-    "@nx/node": "^22.0.0",
-    "@nx/vite": "^22.0.0",
-    "typescript": "^5.3.3",
-    "vitest": "^1.2.0",
-    "@types/node": "^22.0.0"
-  }
-}
+Key production dependencies (see `package.json` for full list):
+
+```
+@anthropic-ai/sdk     - Claude API client
+@supabase/supabase-js - Database client
+telegraf               - Telegram bot framework
+pino                   - Structured logging
+zod                    - Schema validation
+solid-js               - UI framework (Studio)
+dotenv                 - Environment variable loading
 ```
 
 ---
 
-## Next Steps
+## See Also
 
-1. ✅ Read this tech stack doc
-2. → Read QUICKSTART.md (to be created)
-3. → Set up local development environment
-4. → Initialize Nx workspace structure
-5. → Apply database schema
-6. → Implement Phase 1 (Foundation)
+- [QUICKSTART.md](QUICKSTART.md) - Getting started guide
+- [NX-MONOREPO-STRUCTURE.md](NX-MONOREPO-STRUCTURE.md) - Detailed workspace layout
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture

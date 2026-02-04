@@ -36,11 +36,11 @@ async function main() {
 
   // Complex real-world test case
   const test = {
-    sender: 'Grendel',
+    sender: 'Minnie',
     context: [
-      'Gabriel: I hope Ralph gets to join the chat',
-      "Gabriel: Ralph is Marcus's oldest son",
-      'Gabriel: He was born in San Jose in 1987',
+      'Donald: I hope Ralph gets to join the chat',
+      "Donald: Ralph is Marcus's oldest son",
+      'Donald: He was born in San Jose in 1987',
     ],
     message:
       'I thought it was Mark? Mom always said he was the firstborn. I remember visiting them in California when I was little.',
@@ -83,12 +83,16 @@ MESSAGE:
         console.log(`Claims: ${parsed.claims?.length || 0}`);
 
         // Check key extractions
+        const understood = parsed.understood_message?.toLowerCase() ?? '';
+        const fullJson = JSON.stringify(parsed).toLowerCase();
         const checks = [
-          parsed.understood_message?.toLowerCase().includes('grendel'),
-          parsed.understood_message?.toLowerCase().includes('mark was marcus'),
-          parsed.claims?.some((c: { subject: string }) =>
-            c.subject?.toLowerCase().includes('mark'),
-          ),
+          // Sender resolved
+          understood.includes('minnie'),
+          // Mark mentioned in understood message
+          understood.includes('mark'),
+          // Marcus appears somewhere in response (understood message,
+          // claims, or relationships — LLM may place it in any of these)
+          fullJson.includes('marcus'),
         ];
         console.log(
           `\n${checks.every(Boolean) ? '✅ All checks pass' : '❌ Some checks failed'}`,

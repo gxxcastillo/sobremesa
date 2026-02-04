@@ -83,11 +83,10 @@ A "question" is a first-class object with its own lifecycle. Multiple agents par
 
 ### System-Generated Questions (Proactive)
 
-1. **Propose** (Scribe / Curator) - Store in questions table with priority + context
+1. **Propose** (Curator) - Store in questions table with priority + context (from image analysis)
 2. **Decide if/when to ask** (Facilitator) - Apply rules, rate limits, warmth formula
-3. **Detect answers** (Scribe) - Check if messages answer pending questions
-4. **Persist state** (Registrar) - Update question status (asked/answered/retired)
-5. **Adapt behavior** (Admin) - Monitor outcomes, adjust rules
+3. **Persist state** (Registrar) - Update question status (asked/answered/retired)
+4. **Adapt behavior** (Admin) - Monitor outcomes, adjust rules
 
 ### User @Mention Questions (Reactive)
 
@@ -112,41 +111,16 @@ A "question" is a first-class object with its own lifecycle. Multiple agents par
 - **Proactive questions:** Always use configured `PRIMARY_LANGUAGE`
 - **@mention responses:** Match the language of the original question
 
-**Decision Logic:**
+**Decision Logic (priority order):**
 
-```typescript
-async shouldAskQuestion(question: Question): boolean {
-  // === REAL-TIME CHECKS (Highest Priority) ===
-  // 1. Active conversation? → cooldown
-  // 2. Someone storytelling? → cooldown
-  // 3. Recent sensitive content? → skip
-  // 4. Grace period? → wait
-
-  // === QUESTION-SPECIFIC CHECKS ===
-  // 5. Already answered in context? → retire
-  // 6. Asked too many times? → retire
-
-  // === COACHING SIGNALS ===
-  // 7. Coach says hold back? → skip
-
-  // === STANDARD RATE LIMITS ===
-  // 8. Rate limit exceeded? → skip
-  // 9. Too soon after last question? → skip
-  // 10. Maximum silence threshold met? → ask
-}
-```
+1. Real-time checks (active conversation, storytelling, sensitive content, grace period)
+2. Question-specific checks (already answered, asked too many times)
+3. Coaching signals (hold back / jump in)
+4. Standard rate limits (frequency, cooldown, silence threshold)
 
 **Responding to @Mentions:**
 
-```typescript
-interface SendResponseOptions {
-  familyId: string;
-  originalQuestion: string; // For language detection
-  historianAnswer: string; // Raw answer to format
-  chatId: string;
-  replyToMessageId?: number;
-}
-```
+Receives a raw answer from the Historian, detects the question's language, applies warmth and personality, and sends in the question's language.
 
 **Database Access:**
 
@@ -235,16 +209,11 @@ Both memories are valuable parts of the family story."
 
 **Coaching Module:**
 
-```typescript
-async evaluateAndAdjust(performance: FacilitatorPerformance): Promise<void> {
-  const ignoreRate = performance.ignored / performance.asked;
-  const responseRate = performance.answered / performance.asked;
+Monitors Facilitator performance (ignore rate, response rate) and adjusts behavior:
 
-  // TOO AGGRESSIVE? → hold_back signal, reduce frequency
-  // GOOD ENGAGEMENT? → jump_in signal, increase frequency
-  // Rate limits: Max 1 rule change/day, no reversals within 48 hours
-}
-```
+- Too aggressive → hold_back signal, reduce frequency
+- Good engagement → jump_in signal, increase frequency
+- Rate-limited: max 1 rule change/day, no reversals within 48 hours
 
 **Database Access:**
 
@@ -261,55 +230,32 @@ async evaluateAndAdjust(performance: FacilitatorPerformance): Promise<void> {
 
 ### Scribe (Default: "Don Rubén")
 
-**Role:** Silent data extractor and question generator
+**Role:** Silent data extractor
 
 **Internal Name:** `BotRole.SCRIBE`
-
-**Outputs Domain Model:**
-
-```typescript
-{
-  people: [{ name, aliases, relationships, confidence }],
-  places: [{ name, type, city, context }],
-  events: [{ title, description, date, people, significance }],
-  stories: [{ title, content_original, language, themes, completeness }],
-  claims: [{ claim_type, subject, claim_value, claimed_by, confidence }],
-  questions: [{ question, type, priority, context, best_person_to_ask }],
-  answeredQuestions: [{ questionId, answeredBy, completeness }],
-  conflicts: [{ topic, versions: [{ source, value, confidence }] }]
-}
-```
-
-**Context Strategy (cost optimization):**
-
-- Recent 5 messages: Full text
-- Messages 6-20: Summaries
-- Active entities: Last 20 messages
-- Pending questions: All
-- Recent claims: Last 10
 
 **Responsibilities:**
 
 1. Entity extraction (people, places, dates, events)
 2. Story identification
 3. Relationship mapping
-4. Conflict detection (flag, never resolve)
-5. Question generation
-6. Answer detection
-7. Language detection + translation
-8. Cultural term preservation
+4. Claim extraction with provenance
+5. Pronoun resolution and interpretation tracking
+6. Language detection
+7. Cultural term preservation
 
-**Database Access:**
+**Extraction Philosophy:**
 
-- **Read:** messages, people, places, events, stories, questions, claims
-- **Write:** None (outputs domain model to Registrar)
+The Scribe extracts freely from the current message even if similar entities appear in context. It does not try to suppress duplicates — deduplication is deterministic code in the Registrar, not LLM reasoning. The Scribe only avoids re-extracting _claims_ from context messages (already processed).
+
+**Output:** Domain model (see `ScribeDomainModel` type) passed to Registrar. The Scribe never writes to the database.
 
 **Common Mistakes:**
 
 - Writing directly to database
 - Auto-resolving conflicts
-- Missing answer detection
 - Translating cultural terms
+- Trying to suppress extraction for dedup (Registrar's job)
 
 ---
 
@@ -319,22 +265,7 @@ async evaluateAndAdjust(performance: FacilitatorPerformance): Promise<void> {
 
 **Internal Name:** `BotRole.CURATOR`
 
-**Outputs:**
-
-```typescript
-{
-  imageAnalysis: {
-    description: string,
-    peopleCount: number,
-    setting: string,
-    estimatedEra: string,
-    visibleText: string[],
-    ocrLanguages: string[]
-  },
-  potentialConnections: [{ storyId, reason, confidence }],
-  questions: [{ text, priority, type: 'identification' }]
-}
-```
+**Outputs:** Image analysis (description, people count, era estimate, OCR text), potential connections to existing stories, and proposed identification questions.
 
 **Processing:**
 
@@ -405,25 +336,19 @@ return { action: 'ignore', reason: 'noise' };
 **Responsibilities:**
 
 1. Schema mapping (domain model → database)
-2. Deduplication (fuzzy matching on names/aliases)
+2. Entity deduplication (people, places, events, stories, relationships, claims)
 3. Claim creation (store as claims, not facts)
 4. Conflict preservation (link conflicting claims)
-5. Provenance tracking (link to source messages)
-6. Bilingual storage (original + translations)
-7. Web3 integration (optional blockchain writes)
+5. Provenance tracking (link to source messages via join tables)
+
+**Deduplication:**
+
+Every entity type has its own dedup strategy — people use fuzzy name matching, places use exact name matching, events and stories use word-overlap similarity scoring, relationships use bidirectional lookup, and claims use duplicate + conflict detection.
+
+When a story or event matches an existing record, the Registrar appends new content and links any new people/places rather than creating a duplicate.
 
 **Deduplication Hard Rule:**
-Deduplication applies only to entity identity (same person/place/event represented multiple ways). It must NEVER merge, delete, or "choose" between competing claims. Conflicting claims are preserved and linked.
-
-**Process:**
-
-```typescript
-async process(domainModel: DomainModel): Promise<void> {
-  // For each person: find existing or insert new
-  // For each claim: check for conflicts, link them, insert
-  // Optional: Web3 write if enabled
-}
-```
+Deduplication applies only to entity identity (same person/place/event/story represented multiple ways). It must NEVER merge, delete, or "choose" between competing claims. Conflicting claims are preserved and linked.
 
 **Database Access:**
 
@@ -476,7 +401,7 @@ All access scoped by family_id
 | **Historian**   | people, claims, relationships, events, stories | event_log (question_answered)                      |
 | **Admin**       | All tables                                     | facilitator_rules, real_time_levers, event_log     |
 | **Intern**      | conversation_events, images                    | event_log (filter/link decisions)                  |
-| **Scribe**      | messages, people, places, questions            | None (outputs domain model)                        |
+| **Scribe**      | messages, people, places                       | None (outputs domain model)                        |
 | **Curator**     | messages, images, stories                      | None (outputs to Registrar)                        |
 | **Registrar**   | All tables (for deduplication)                 | people, places, events, stories, claims, questions |
 
@@ -525,7 +450,7 @@ libs/agents/
 ├── facilitator/    ← Question asking + response formatting
 ├── historian/      ← Database querying + answer synthesis
 ├── admin/          ← Celebrations, mediation, coaching
-├── scribe/         ← Entity extraction + question generation
+├── scribe/         ← Entity extraction + claim creation
 ├── curator/        ← Image analysis
 ├── intern/         ← Filtering, routing, image linking
 └── registrar/      ← Database persistence (no LLM)

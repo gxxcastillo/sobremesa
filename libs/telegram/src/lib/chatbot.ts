@@ -308,6 +308,33 @@ export class ChatbotHandler implements BotHandler {
     // Check if already registered
     const existingFamily = await this.familyRepo.findByChatId(chatId);
     if (existingFamily) {
+      // Admin-only subcommands require group admin status
+      const adminOnlySubcommands = ['pause', 'stop', 'resume', 'start'];
+      const isAdminSubcommand =
+        adminOnlySubcommands.includes(args) || /^lang:\w+$/.test(args);
+
+      if (isAdminSubcommand) {
+        const adminUserId = ctx.from?.id;
+        if (!adminUserId) {
+          return;
+        }
+
+        const isAdmin = await this.adminSyncHandler.isUserAdmin(
+          bot,
+          chatId,
+          existingFamily.id,
+          adminUserId,
+        );
+
+        if (!isAdmin) {
+          await ctx.reply(
+            'Only group admins can change Sobremesa settings. ' +
+              'Use /sobremesa help to see available commands.',
+          );
+          return;
+        }
+      }
+
       // Handle language code argument (e.g., /sobremesa lang:en, /sobremesa lang:es)
       const langMatch = args.match(/^lang:(\w+)$/);
       if (langMatch) {
@@ -448,20 +475,35 @@ export class ChatbotHandler implements BotHandler {
 
       // Handle help command
       if (args === 'help') {
-        await ctx.reply(
+        const helpUserId = ctx.from?.id;
+        const isAdmin = helpUserId
+          ? await this.adminSyncHandler.isUserAdmin(
+              bot,
+              chatId,
+              existingFamily.id,
+              helpUserId,
+            )
+          : false;
+
+        let helpText =
           `📖 *Sobremesa Commands*\n\n` +
-            `*/sobremesa status* - Show current status\n` +
-            `*/sobremesa studio-link* - Get a link to access Studio\n` +
+          `*/sobremesa status* - Show current status\n` +
+          `*/sobremesa studio-link* - Get a link to access Sobremesa Studio\n`;
+
+        if (isAdmin) {
+          helpText +=
             `*/sobremesa pause* - Pause message processing\n` +
             `*/sobremesa resume* - Resume message processing\n` +
             `*/sobremesa lang:en* - Set language to English\n` +
             `*/sobremesa lang:es* - Set language to Español\n` +
             `*/sobremesa lang:pt* - Set language to Português\n` +
             `*/sobremesa lang:fr* - Set language to Français\n` +
-            `*/sobremesa lang:de* - Set language to Deutsch\n` +
-            `*/sobremesa help* - Show this help message`,
-          { parse_mode: 'Markdown' },
-        );
+            `*/sobremesa lang:de* - Set language to Deutsch\n`;
+        }
+
+        helpText += `*/sobremesa help* - Show this help message`;
+
+        await ctx.reply(helpText, { parse_mode: 'Markdown' });
         return;
       }
 
@@ -496,6 +538,30 @@ export class ChatbotHandler implements BotHandler {
         'This chat is not authorized to use Sobremesa. ' +
           'Please contact the administrator.',
       );
+      return;
+    }
+
+    // Only group admins can register a new family
+    const userId = ctx.from?.id;
+    if (!userId) {
+      return;
+    }
+
+    try {
+      const member = await bot.telegram.getChatMember(chatId, userId);
+      if (member.status !== 'administrator' && member.status !== 'creator') {
+        await ctx.reply(
+          'Only group admins can set up Sobremesa. ' +
+            'Please ask a group admin to run /sobremesa.',
+        );
+        return;
+      }
+    } catch (error) {
+      this.logger.error(
+        { err: error, chatId, userId },
+        'Failed to verify admin status for registration',
+      );
+      await ctx.reply('Could not verify your admin status. Please try again.');
       return;
     }
 

@@ -969,10 +969,7 @@ CREATE TABLE IF NOT EXISTS places (
   CONSTRAINT fk_places_superseded_by
     FOREIGN KEY (family_id, superseded_by) REFERENCES places(family_id, id) ON DELETE SET NULL,
   CONSTRAINT fk_places_first_mentioned
-    FOREIGN KEY (family_id, first_mentioned_event_id) REFERENCES conversation_events(family_id, id) ON DELETE SET NULL,
-  CONSTRAINT valid_place_type CHECK (
-    type IS NULL OR type IN ('city', 'country', 'address', 'region', 'landmark', 'neighborhood', 'building')
-  )
+    FOREIGN KEY (family_id, first_mentioned_event_id) REFERENCES conversation_events(family_id, id) ON DELETE SET NULL
 );
 
 COMMENT ON TABLE places IS 'Geographic locations mentioned in stories.';
@@ -2973,20 +2970,11 @@ CREATE POLICY "access_passes_select" ON access_passes
 -- CHAT_ADMINS policies
 -- --------------------------------------------------------------------------
 -- Family members can see chat admins for their family
+-- No write policies, chat_admins is synced by backend services using
+-- service_role (which bypasses RLS). Omitting INSERT/UPDATE/DELETE
+-- policies means RLS blocks writes from authenticated clients.
 CREATE POLICY "chat_admins_select" ON chat_admins
   FOR SELECT USING (family_id IN (SELECT * FROM get_user_family_ids()));
-
--- Backend services (using service_role) sync chat admin status
--- These policies allow writes; service_role bypasses RLS but these
--- document intent and support any authenticated backend operations
-CREATE POLICY "chat_admins_insert" ON chat_admins
-  FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "chat_admins_update" ON chat_admins
-  FOR UPDATE USING (true);
-
-CREATE POLICY "chat_admins_delete" ON chat_admins
-  FOR DELETE USING (true);
 
 -- --------------------------------------------------------------------------
 -- FAMILIES policies

@@ -1,5 +1,8 @@
 import { loadPrompt } from '@sobremesa/prompts';
+import { createLogger } from '@sobremesa/shared-utils';
 import type { ScribeConfig, ScribeContext } from './types';
+
+const logger = createLogger({ name: 'scribe', level: 'debug' });
 
 /**
  * Build the system prompt with config values substituted.
@@ -18,11 +21,9 @@ export function buildSystemPrompt(config: ScribeConfig): string {
     PRIMARY_LANGUAGE: config.primaryLanguage,
   });
 
-  console.log(
-    '[Scribe] System prompt length:',
-    prompt.length,
-    'chars, estimated tokens:',
-    Math.ceil(prompt.length / 4),
+  logger.debug(
+    { length: prompt.length, estimatedTokens: Math.ceil(prompt.length / 4) },
+    'System prompt built',
   );
 
   return prompt;
@@ -38,11 +39,14 @@ export function buildUserMessage(
   context: ScribeContext,
   messageTimestamp?: Date,
 ): string {
-  console.log('[Scribe] Context stats:', {
-    recentMessageCount: context.recentMessages.length,
-    recentImageCount: context.recentImages?.length || 0,
-    messageContentLength: messageContent.length,
-  });
+  logger.debug(
+    {
+      recentMessageCount: context.recentMessages.length,
+      recentImageCount: context.recentImages?.length || 0,
+      messageContentLength: messageContent.length,
+    },
+    'Building user message',
+  );
 
   const parts: string[] = [];
 
@@ -93,11 +97,12 @@ export function buildUserMessage(
   );
 
   const finalMessage = parts.join('\n');
-  console.log(
-    '[Scribe] Final user message length:',
-    finalMessage.length,
-    'chars, estimated tokens:',
-    Math.ceil(finalMessage.length / 4),
+  logger.debug(
+    {
+      length: finalMessage.length,
+      estimatedTokens: Math.ceil(finalMessage.length / 4),
+    },
+    'User message built',
   );
 
   return finalMessage;

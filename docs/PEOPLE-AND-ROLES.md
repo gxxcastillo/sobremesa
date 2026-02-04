@@ -44,7 +44,7 @@ User (web auth account)
 - Alias matches
 - Similar names (Levenshtein distance > 0.8)
 
-**Example:** "Gabriel", "Gabe", and "Gabriel Barreto" all match to the same person.
+**Example:** "Donald", "Don", and "Donald Barreto" all match to the same person.
 
 **Placeholders:** When a relationship exists but the person's name is unknown:
 
@@ -70,9 +70,9 @@ User (web auth account)
 
 **Example flow:**
 
-1. Gabriel sends message in Telegram → Identity created
-2. Gabriel logs into Studio → User created, linked to identity
-3. Gabriel claims "I'm Gabriel" → `family_access.person_id` set
+1. Donald sends message in Telegram → Identity created
+2. Donald logs into Studio → User created, linked to identity
+3. Donald claims "I'm Donald" → `family_access.person_id` set
 
 ---
 
@@ -132,10 +132,10 @@ User (web auth account)
 **Example:**
 
 ```
-Facilitator asks: "Is Gabriel a participant?"
-→ Check: Has Gabriel's identity sent messages? ✓
-→ Check: Does Gabriel's family_access have person_id? ✓
-→ Result: Yes, Gabriel is a verified participant
+Facilitator asks: "Is Donald a participant?"
+→ Check: Has Donald's identity sent messages? ✓
+→ Check: Does Donald's family_access have person_id? ✓
+→ Result: Yes, Donald is a verified participant
 ```
 
 ---
@@ -175,20 +175,20 @@ Facilitator asks: "Is Gabriel a participant?"
 ### Single Channel User
 
 ```
-1. Gabriel sends message in Telegram
+1. Donald sends message in Telegram
    → Identity: telegram:123456789
-2. Gabriel logs into Studio
+2. Donald logs into Studio
    → User created, linked to identity
-3. Gabriel claims person in family
-   → family_access.person_id = gabriel_person_id
-4. Gabriel is now a verified participant
+3. Donald claims person in family
+   → family_access.person_id = donald_person_id
+4. Donald is now a verified participant
 ```
 
 ### Multi-Channel User
 
 ```
-1. Gabriel uses Telegram → Identity: telegram:123456789
-2. Gabriel also uses WhatsApp → Identity: whatsapp:5511999999999
+1. Donald uses Telegram → Identity: telegram:123456789
+2. Donald also uses WhatsApp → Identity: whatsapp:5511999999999
 3. Both identities linked to same user
 4. Both family_access records point to same person_id
 5. Facilitator sees unified history across channels

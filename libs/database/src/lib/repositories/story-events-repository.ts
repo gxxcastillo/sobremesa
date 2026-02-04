@@ -1,6 +1,10 @@
 import type { DatabaseClient } from '../client';
 import type { StoryEvent } from '@sobremesa/shared-types';
-import { mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
+import {
+  mapRowToCamelCase,
+  mapRecordToSnakeCase,
+  dedupeByKeys,
+} from '../base-repository.js';
 
 /**
  * Repository for story-event relationships (many-to-many join table).
@@ -48,7 +52,7 @@ export class StoryEventsRepository {
 
     const { data, error } = await this.client
       .from(this.tableName)
-      .insert(dbRecord)
+      .upsert(dbRecord, { onConflict: 'family_id,story_id,event_id' })
       .select()
       .single();
 
@@ -64,11 +68,15 @@ export class StoryEventsRepository {
   ): Promise<StoryEvent[]> {
     if (links.length === 0) return [];
 
-    const dbRecords = links.map(mapRecordToSnakeCase);
+    const dbRecords = dedupeByKeys(links.map(mapRecordToSnakeCase), [
+      'family_id',
+      'story_id',
+      'event_id',
+    ]);
 
     const { data, error } = await this.client
       .from(this.tableName)
-      .insert(dbRecords)
+      .upsert(dbRecords, { onConflict: 'family_id,story_id,event_id' })
       .select();
 
     if (error) {

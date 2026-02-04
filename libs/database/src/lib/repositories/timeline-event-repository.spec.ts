@@ -26,6 +26,23 @@ const createChainableMock = (finalResult: { data: any; error: any }) => {
   return chain;
 };
 
+const makeEventRow = (overrides: Record<string, unknown> = {}) => ({
+  id: 'event-1',
+  family_id: 'fam1',
+  title: 'Leaving Cuba',
+  event_type: null,
+  date_text: null,
+  date_year: 1959,
+  place_id: null,
+  conversation_event_id: 'conv-1',
+  claimed_by: null,
+  redacted: false,
+  extraction_version: null,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  ...overrides,
+});
+
 describe('TimelineEventRepository - findSimilar', () => {
   let eventRepo: TimelineEventRepository;
 
@@ -34,67 +51,65 @@ describe('TimelineEventRepository - findSimilar', () => {
     eventRepo = new TimelineEventRepository(mockSupabaseClient as any);
   });
 
-  it('should return null when no people provided', async () => {
-    const result = await eventRepo.findSimilar(
-      'fam1',
-      'Leaving Cuba',
-      [],
-      1959,
-    );
+  it('should return null when no candidates exist and no personIds', async () => {
+    // No personIds → calls findAllActive → returns empty
+    const eventsChain = createChainableMock({ data: [], error: null });
+    mockSupabaseClient.from.mockReturnValue(eventsChain);
+
+    const result = await eventRepo.findSimilar('fam1', 'Leaving Cuba', []);
 
     expect(result).toBeNull();
-    expect(mockSupabaseClient.from).not.toHaveBeenCalled();
+    // Should query events table via findAllActive
+    expect(mockSupabaseClient.from).toHaveBeenCalledWith('events');
   });
 
-  it('should return null when no events have any of the people', async () => {
-    const eventPeopleChain = createChainableMock({ data: [], error: null });
-    mockSupabaseClient.from.mockReturnValue(eventPeopleChain);
+  it('should return null when event_people has no matches and findAllActive is empty', async () => {
+    // event_people returns empty → falls through to findAllActive → also empty
+    const emptyChain = createChainableMock({ data: [], error: null });
+    mockSupabaseClient.from.mockReturnValue(emptyChain);
 
-    const result = await eventRepo.findSimilar(
-      'fam1',
-      'Leaving Cuba',
-      ['person-1', 'person-2'],
-      1959,
-    );
+    const result = await eventRepo.findSimilar('fam1', 'Leaving Cuba', [
+      'person-1',
+    ]);
 
     expect(result).toBeNull();
     expect(mockSupabaseClient.from).toHaveBeenCalledWith('event_people');
+    expect(mockSupabaseClient.from).toHaveBeenCalledWith('events');
   });
 
-  it('should find event with partial person overlap', async () => {
-    const existingEvent = {
-      id: 'event-1',
-      family_id: 'fam1',
-      title: 'Leaving Cuba',
-      date_year: 1959,
-      redacted: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+  it('should match event with identical title via person candidates', async () => {
+    const event = makeEventRow();
 
-    // First call: event_people query - event has person-1 linked
+    // Call 1: event_people → find person's events
     const eventPeopleChain = createChainableMock({
       data: [{ event_id: 'event-1' }],
       error: null,
     });
 
-    // Second call: events query - find the event
+    // Call 2: events → fetch candidate events
     const eventsChain = createChainableMock({
-      data: existingEvent,
+      data: [event],
+      error: null,
+    });
+
+    // Call 3: event_people → batch person overlap check
+    const overlapChain = createChainableMock({
+      data: [{ event_id: 'event-1', person_id: 'person-1' }],
       error: null,
     });
 
     let callCount = 0;
-    mockSupabaseClient.from.mockImplementation((table: string) => {
+    mockSupabaseClient.from.mockImplementation(() => {
       callCount++;
-      return callCount === 1 ? eventPeopleChain : eventsChain;
+      if (callCount === 1) return eventPeopleChain;
+      if (callCount === 2) return eventsChain;
+      return overlapChain;
     });
 
-    // Search with person-1 and person-2, but event only has person-1
     const result = await eventRepo.findSimilar(
       'fam1',
       'Leaving Cuba',
-      ['person-1', 'person-2'],
+      ['person-1'],
       1959,
     );
 
@@ -102,16 +117,8 @@ describe('TimelineEventRepository - findSimilar', () => {
     expect(result?.id).toBe('event-1');
   });
 
-  it('should match events within ±2 year tolerance', async () => {
-    const existingEvent = {
-      id: 'event-1',
-      family_id: 'fam1',
-      title: 'Leaving Cuba',
-      date_year: 1958, // 1 year off from search
-      redacted: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+  it('should return null when title is completely different', async () => {
+    const event = makeEventRow({ title: 'Wedding reception' });
 
     const eventPeopleChain = createChainableMock({
       data: [{ event_id: 'event-1' }],
@@ -119,47 +126,136 @@ describe('TimelineEventRepository - findSimilar', () => {
     });
 
     const eventsChain = createChainableMock({
-      data: existingEvent,
+      data: [event],
+      error: null,
+    });
+
+    const overlapChain = createChainableMock({
+      data: [{ event_id: 'event-1', person_id: 'person-1' }],
       error: null,
     });
 
     let callCount = 0;
     mockSupabaseClient.from.mockImplementation(() => {
       callCount++;
-      return callCount === 1 ? eventPeopleChain : eventsChain;
+      if (callCount === 1) return eventPeopleChain;
+      if (callCount === 2) return eventsChain;
+      return overlapChain;
     });
 
+    // "Leaving Cuba" vs "Wedding reception" — no word overlap → score < 0.6
     const result = await eventRepo.findSimilar(
       'fam1',
       'Leaving Cuba',
       ['person-1'],
-      1959, // Searching for 1959, event is 1958
+      1959,
     );
 
-    expect(result).not.toBeNull();
-    // Verify date range filter was applied
-    expect(eventsChain.gte).toHaveBeenCalledWith('date_year', 1957);
-    expect(eventsChain.lte).toHaveBeenCalledWith('date_year', 1961);
+    expect(result).toBeNull();
   });
 
-  it('should use title fuzzy matching', async () => {
-    const eventPeopleChain = createChainableMock({
-      data: [{ event_id: 'event-1' }],
+  it('should match event with rephrased title via word overlap', async () => {
+    const event = makeEventRow({
+      title: 'High school football game',
+      date_year: null,
+    });
+
+    // No personIds → findAllActive
+    const eventsChain = createChainableMock({
+      data: [event],
       error: null,
     });
 
-    const eventsChain = createChainableMock({ data: null, error: null });
+    mockSupabaseClient.from.mockReturnValue(eventsChain);
 
-    let callCount = 0;
-    mockSupabaseClient.from.mockImplementation(() => {
-      callCount++;
-      return callCount === 1 ? eventPeopleChain : eventsChain;
+    // "football game loss" vs "High school football game"
+    // tokens: ["football", "game", "loss"] vs ["high", "school", "football", "game"]
+    // overlap: 2 / min(3, 4) = 0.67 ≥ 0.6 → match
+    const result = await eventRepo.findSimilar(
+      'fam1',
+      'football game loss',
+      [],
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.id).toBe('event-1');
+  });
+
+  it('should apply date proximity boost for close dates', async () => {
+    const event = makeEventRow({
+      title: 'Leaving Cuba',
+      date_year: 1958, // 1 year off
     });
 
-    await eventRepo.findSimilar('fam1', 'Cuba', ['person-1'], 1959);
+    const eventsChain = createChainableMock({
+      data: [event],
+      error: null,
+    });
+    mockSupabaseClient.from.mockReturnValue(eventsChain);
 
-    // Verify ilike was used for fuzzy title matching
-    expect(eventsChain.ilike).toHaveBeenCalledWith('title', '%Cuba%');
+    const result = await eventRepo.findSimilar(
+      'fam1',
+      'Leaving Cuba',
+      [],
+      1959,
+    );
+
+    // Title overlap = 1.0, date boost +0.15 → 1.15 ≥ 0.6
+    expect(result).not.toBeNull();
+  });
+
+  it('should apply date distance penalty for far dates', async () => {
+    // Title with partial overlap that would score ~0.67 without penalty
+    const event = makeEventRow({
+      title: 'High school football game',
+      date_year: 1950, // 10+ years off
+    });
+
+    const eventsChain = createChainableMock({
+      data: [event],
+      error: null,
+    });
+    mockSupabaseClient.from.mockReturnValue(eventsChain);
+
+    // "football game loss" vs "High school football game" = ~0.67
+    // date penalty -0.2 → 0.47 < 0.6 → no match
+    const result = await eventRepo.findSimilar(
+      'fam1',
+      'football game loss',
+      [],
+      1962,
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('should pick the best scoring candidate among multiple', async () => {
+    const goodMatch = makeEventRow({
+      id: 'event-good',
+      title: 'Leaving Cuba for Miami',
+      date_year: 1959,
+    });
+    const poorMatch = makeEventRow({
+      id: 'event-poor',
+      title: 'Wedding in Havana',
+      date_year: 1959,
+    });
+
+    const eventsChain = createChainableMock({
+      data: [goodMatch, poorMatch],
+      error: null,
+    });
+    mockSupabaseClient.from.mockReturnValue(eventsChain);
+
+    const result = await eventRepo.findSimilar(
+      'fam1',
+      'Leaving Cuba',
+      [],
+      1959,
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.id).toBe('event-good');
   });
 });
 
@@ -172,35 +268,38 @@ describe('TimelineEventRepository - findOrCreate', () => {
   });
 
   it('should return existing event when found', async () => {
-    const existingEvent = {
-      id: 'event-1',
-      family_id: 'fam1',
-      title: 'Leaving Cuba',
-      date_year: 1959,
-      redacted: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    const existingEvent = makeEventRow();
 
-    // Mock findSimilar to return existing event
+    // findSimilar calls: event_people → events → person overlap batch
     const eventPeopleChain = createChainableMock({
       data: [{ event_id: 'event-1' }],
       error: null,
     });
     const eventsChain = createChainableMock({
-      data: existingEvent,
+      data: [existingEvent],
+      error: null,
+    });
+    const overlapChain = createChainableMock({
+      data: [{ event_id: 'event-1', person_id: 'person-1' }],
       error: null,
     });
 
     let callCount = 0;
     mockSupabaseClient.from.mockImplementation(() => {
       callCount++;
-      return callCount === 1 ? eventPeopleChain : eventsChain;
+      if (callCount === 1) return eventPeopleChain;
+      if (callCount === 2) return eventsChain;
+      return overlapChain;
     });
 
     const result = await eventRepo.findOrCreate(
       'fam1',
-      { title: 'Leaving Cuba', dateYear: 1959, peopleInvolved: [] },
+      {
+        title: 'Leaving Cuba',
+        dateYear: 1959,
+        peopleInvolved: [],
+        confidence: 'high',
+      },
       ['person-1'],
       undefined,
       'conv-1',
@@ -211,31 +310,35 @@ describe('TimelineEventRepository - findOrCreate', () => {
   });
 
   it('should create new event when no similar found', async () => {
-    const newEvent = {
+    const newEvent = makeEventRow({
       id: 'event-new',
-      family_id: 'fam1',
       title: 'New Event',
       date_year: 2020,
-      redacted: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    });
 
-    // First two calls: findSimilar returns nothing
-    const eventPeopleChain = createChainableMock({ data: [], error: null });
+    // findSimilar: event_people → empty, findAllActive → empty
+    const emptyChain = createChainableMock({ data: [], error: null });
 
-    // Third call: insert new event
+    // createFromExtracted: insert → returns new event
     const insertChain = createChainableMock({ data: newEvent, error: null });
 
     let callCount = 0;
     mockSupabaseClient.from.mockImplementation(() => {
       callCount++;
-      return callCount === 1 ? eventPeopleChain : insertChain;
+      // Calls 1-2: findSimilar (event_people empty → findAllActive empty)
+      if (callCount <= 2) return emptyChain;
+      // Call 3: insert
+      return insertChain;
     });
 
     const result = await eventRepo.findOrCreate(
       'fam1',
-      { title: 'New Event', dateYear: 2020, peopleInvolved: [] },
+      {
+        title: 'New Event',
+        dateYear: 2020,
+        peopleInvolved: [],
+        confidence: 'medium',
+      },
       ['person-1'],
       undefined,
       'conv-1',

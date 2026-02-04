@@ -17,14 +17,20 @@ Standardized structure for agents to communicate extracted family history data.
 ## Structure
 
 ```
-DomainModel {
-  metadata      - Source info, confidence, language
-  entities      - People, places, events, stories, images
-  claims        - Facts with provenance
-  questions     - Questions to ask
-  answers       - Detected answers to pending questions
-  conflicts     - Contradicting information
-  translations  - Multi-language content
+ScribeDomainModel {
+  metadata        - Source event, family, processing info
+  entities        - People, places, events, relationships
+  claims          - Facts with provenance
+  story           - Story fragment if detected
+  imageReferences - References to recently shared images
+  interpretation  - Pronoun resolution and ambiguity tracking
+}
+
+CuratorDomainModel {
+  metadata        - Source event, family, processing info
+  imageAnalysis   - Description, people count, era estimate, OCR
+  connections     - Possible matches to existing people/stories
+  questions       - Proposed identification questions
 }
 ```
 
@@ -102,26 +108,16 @@ Facts with full provenance:
 
 ---
 
-## Questions
+## Questions (Curator Only)
 
-Proposed questions with:
+The Curator generates identification questions from image analysis:
 
 - Question text
 - About which entity (person/place/event)
-- Category (missing date, clarify relationship, resolve conflict)
-- Priority (high/medium/low)
+- Story context
+- Priority (numeric)
 
----
-
-## Answers
-
-Detected answers with:
-
-- Original question ID
-- Who answered
-- Answer text
-- Confidence (definite/partial/possible)
-- Extracted information
+The Scribe does not generate questions or detect answers.
 
 ---
 
@@ -139,12 +135,18 @@ Contradicting information:
 
 When receiving a Domain Model:
 
-1. **Deduplicate** - Match entities to existing records
-2. **Normalize** - Store relationships in canonical form
-3. **Track conflicts** - Link contradicting claims
-4. **Manage questions** - Create or update question records
-5. **Process answers** - Mark questions answered, extract new claims
-6. **Log everything** - Complete audit trail
+1. **Deduplicate** - Match entities to existing records using entity-specific strategies:
+   - People: 4-pass fuzzy matching (name, alias, biographical)
+   - Places: case-insensitive exact name match
+   - Events: word-overlap scoring on title + person/date boosts (threshold 0.6)
+   - Stories: composite scoring on title + content + themes (threshold 0.55)
+   - Claims: duplicate + conflict detection by subject + type
+2. **Merge context** - When events/stories match existing records, link new people/places and append content
+3. **Normalize** - Store relationships in canonical form
+4. **Track conflicts** - Link contradicting claims (never auto-resolve)
+5. **Log everything** - Complete audit trail
+
+The Scribe extracts freely without suppressing duplicates — deduplication is deterministic code in the Registrar, not LLM reasoning in the Scribe.
 
 ---
 

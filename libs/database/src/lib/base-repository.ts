@@ -179,6 +179,23 @@ export function mapRowToCamelCase<T>(row: Record<string, unknown>): T {
 /**
  * Convert all keys in an object from camelCase to snake_case.
  */
+/**
+ * Deduplicate an array of records by a set of key fields.
+ * Keeps the first occurrence of each unique key combination.
+ */
+export function dedupeByKeys<T extends Record<string, unknown>>(
+  records: T[],
+  keys: string[],
+): T[] {
+  const seen = new Set<string>();
+  return records.filter((record) => {
+    const key = keys.map((k) => record[k]).join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function mapRecordToSnakeCase(
   record: Record<string, unknown>,
 ): Record<string, unknown> {

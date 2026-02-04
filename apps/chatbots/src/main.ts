@@ -21,7 +21,6 @@ import {
 const logger = createLogger({
   name: 'chatbots',
   level: (process.env['LOG_LEVEL'] as LogLevel) || 'info',
-  pretty: process.env['NODE_ENV'] !== 'production',
 });
 
 function validateEnv(): {

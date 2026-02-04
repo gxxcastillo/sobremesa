@@ -48,7 +48,7 @@ Chat Message
 **Processing Pipeline:**
 
 1. **Intern (filter)** - Uses Haiku to quickly determine if message is relevant for extraction
-2. **Scribe** - Uses Sonnet to extract entities, claims, and questions from relevant messages
+2. **Scribe** - Uses Sonnet to extract entities, claims, and relationships from relevant messages
 3. **Intern (image link)** - Uses Haiku to detect if message references a recent image (catches what Scribe missed)
 4. **Registrar** - Persists domain model to database (pure TypeScript, no LLM)
 
@@ -90,7 +90,7 @@ sequenceDiagram
 
   alt Text content (Scribe)
     S->>DB: Load context (recent msgs, pending questions, entities)
-    S->>S: Extract entities/stories/claims<br/>Generate proposed questions<br/>Detect answered questions
+    S->>S: Extract entities/stories/claims/relationships<br/>Resolve pronouns and ambiguous references
     S-->>I: Domain model (text)
   end
 
@@ -110,8 +110,8 @@ sequenceDiagram
   I-->>R: Final domain model
 
   R->>DB: Write entities/stories/claims (single writer)
-  R->>DB: Write questions + question status updates
   R->>DB: Write conflict links (preserve conflicts)
+  R->>DB: Link claims to entities via claim_entities
   R->>DB: Append event_log entries (audit)
 
   par Facilitator decision loop
@@ -355,7 +355,7 @@ All persisted data and all agent reads/writes are scoped by family_id. Every que
 
 ## Component Details
 
-Questions are proposed by Scribe/Curator, asked by Facilitator, answered-detected by Scribe, and persisted by Registrar.
+Questions are proposed by Curator (from image analysis), asked by Facilitator, and persisted by Registrar.
 
 See AGENTS.md for complete specifications.
 
@@ -375,19 +375,20 @@ See AGENTS.md for complete specifications.
 
 ### Scribe
 
-- Extracts entities, relationships, events
-- Generates questions about gaps
-- Detects answers to pending questions
+- Extracts entities, relationships, events, stories
+- Extracts freely from current message (does not suppress for dedup — Registrar handles that)
+- Only avoids re-extracting claims from context messages (already processed)
 - Flags conflicts (never resolves)
 - Outputs domain model (not DB schema)
 
 ### Registrar
 
 - Maps domain model to database
-- Deduplicates entities
+- Deduplicates all entities: people (fuzzy match), places (exact), events (word-overlap), stories (word-overlap + theme Jaccard)
+- When stories/events match existing: appends content and links new people/places
 - Creates claims (not facts)
-- Preserves conflicts
-- Optional web3 writes
+- Preserves conflicts (link contradicting claims, never auto-resolve)
+- Uses `text-similarity.ts` utilities for word-overlap and Jaccard scoring
 
 ### Coaching Module
 

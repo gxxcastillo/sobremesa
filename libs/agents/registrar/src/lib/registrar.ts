@@ -1,4 +1,4 @@
-import type { ScribeDomainModel } from '@sobremesa/shared-types';
+import type { Person, ScribeDomainModel } from '@sobremesa/shared-types';
 import {
   PersonRepository,
   PlaceRepository,
@@ -24,11 +24,7 @@ import {
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
-import {
-  detectClaimConflict,
-  subjectsMatch,
-  canClaimTypeConflict,
-} from './conflict-detector';
+import { detectClaimConflict, subjectsMatch } from './conflict-detector';
 import {
   EntityMatcherService,
   ConflictDetectorService,
@@ -100,6 +96,7 @@ export interface PersistResult {
   placesCreated: number;
   eventsCreated: number;
   storiesCreated: number;
+  storiesUpdated: number;
   claimsCreated: number;
   conflictsDetected: number;
   relationshipsCreated: number;
@@ -269,6 +266,7 @@ export class RegistrarAgent {
       placesCreated: 0,
       eventsCreated: 0,
       storiesCreated: 0,
+      storiesUpdated: 0,
       claimsCreated: 0,
       conflictsDetected: 0,
       relationshipsCreated: 0,
@@ -333,6 +331,7 @@ export class RegistrarAgent {
           );
 
           // Add suggested aliases
+          let personUpdated = false;
           if (
             matchResult.suggestedAliases &&
             matchResult.suggestedAliases.length > 0
@@ -341,7 +340,7 @@ export class RegistrarAgent {
               ...existingPerson.aliases,
               ...matchResult.suggestedAliases,
             ]);
-            result.peopleUpdated++;
+            personUpdated = true;
 
             this.logger.debug(
               {
@@ -351,6 +350,35 @@ export class RegistrarAgent {
               },
               'Added aliases to existing person',
             );
+          }
+
+          // Enrich biographical data
+          const bioEnrichments: Partial<Person> = {};
+          if (!existingPerson.birthYear && person.birthYear)
+            bioEnrichments.birthYear = person.birthYear;
+          if (!existingPerson.deathYear && person.deathYear)
+            bioEnrichments.deathYear = person.deathYear;
+
+          if (Object.keys(bioEnrichments).length > 0) {
+            await this.personRepo.update(
+              familyId,
+              existingPerson.id,
+              bioEnrichments,
+            );
+            personUpdated = true;
+
+            this.logger.debug(
+              {
+                familyId,
+                personId: existingPerson.id,
+                enrichments: bioEnrichments,
+              },
+              'Enriched existing person with biographical data',
+            );
+          }
+
+          if (personUpdated) {
+            result.peopleUpdated++;
           }
 
           personIdMap.set(person.name, existingPerson.id);
@@ -402,6 +430,7 @@ export class RegistrarAgent {
 
       // 3. Process Events (with deduplication)
       const createdEventIds: string[] = [];
+      const eventIdMap = new Map<string, string>();
       for (const event of domainModel.events) {
         // Resolve place ID
         const placeId = event.placeName
@@ -424,6 +453,7 @@ export class RegistrarAgent {
           extractionVersion,
         );
         createdEventIds.push(dbEvent.id);
+        eventIdMap.set(event.title, dbEvent.id);
 
         if (created) {
           // New event - link all people
@@ -505,9 +535,8 @@ export class RegistrarAgent {
         }
       }
 
-      // 5. Process Story (if present)
+      // 5. Process Story (if present) — with deduplication
       if (domainModel.story) {
-        // Create story without entity associations
         // Fetch event to get original language if detected language not available
         const event = domainModel.detectedLanguage
           ? null
@@ -517,58 +546,146 @@ export class RegistrarAgent {
           event?.descriptionLanguage ||
           'unknown';
 
-        const createdStory = await this.storyRepo.createFromExtracted(
+        const allPeopleIds = [...new Set(personIdMap.values())];
+
+        // Find or create story (deduplicates based on title + content + themes)
+        const { story: dbStory, created } = await this.storyRepo.findOrCreate(
           familyId,
           domainModel.story,
+          allPeopleIds,
           conversationEventId,
           language,
           claimedBy,
           extractionVersion,
         );
 
-        // Link people via story_people join table
-        const peopleIds = [...personIdMap.values()];
-        if (peopleIds.length > 0) {
-          await this.storyPeopleRepo.createMany(
-            peopleIds.map((personId) => ({
-              familyId,
-              storyId: createdStory.id,
-              personId,
-            })),
+        if (created) {
+          // New story — link all people, places, events
+          if (allPeopleIds.length > 0) {
+            await this.storyPeopleRepo.createMany(
+              allPeopleIds.map((personId) => ({
+                familyId,
+                storyId: dbStory.id,
+                personId,
+              })),
+            );
+          }
+
+          const placeIds = [...new Set(placeIdMap.values())];
+          if (placeIds.length > 0) {
+            await this.storyPlacesRepo.createMany(
+              placeIds.map((placeId) => ({
+                familyId,
+                storyId: dbStory.id,
+                placeId,
+              })),
+            );
+          }
+
+          if (createdEventIds.length > 0) {
+            await this.storyEventsRepo.createMany(
+              createdEventIds.map((eventId) => ({
+                familyId,
+                storyId: dbStory.id,
+                eventId,
+              })),
+            );
+          }
+
+          // Link source conversation event
+          await this.storyConversationEventsRepo.create({
+            familyId,
+            storyId: dbStory.id,
+            conversationEventId,
+          });
+
+          result.storiesCreated++;
+        } else {
+          // Existing story — link any new people not already linked
+          const existingPeopleLinks = await this.storyPeopleRepo.findByStory(
+            familyId,
+            dbStory.id,
           );
-        }
-
-        // Link places via story_places join table
-        const placeIds = [...placeIdMap.values()];
-        if (placeIds.length > 0) {
-          await this.storyPlacesRepo.createMany(
-            placeIds.map((placeId) => ({
-              familyId,
-              storyId: createdStory.id,
-              placeId,
-            })),
+          const existingPersonIds = new Set(
+            existingPeopleLinks.map((l) => l.personId),
           );
-        }
-
-        // Link events via story_events join table
-        if (createdEventIds.length > 0) {
-          await this.storyEventsRepo.createMany(
-            createdEventIds.map((eventId) => ({
-              familyId,
-              storyId: createdStory.id,
-              eventId,
-            })),
+          const newPersonIds = allPeopleIds.filter(
+            (id) => !existingPersonIds.has(id),
           );
+          if (newPersonIds.length > 0) {
+            await this.storyPeopleRepo.createMany(
+              newPersonIds.map((personId) => ({
+                familyId,
+                storyId: dbStory.id,
+                personId,
+              })),
+            );
+          }
+
+          // Link any new places not already linked
+          const existingPlaceLinks = await this.storyPlacesRepo.findByStory(
+            familyId,
+            dbStory.id,
+          );
+          const existingPlaceIds = new Set(
+            existingPlaceLinks.map((l) => l.placeId),
+          );
+          const allPlaceIds = [...new Set(placeIdMap.values())];
+          const newPlaceIds = allPlaceIds.filter(
+            (id) => !existingPlaceIds.has(id),
+          );
+          if (newPlaceIds.length > 0) {
+            await this.storyPlacesRepo.createMany(
+              newPlaceIds.map((placeId) => ({
+                familyId,
+                storyId: dbStory.id,
+                placeId,
+              })),
+            );
+          }
+
+          // Link any new events not already linked
+          if (createdEventIds.length > 0) {
+            const existingEventLinks = await this.storyEventsRepo.findByStory(
+              familyId,
+              dbStory.id,
+            );
+            const existingEventIds = new Set(
+              existingEventLinks.map((l) => l.eventId),
+            );
+            const newEventIds = createdEventIds.filter(
+              (id) => !existingEventIds.has(id),
+            );
+            if (newEventIds.length > 0) {
+              await this.storyEventsRepo.createMany(
+                newEventIds.map((eventId) => ({
+                  familyId,
+                  storyId: dbStory.id,
+                  eventId,
+                })),
+              );
+            }
+          }
+
+          // Always link the new conversation event
+          await this.storyConversationEventsRepo.create({
+            familyId,
+            storyId: dbStory.id,
+            conversationEventId,
+          });
+
+          this.logger.debug(
+            {
+              storyTitle: domainModel.story.title,
+              existingStoryId: dbStory.id,
+              newPeopleLinked: newPersonIds.length,
+              newPlacesLinked: newPlaceIds.length,
+            },
+            'Merged into existing story',
+          );
+
+          result.storiesUpdated++;
         }
-
-        // Link source conversation event via story_conversation_events join table
-        await this.storyConversationEventsRepo.create({
-          familyId,
-          storyId: createdStory.id,
-          conversationEventId: conversationEventId,
-        });
-
-        result.storiesCreated++;
       }
 
       // 6. Process Claims (with conflict detection and identity resolution)
@@ -589,6 +706,21 @@ export class RegistrarAgent {
           this.logger.warn(
             { familyId, subject: claim.subject, claimValue: claim.claimValue },
             'Skipping claim with unresolved pronoun subject',
+          );
+          continue;
+        }
+
+        // Skip claims from pure clarification questions (no factual assertion)
+        const certLang = claim.certaintyLanguage?.toLowerCase();
+        if (
+          certLang &&
+          (certLang === 'questioning' ||
+            certLang === 'question' ||
+            certLang === 'asking')
+        ) {
+          this.logger.debug(
+            { familyId, subject: claim.subject, claimValue: claim.claimValue },
+            'Skipping claim from clarification question',
           );
           continue;
         }
@@ -627,6 +759,30 @@ export class RegistrarAgent {
         if (subjectPersonId) {
           entityId = subjectPersonId;
           entityType = 'person';
+        }
+
+        // Resolve claim subject to a timeline event
+        let subjectEventId: string | undefined;
+        subjectEventId = eventIdMap.get(claim.subject);
+
+        if (!subjectEventId && claim.subject.includes("'s ")) {
+          const possessiveName = claim.subject.split("'s ")[0].trim();
+          subjectEventId = eventIdMap.get(possessiveName);
+        }
+
+        if (!subjectEventId) {
+          for (const [eventTitle, eventId] of eventIdMap) {
+            if (subjectsMatch(claim.subject, eventTitle)) {
+              subjectEventId = eventId;
+              break;
+            }
+          }
+        }
+
+        // If no person resolved, use event as primary subject entity
+        if (subjectEventId && !entityId) {
+          entityId = subjectEventId;
+          entityType = 'event';
         }
 
         // Handle identity claims - merge descriptive name with real name (using MergeHandlerService)
@@ -799,8 +955,7 @@ export class RegistrarAgent {
         );
 
         // Skip duplicate claims (claims that don't conflict and don't refine)
-        const isDuplicate =
-          conflicts.length === 0 && canClaimTypeConflict(claim.claimType);
+        const isDuplicate = conflicts.length === 0;
         if (isDuplicate) {
           // Check if exact same claim already exists
           const existingClaims = await this.claimRepo.findActiveBySubject(
@@ -1085,6 +1240,47 @@ export class RegistrarAgent {
           }
         }
 
+        // Link claim to related event (when person is the primary subject)
+        if (subjectEventId && entityType !== 'event') {
+          await this.claimEntityRepo.link(
+            familyId,
+            newClaim.id,
+            subjectEventId,
+            'event',
+            { role: 'related' },
+          );
+        }
+
+        // Link people mentioned in claim subject or value
+        const claimText = [
+          claim.subject,
+          typeof claim.claimValue === 'string'
+            ? claim.claimValue
+            : JSON.stringify(claim.claimValue),
+        ]
+          .join(' ')
+          .toLowerCase();
+
+        const linkedPersonIds = new Set<string>();
+        if (entityType === 'person' && entityId) {
+          linkedPersonIds.add(entityId);
+        }
+
+        for (const [personName, personId] of personIdMap) {
+          if (linkedPersonIds.has(personId)) continue;
+          if (personName.length < 3) continue;
+          if (claimText.includes(personName.toLowerCase())) {
+            await this.claimEntityRepo.link(
+              familyId,
+              newClaim.id,
+              personId,
+              'person',
+              { role: 'related' },
+            );
+            linkedPersonIds.add(personId);
+          }
+        }
+
         // Create claim relationships using ClaimRelationshipRepository
         for (const conflict of conflicts) {
           if (!conflict.conflictingClaimId) continue;
@@ -1236,7 +1432,7 @@ export class RegistrarAgent {
       );
     } catch (error) {
       this.logger.error(
-        { familyId, conversationEventId, error },
+        { familyId, conversationEventId, err: error },
         'Registrar persist failed',
       );
 

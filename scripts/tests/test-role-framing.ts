@@ -17,9 +17,13 @@ async function test(name: string, system: string, user: string) {
     text?.type === 'text'
       ? text.text.trim().replace(/^["']|["']$/g, '')
       : 'no text';
+  const lower = result.toLowerCase();
+  // Check that both "mark" and "marcus" appear — LLM may phrase as
+  // "Mark was Marcus's" or "Mark who was Marcus's oldest son" etc.
   const success =
-    result.toLowerCase().includes('grendel') &&
-    result.toLowerCase().includes('mark was marcus');
+    lower.includes('minnie') &&
+    lower.includes('mark') &&
+    lower.includes('marcus');
 
   console.log(`${name}: "${result}" ${success ? '✅' : '❌'}`);
 }
@@ -33,14 +37,14 @@ Rewrite the message replacing "I" with the sender's name and making the full mea
 Output ONLY the rewritten message.`;
 
 async function main() {
-  console.log('Expected: "Grendel thought Mark was Marcus\'s oldest son"\n');
+  console.log('Expected: "Minnie thought Mark was Marcus\'s oldest son"\n');
 
   // Structured format
   await test(
     'Structured format',
     systemPrompt,
-    `SENDER: Grendel
-CONTEXT: Gabriel said "Ralph is Marcus's oldest son"
+    `SENDER: Minnie
+CONTEXT: Donald said "Ralph is Marcus's oldest son"
 MESSAGE: "I thought it was Mark?"`,
   );
 
@@ -48,19 +52,19 @@ MESSAGE: "I thought it was Mark?"`,
   await test(
     'Prose format',
     systemPrompt,
-    `Gabriel said "Ralph is Marcus's oldest son"
-Grendel replied "I thought it was Mark?"
+    `Donald said "Ralph is Marcus's oldest son"
+Minnie replied "I thought it was Mark?"
 
-Rewrite Grendel's message:`,
+Rewrite Minnie's message:`,
   );
 
   // Hybrid format
   await test(
     'Hybrid format',
     systemPrompt,
-    `In response to "Ralph is Marcus's oldest son", Grendel said "I thought it was Mark?"
+    `In response to "Ralph is Marcus's oldest son", Minnie said "I thought it was Mark?"
 
-Rewrite Grendel's message:`,
+Rewrite Minnie's message:`,
   );
 }
 

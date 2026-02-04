@@ -150,7 +150,7 @@ await relationshipRepo.findOrCreate(familyId, parentId, childId, 'parent', {
   status: 'active',
   confidence: Confidence.HIGH,
   sourceEventId: eventId,
-  claimedBy: 'Gabriel',
+  claimedBy: 'Donald',
 });
 
 // Create spouse relationship (order-independent)
@@ -393,7 +393,7 @@ CREATE INDEX idx_relationships_tree ON relationships(family_id, category)
 ### Scenario 1: Basic Family
 
 ```
-Gabriel = Rosa (spouse)
+Donald = Rosa (spouse)
   ├─ Carmen (child)
   ├─ Manuel (child)
 ```
@@ -401,9 +401,9 @@ Gabriel = Rosa (spouse)
 **Relationships stored:**
 
 ```
-1. (Gabriel, Rosa, 'spouse', biological→legal)
-2. (Gabriel, Carmen, 'parent', biological)
-3. (Gabriel, Manuel, 'parent', biological)
+1. (Donald, Rosa, 'spouse', biological→legal)
+2. (Donald, Carmen, 'parent', biological)
+3. (Donald, Manuel, 'parent', biological)
 4. (Rosa, Carmen, 'parent', biological)
 5. (Rosa, Manuel, 'parent', biological)
 ```

@@ -5,5 +5,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@sobremesa/shared-utils": "workspace:*"
   }
 }

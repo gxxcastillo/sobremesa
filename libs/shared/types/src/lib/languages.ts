@@ -27,7 +27,7 @@ export function isSupportedLanguage(lang: string): lang is SupportedLanguage {
 /**
  * Language codes for content detection (broader than SupportedLanguage)
  */
-export type LanguageCode = 'es' | 'en' | 'unknown';
+export type LanguageCode = 'en' | 'es' | 'pt' | 'fr' | 'de' | 'unknown';
 
 /**
  * Language configuration for a family.

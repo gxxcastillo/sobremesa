@@ -163,6 +163,11 @@ export class StrengthCalculatorService {
       return 0.6;
     }
 
+    // Pure clarification (no factual assertion)
+    if (lower === 'questioning' || lower === 'question' || lower === 'asking') {
+      return 0.3;
+    }
+
     return 1.0; // Default to neutral if no matches
   }
 

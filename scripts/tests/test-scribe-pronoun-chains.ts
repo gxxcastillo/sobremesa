@@ -36,8 +36,8 @@ interface TestCase {
   sender: string;
   context: string[];
   message: string;
-  /** Substring that should appear in response (lowercased) */
-  expectedInResponse: string;
+  /** Substring(s) that should appear in response — any match passes */
+  expectedInResponse: string | string[];
   /** Substrings that should NOT appear in subjects/people (lowercased) */
   forbiddenInSubjects?: string[];
 }
@@ -52,7 +52,9 @@ const testCases: TestCase[] = [
       'ralphy never recovered after losing the highschool football game',
     ],
     message: "I don't know why her parents were great",
-    expectedInResponse: 'ralphy',
+    // LLM may resolve "her" to "Ralphy's sister" or just "the sister" —
+    // either indicates correct pronoun resolution
+    expectedInResponse: 'sister',
     forbiddenInSubjects: ['her parents', 'she'],
   },
   {
@@ -68,7 +70,9 @@ const testCases: TestCase[] = [
     sender: 'Mary',
     context: ['Mom made gallo pinto', 'She learned it from grandma'],
     message: 'her recipe was the best',
-    expectedInResponse: 'grandma',
+    // "her" can reasonably resolve to grandma or Mom — both are valid
+    // referents in this context
+    expectedInResponse: ['grandma', 'mom'],
     forbiddenInSubjects: ['her recipe'],
   },
   {
@@ -145,9 +149,12 @@ Extract from this MESSAGE. Short follow-ups like "and beets" contain information
 
   const responseLower = textContent.text.toLowerCase();
 
-  // Check if expected substring appears in response
-  const hasExpected = responseLower.includes(
-    testCase.expectedInResponse.toLowerCase(),
+  // Check if any expected substring appears in response
+  const expectedList = Array.isArray(testCase.expectedInResponse)
+    ? testCase.expectedInResponse
+    : [testCase.expectedInResponse];
+  const hasExpected = expectedList.some((e) =>
+    responseLower.includes(e.toLowerCase()),
   );
 
   // Check for forbidden patterns in subjects

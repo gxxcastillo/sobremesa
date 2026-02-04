@@ -27,11 +27,11 @@ async function main() {
   const testCases = [
     {
       name: 'I thought it was X pattern',
-      sender: 'Grendel',
-      context: ["Gabriel: Ralph is Marcus's oldest son"],
+      sender: 'Minnie',
+      context: ["Donald: Ralph is Marcus's oldest son"],
       message: 'I thought it was Mark?',
       check: (msg: string) =>
-        msg.toLowerCase().includes('grendel') &&
+        msg.toLowerCase().includes('minnie') &&
         msg.toLowerCase().includes('mark was marcus'),
     },
     {

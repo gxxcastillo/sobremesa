@@ -66,12 +66,6 @@ Prompts are in `libs/prompts/src/agents/*.txt`
 | [QUICKSTART.md](QUICKSTART.md)                       | Local development setup guide (start here!) |
 | [NX-MONOREPO-STRUCTURE.md](NX-MONOREPO-STRUCTURE.md) | Nx workspace structure                      |
 
-### Implementation
-
-| Document                               | Purpose                     |
-| -------------------------------------- | --------------------------- |
-| [IMPLEMENTATION.md](IMPLEMENTATION.md) | 6-phase implementation plan |
-
 ---
 
 ## 🗺️ Documentation Map
@@ -100,9 +94,6 @@ Technical Setup
 
 Agents (AI Components)
     └── AGENTS.md           ← All agent specs (consolidated)
-
-Implementation
-    └── IMPLEMENTATION.md   ← Build roadmap
 ```
 
 ---
@@ -116,7 +107,6 @@ Implementation
 1. [PRODUCT.md](PRODUCT.md) - Understand the vision
 2. [ARCHITECTURE.md](ARCHITECTURE.md) - Learn the system
 3. [QUICKSTART.md](QUICKSTART.md) - Get it running
-4. [IMPLEMENTATION.md](IMPLEMENTATION.md) - Start building
 
 **Building a specific component?**
 

@@ -59,6 +59,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
     conversationId: string,
     limit = 20,
     includeProcessing = false,
+    beforeSequenceNumber?: number,
   ): Promise<ConversationEvent[]> {
     const selectFields = includeProcessing
       ? `
@@ -71,12 +72,18 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
         redacted:conversation_redactions(id)
       `;
 
-    const { data, error } = await this.client
+    let query = this.client
       .from(this.tableName)
       .select(selectFields)
       .eq('family_id', familyId)
       .eq('conversation_id', conversationId)
-      .is('redacted.id', null)
+      .is('redacted.id', null);
+
+    if (beforeSequenceNumber !== undefined) {
+      query = query.lt('sequence_number', beforeSequenceNumber);
+    }
+
+    const { data, error } = await query
       .order('occurred_at', { ascending: false })
       .limit(limit);
 

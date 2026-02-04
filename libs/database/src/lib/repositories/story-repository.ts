@@ -5,6 +5,10 @@ import {
   mapRowToCamelCase,
   mapRecordToSnakeCase,
 } from '../base-repository.js';
+import {
+  wordOverlapSimilarity,
+  jaccardSimilarity,
+} from '../text-similarity.js';
 
 /**
  * Repository for coherent narrative fragments.
@@ -190,6 +194,158 @@ export class StoryRepository extends BaseRepository<Story> {
         conversationEventId,
       ],
     };
+  }
+
+  /**
+   * Find a similar story using word-overlap scoring on title, content, and themes.
+   */
+  async findSimilar(
+    familyId: string,
+    title: string | undefined,
+    content: string,
+    personIds: string[],
+    themes: string[],
+  ): Promise<Story | null> {
+    let candidates: Story[];
+
+    if (personIds.length > 0) {
+      const { data: storyPeopleData, error: spError } = await this.client
+        .from('story_people')
+        .select('story_id')
+        .eq('family_id', familyId)
+        .in('person_id', personIds);
+
+      if (spError) {
+        throw new Error(`Failed to query story_people: ${spError.message}`);
+      }
+
+      if (!storyPeopleData || storyPeopleData.length === 0) {
+        candidates = await this.findAllActive(familyId);
+      } else {
+        const candidateStoryIds = [
+          ...new Set(storyPeopleData.map((row) => row.story_id)),
+        ];
+
+        const { data, error } = await this.client
+          .from(this.tableName)
+          .select('*')
+          .eq('family_id', familyId)
+          .eq('redacted', false)
+          .in('id', candidateStoryIds);
+
+        if (error) {
+          throw new Error(
+            `Failed to fetch candidate stories: ${error.message}`,
+          );
+        }
+
+        candidates = (data || []).map((row) => this.mapFromDb(row));
+      }
+    } else {
+      candidates = await this.findAllActive(familyId);
+    }
+
+    if (candidates.length === 0) return null;
+
+    // Batch-fetch person links for all candidates (avoids N+1 queries)
+    const personOverlapSet = new Set<string>();
+    if (personIds.length > 0) {
+      const candidateIds = candidates.map((c) => c.id);
+      const { data: spBatch } = await this.client
+        .from('story_people')
+        .select('story_id, person_id')
+        .eq('family_id', familyId)
+        .in('story_id', candidateIds)
+        .in('person_id', personIds);
+
+      for (const row of spBatch || []) {
+        personOverlapSet.add(row.story_id);
+      }
+    }
+
+    const contentSnippet = content.slice(0, 200);
+
+    let bestMatch: Story | null = null;
+    let bestScore = 0;
+
+    for (const candidate of candidates) {
+      let score = 0;
+
+      // Title similarity (weight 0.4) — only if both have titles
+      if (title && candidate.title) {
+        score += wordOverlapSimilarity(title, candidate.title) * 0.4;
+      } else if (!title && !candidate.title) {
+        // Both untitled — give partial credit so content/themes can decide
+        score += 0.1;
+      }
+
+      // Content similarity (weight 0.35) — compare first 200 chars
+      const candidateSnippet = (candidate.contentOriginal || '').slice(0, 200);
+      score += wordOverlapSimilarity(contentSnippet, candidateSnippet) * 0.35;
+
+      // Theme overlap (weight 0.25)
+      score += jaccardSimilarity(themes, candidate.themes || []) * 0.25;
+
+      // Person overlap boost
+      if (personOverlapSet.has(candidate.id)) {
+        score += 0.15;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = candidate;
+      }
+    }
+
+    return bestScore >= 0.55 ? bestMatch : null;
+  }
+
+  /**
+   * Find or create a story, with deduplication.
+   * If matched, appends content via appendToStory().
+   */
+  async findOrCreate(
+    familyId: string,
+    story: {
+      title?: string;
+      content: string;
+      themes: string[];
+      timeframe?: string;
+    },
+    personIds: string[],
+    conversationEventId: string,
+    language: LanguageCode,
+    sharedBy?: string,
+    extractionVersion?: string,
+  ): Promise<{ story: Story; created: boolean }> {
+    const existing = await this.findSimilar(
+      familyId,
+      story.title,
+      story.content,
+      personIds,
+      story.themes,
+    );
+
+    if (existing) {
+      const updated = await this.appendToStory(
+        familyId,
+        existing.id,
+        story.content,
+        conversationEventId,
+      );
+      return { story: updated, created: false };
+    }
+
+    const created = await this.createFromExtracted(
+      familyId,
+      story,
+      conversationEventId,
+      language,
+      sharedBy,
+      extractionVersion,
+    );
+
+    return { story: created, created: true };
   }
 
   /**

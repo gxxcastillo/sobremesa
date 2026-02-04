@@ -21,41 +21,21 @@ Sobremesa is a **reusable library** designed to work for any family, in any lang
 
 ---
 
-## Complete Configuration Interface
+## Two Config Systems
 
-```typescript
-interface SobremesaConfig {
-  // === Project Identity ===
-  familyId: string;
-  projectName: string;
+There are two configuration interfaces in the codebase:
 
-  // === Languages ===
-  languages: {
-    primary: string; // ISO code: "es", "en", "ja"
-  };
+1. **`SobremesaConfig`** (`libs/shared/types/src/lib/config.ts`) - Complete system config including coaching, web3, and generic bot personality. Uses `BotPersonality` with formality/verbosity/emojiUsage/warmthLevel for all bots.
 
-  // === Bot Configuration ===
-  bots: {
-    facilitator: FacilitatorConfig;
-    admin: AdminConfig;
-    scribe: ScribeConfig;
-  };
+2. **`FamilyConfig`** (`libs/shared/types/src/lib/conversation.ts`) - What's actually stored in the `families` table `config` JSONB column. Uses `FamilyBotConfig` with per-bot personality types (facilitator has engagement/patience, admin has celebration, scribe has thoroughness).
 
-  // === Cultural Context ===
-  culturalTerms: string[];
-}
-```
+The database-stored `FamilyConfig` is what drives runtime behavior. Check the source files above for current field definitions.
 
 ---
 
 ## 1. Project Identity
 
-```typescript
-{
-  familyId: "uuid-here",
-  projectName: "Sobremesa"
-}
-```
+Each family has a `familyId` (UUID) and optional `projectName`.
 
 **Examples:**
 
@@ -67,15 +47,9 @@ interface SobremesaConfig {
 
 ## 2. Language Configuration
 
-```typescript
-{
-  languages: {
-    primary: 'es';
-  }
-}
-```
+**`FamilyConfig.languages`** has a `primary` field for bot response language.
 
-### How It Works
+Currently supported languages: `en`, `es`. The broader `LanguageConfig` type (used in `SobremesaConfig`) also supports `pt`, `fr`, `de` for content detection and has a `secondary` array.
 
 **Storage:** Content is stored in its original language only.
 
@@ -84,151 +58,48 @@ interface SobremesaConfig {
 
 **Translation:** Generated on-read when needed, not pre-computed.
 
-**Supported languages:** Any language Claude supports (`es`, `en`, `ja`, `zh`, `fr`, `de`, etc.)
-
 ---
 
 ## 3. Bot Configuration
 
-### Facilitator Configuration
+Each bot has a `displayName` and `personality` with bot-specific traits.
 
-```typescript
-interface FacilitatorConfig {
-  displayName: string;
+### Facilitator
 
-  personality: {
-    formality: 'casual' | 'friendly' | 'professional' | 'formal';
-    emojiUsage: 'none' | 'minimal' | 'moderate' | 'generous';
-    engagement: 'gentle' | 'curious' | 'enthusiastic';
-  };
-}
-```
+Personality traits: formality, emojiUsage, engagement, verbosity, patience.
 
-**Example Configurations:**
+**Example:** "Carmencita" - friendly, moderate emoji, curious engagement
 
-```typescript
-// Nicaraguan family (Carmencita)
-{
-  displayName: "Carmencita",
-  personality: {
-    formality: 'friendly',
-    emojiUsage: 'moderate',
-    engagement: 'curious'
-  }
-}
+### Admin
 
-// Conservative American family
-{
-  displayName: "Annie",
-  personality: {
-    formality: 'professional',
-    emojiUsage: 'minimal',
-    engagement: 'gentle'
-  }
-}
+Personality traits: formality, emojiUsage, celebration.
 
-// Japanese family (formal)
-{
-  displayName: "ゆい (Yui)",
-  personality: {
-    formality: 'formal',
-    emojiUsage: 'minimal',
-    engagement: 'gentle'
-  }
-}
-```
+**Example:** "La Directora" - friendly, moderate emoji, enthusiastic celebration
 
-**Personality Trait Guide:**
+### Scribe
 
-| Trait          | Options                                | Effect          |
-| -------------- | -------------------------------------- | --------------- |
-| **formality**  | casual, friendly, professional, formal | Tone of voice   |
-| **emojiUsage** | none, minimal, moderate, generous      | Emoji frequency |
-| **engagement** | gentle, curious, enthusiastic          | Question energy |
+Personality traits: thoroughness (essential / standard / comprehensive).
 
----
+The scribe also has an internal `confidence` setting (strict / moderate / lenient) defined in `libs/agents/scribe/src/lib/types.ts`, separate from family config.
 
-### Admin Configuration
+**Example:** "Don Rubén" - comprehensive thoroughness
 
-```typescript
-interface AdminConfig {
-  displayName: string;
+### Historian
 
-  personality: {
-    formality: 'casual' | 'friendly' | 'professional' | 'formal';
-    emojiUsage: 'none' | 'minimal' | 'moderate' | 'generous';
-    celebration: 'understated' | 'warm' | 'enthusiastic';
-  };
-}
-```
-
-**Example:**
-
-```typescript
-// La Directora (warm authority)
-{
-  displayName: "La Directora",
-  personality: {
-    formality: 'friendly',
-    emojiUsage: 'moderate',
-    celebration: 'enthusiastic'
-  }
-}
-```
-
----
-
-### Scribe Configuration
-
-```typescript
-interface ScribeConfig {
-  displayName: string;
-
-  personality: {
-    thoroughness: 'essential' | 'standard' | 'comprehensive';
-  };
-}
-```
-
-**thoroughness guide:**
-
-- `essential`: Main entities only (people, places, major events)
-- `standard`: Entities + relationships + basic context
-- `comprehensive`: Above + themes, objects, detailed relationships
-
-**Example:**
-
-```typescript
-{
-  displayName: "Don Rubén",
-  personality: {
-    thoroughness: 'comprehensive'
-  }
-}
-```
+Has a `displayName` only (no personality config).
 
 ---
 
 ## 4. Cultural Terms
 
-```typescript
-{
-  culturalTerms: [
-    'pulpería', // Nicaraguan corner store
-    'gallo pinto', // Traditional rice and beans
-    'nacatamal', // Nicaraguan tamale
-  ];
-}
-```
-
-**Purpose:** These words are NEVER translated, just explained in parentheses.
+A list of words that are NEVER translated, just explained in parentheses.
 
 **Example:**
 
 ```
 Spanish: "Abuela hacía gallo pinto todos los domingos"
 English: "Grandma made gallo pinto (rice and beans) every Sunday"
-         ↑ NOT translated, just explained
+         ^ NOT translated, just explained
 ```
 
 ---
@@ -237,168 +108,55 @@ English: "Grandma made gallo pinto (rice and beans) every Sunday"
 
 ### Example 1: Nicaraguan Family (Default)
 
-```typescript
-const nicaraguanFamilyConfig: SobremesaConfig = {
-  familyId: 'family-uuid',
-  projectName: 'Sobremesa',
-
-  languages: {
-    primary: 'es',
-  },
-
-  bots: {
-    facilitator: {
-      displayName: 'Carmencita',
-      personality: {
-        formality: 'friendly',
-        emojiUsage: 'moderate',
-        engagement: 'curious',
-      },
-    },
-
-    admin: {
-      displayName: 'La Directora',
-      personality: {
-        formality: 'friendly',
-        emojiUsage: 'moderate',
-        celebration: 'enthusiastic',
-      },
-    },
-
-    scribe: {
-      displayName: 'Don Rubén',
-      personality: {
-        thoroughness: 'comprehensive',
-      },
-    },
-  },
-
-  culturalTerms: ['pulpería', 'gallo pinto', 'vigorón', 'nacatamal'],
-};
-```
-
----
+- Project name: "Sobremesa"
+- Primary language: Spanish (`es`)
+- Facilitator: "Carmencita" - friendly, moderate emoji, curious
+- Admin: "La Directora" - friendly, moderate emoji, enthusiastic celebration
+- Scribe: "Don Rubén" - comprehensive thoroughness
+- Cultural terms: pulpería, gallo pinto, vigorón, nacatamal, fritanga, pinolillo
 
 ### Example 2: American English Family
 
-```typescript
-const americanFamilyConfig: SobremesaConfig = {
-  familyId: 'family-uuid',
-  projectName: 'Family Stories',
-
-  languages: {
-    primary: 'en',
-  },
-
-  bots: {
-    facilitator: {
-      displayName: 'Annie',
-      personality: {
-        formality: 'friendly',
-        emojiUsage: 'minimal',
-        engagement: 'curious',
-      },
-    },
-
-    admin: {
-      displayName: 'The Coordinator',
-      personality: {
-        formality: 'professional',
-        emojiUsage: 'minimal',
-        celebration: 'warm',
-      },
-    },
-
-    scribe: {
-      displayName: 'The Archivist',
-      personality: {
-        thoroughness: 'standard',
-      },
-    },
-  },
-
-  culturalTerms: [],
-};
-```
-
----
+- Project name: "Family Stories"
+- Primary language: English (`en`)
+- Facilitator: "Annie" - friendly, minimal emoji, curious
+- Admin: "The Coordinator" - professional, minimal emoji, warm celebration
+- Scribe: "The Archivist" - standard thoroughness
+- Cultural terms: none
 
 ### Example 3: Japanese Family
 
-```typescript
-const japaneseFamilyConfig: SobremesaConfig = {
-  familyId: 'family-uuid',
-  projectName: '家族の記憶',
-
-  languages: {
-    primary: 'ja',
-  },
-
-  bots: {
-    facilitator: {
-      displayName: 'ゆい (Yui)',
-      personality: {
-        formality: 'formal',
-        emojiUsage: 'minimal',
-        engagement: 'gentle',
-      },
-    },
-
-    admin: {
-      displayName: '管理者',
-      personality: {
-        formality: 'formal',
-        emojiUsage: 'none',
-        celebration: 'understated',
-      },
-    },
-
-    scribe: {
-      displayName: '記録者',
-      personality: {
-        thoroughness: 'comprehensive',
-      },
-    },
-  },
-
-  culturalTerms: ['おばあちゃん', 'おじいちゃん', '家族', '故郷'],
-};
-```
+- Project name: "家族の記憶"
+- Primary language: Japanese (`ja`)
+- Facilitator: "ゆい (Yui)" - formal, minimal emoji, gentle
+- Admin: "管理者" - formal, no emoji, understated celebration
+- Scribe: "記録者" - comprehensive thoroughness
+- Cultural terms: おばあちゃん, おじいちゃん, 家族, 故郷
 
 ---
 
-## How to Apply Configuration
+## How Config is Loaded
 
-### Method 1: Environment Variable
+1. **Database-stored:** Config lives in the `families` table, `config` column (JSONB). Loaded via `FamilyRepository.findById()` or `findDefault()`.
 
-```bash
-FAMILY_ID=family-uuid npm start
-```
+2. **Config access:** Specific values can be read with `FamilyRepository.getConfigValue(id, path)` and updated with `FamilyRepository.updateConfigPath(id, path, value)`.
 
-Configuration loaded from database based on `FAMILY_ID`.
-
-### Method 2: Database-stored
-
-```sql
--- Config stored in families table
-SELECT config FROM families WHERE id = 'family-uuid';
-```
-
-### Method 3: File-based (Development)
-
-```typescript
-const config = require('./sobremesa.config.json');
-```
+3. **Defaults:** New families start with empty config `{}`. Default values are defined in `DEFAULT_CONFIG` (config.ts) and `DEFAULT_SCRIBE_CONFIG` (scribe types).
 
 ---
 
 ## Summary
 
-**~10 configuration points:**
+**Active configuration (FamilyConfig in database):**
 
-- 2 project identity (familyId, projectName)
-- 1 language setting
-- 6 bot personality traits (2 per bot)
-- 1+ cultural terms list
+- Project identity (familyId, projectName)
+- Primary language
+- Bot display names and personality traits (per-bot)
+- Cultural terms list
+
+**Defined in types but not actively used yet:**
+
+- Coaching settings (evaluation interval, rate limits) — in `SobremesaConfig`
+- Web3 integration (optional, off by default) — in `SobremesaConfig`
 
 **Key principle:** Internal code is generic, configuration makes it specific to each family.

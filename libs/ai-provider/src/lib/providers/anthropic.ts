@@ -4,6 +4,7 @@
  * Wraps the Anthropic SDK to implement the AIProvider interface.
  */
 
+import { createLogger } from '@sobremesa/shared-utils';
 import type { AIProvider } from '../provider.interface';
 import type {
   AICompletionRequest,
@@ -11,6 +12,8 @@ import type {
   AIMessageContent,
   ProviderConfig,
 } from '../types';
+
+const logger = createLogger({ name: 'anthropic', level: 'debug' });
 
 /**
  * Anthropic SDK client type.
@@ -142,8 +145,9 @@ export class AnthropicProvider implements AIProvider {
 
     // Log structured output mode for debugging
     if (hasJsonSchemaFormat) {
-      console.log(
-        `[Anthropic Provider] Model: ${model}, Using native structured outputs: ${useNativeStructuredOutputs}`,
+      logger.debug(
+        { model, useNativeStructuredOutputs },
+        'Structured output mode',
       );
     }
 
@@ -161,8 +165,9 @@ export class AnthropicProvider implements AIProvider {
         null,
         2,
       );
-      console.log(
-        `[Anthropic Provider] Embedding schema in system prompt (${schemaJson.length} chars)`,
+      logger.debug(
+        { schemaLength: schemaJson.length },
+        'Embedding schema in system prompt',
       );
       systemPrompt = systemPrompt
         ? `${systemPrompt}\n\n## Required JSON Schema\n\nYou MUST respond with valid JSON that conforms exactly to this schema. Use these exact field names:\n\n\`\`\`json\n${schemaJson}\n\`\`\`\n\nRespond ONLY with the JSON object, no additional text.`
@@ -239,9 +244,7 @@ export class AnthropicProvider implements AIProvider {
       const cacheRead = response.usage.cache_read_input_tokens || 0;
       const cacheCreation = response.usage.cache_creation_input_tokens || 0;
       if (cacheRead > 0 || cacheCreation > 0) {
-        console.log(
-          `[Anthropic Provider] Cache stats - Read: ${cacheRead} tokens (90% savings), Creation: ${cacheCreation} tokens`,
-        );
+        logger.debug({ cacheRead, cacheCreation }, 'Prompt cache stats');
       }
     }
 

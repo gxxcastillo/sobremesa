@@ -377,7 +377,7 @@ export const IdentitySettings: Component = () => {
                         <input
                           type="text"
                           id="edit-aliases"
-                          placeholder="e.g., Gabe, Gabo (comma-separated)"
+                          placeholder="e.g., Don, Donny (comma-separated)"
                           value={editAliases()}
                           onInput={(e) => setEditAliases(e.currentTarget.value)}
                           disabled={isUpdating()}
@@ -563,7 +563,7 @@ export const IdentitySettings: Component = () => {
                       <input
                         type="text"
                         id="name"
-                        placeholder="e.g., Gabriel Barreto"
+                        placeholder="e.g., Donald Barreto"
                         value={newName()}
                         onInput={(e) => setNewName(e.currentTarget.value)}
                         disabled={isCreating()}
@@ -575,7 +575,7 @@ export const IdentitySettings: Component = () => {
                       <input
                         type="text"
                         id="aliases"
-                        placeholder="e.g., Gabe, Gabo (comma-separated)"
+                        placeholder="e.g., Don, Donny (comma-separated)"
                         value={newAliases()}
                         onInput={(e) => setNewAliases(e.currentTarget.value)}
                         disabled={isCreating()}

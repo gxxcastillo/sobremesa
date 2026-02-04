@@ -101,6 +101,25 @@ export interface ImageReference {
 }
 
 /**
+ * Ambiguous reference detected during interpretation.
+ */
+export interface AmbiguousReference {
+  token: string;
+  candidates: string[];
+  selected: string;
+  confidence: number;
+}
+
+/**
+ * Interpretation metadata from Scribe's understood_message.
+ */
+export interface InterpretationMetadata {
+  resolvedText: string;
+  ambiguousReferences: AmbiguousReference[];
+  resolutionConfidence: 'high' | 'medium' | 'low' | 'ambiguous';
+}
+
+/**
  * Complete domain model output from Scribe.
  */
 export interface ScribeDomainModel {
@@ -131,6 +150,9 @@ export interface ScribeDomainModel {
 
   // Extraction version for event sourcing (e.g., scribe-v1.0.0)
   extractionVersion?: string;
+
+  // Interpretation metadata (optional, for debugging/audit)
+  interpretation?: InterpretationMetadata;
 }
 
 /**

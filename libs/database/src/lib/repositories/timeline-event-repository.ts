@@ -5,6 +5,7 @@ import {
   mapRowToCamelCase,
   mapRecordToSnakeCase,
 } from '../base-repository.js';
+import { wordOverlapSimilarity } from '../text-similarity.js';
 
 /**
  * Repository for timeline events derived from claims.
@@ -111,7 +112,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
 
   /**
    * Find a similar event by title, people involved, and optional date.
-   * Used for deduplication - matches if title/date match and at least one person overlaps.
+   * Uses word-overlap scoring in application code instead of SQL ilike.
    */
   async findSimilar(
     familyId: string,
@@ -119,54 +120,92 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
     personIds: string[],
     dateYear?: number,
   ): Promise<TimelineEvent | null> {
-    if (personIds.length === 0) {
-      // No people to match - can't deduplicate without people
-      return null;
+    let candidates: TimelineEvent[];
+
+    if (personIds.length > 0) {
+      // Find events involving ANY of the specified people
+      const { data: eventPeopleData, error: epError } = await this.client
+        .from('event_people')
+        .select('event_id')
+        .eq('family_id', familyId)
+        .in('person_id', personIds);
+
+      if (epError) {
+        throw new Error(`Failed to query event_people: ${epError.message}`);
+      }
+
+      if (!eventPeopleData || eventPeopleData.length === 0) {
+        // No events for these people — fall through to all active
+        candidates = await this.findAllActive(familyId);
+      } else {
+        const candidateEventIds = [
+          ...new Set(eventPeopleData.map((row) => row.event_id)),
+        ];
+
+        const { data, error } = await this.client
+          .from(this.tableName)
+          .select('*')
+          .eq('family_id', familyId)
+          .eq('redacted', false)
+          .in('id', candidateEventIds);
+
+        if (error) {
+          throw new Error(`Failed to fetch candidate events: ${error.message}`);
+        }
+
+        candidates = (data || []).map((row) => this.mapFromDb(row));
+      }
+    } else {
+      candidates = await this.findAllActive(familyId);
     }
 
-    // Find events involving ANY of the specified people
-    const { data: eventPeopleData, error: epError } = await this.client
-      .from('event_people')
-      .select('event_id')
-      .eq('family_id', familyId)
-      .in('person_id', personIds);
+    if (candidates.length === 0) return null;
 
-    if (epError) {
-      throw new Error(`Failed to query event_people: ${epError.message}`);
+    // Batch-fetch person links for all candidates at once (avoids N+1 queries)
+    const personOverlapSet = new Set<string>();
+    if (personIds.length > 0) {
+      const candidateIds = candidates.map((c) => c.id);
+      const { data: epBatch } = await this.client
+        .from('event_people')
+        .select('event_id, person_id')
+        .eq('family_id', familyId)
+        .in('event_id', candidateIds)
+        .in('person_id', personIds);
+
+      for (const row of epBatch || []) {
+        personOverlapSet.add(row.event_id);
+      }
     }
 
-    if (!eventPeopleData || eventPeopleData.length === 0) {
-      return null;
+    // Score candidates using word-overlap + contextual boosts
+    let bestMatch: TimelineEvent | null = null;
+    let bestScore = 0;
+
+    for (const candidate of candidates) {
+      let score = wordOverlapSimilarity(title, candidate.title);
+
+      // Boost for person overlap
+      if (personOverlapSet.has(candidate.id)) {
+        score += 0.1;
+      }
+
+      // Date proximity boost/penalty
+      if (dateYear !== undefined && candidate.dateYear) {
+        const yearDiff = Math.abs(dateYear - candidate.dateYear);
+        if (yearDiff <= 2) {
+          score += 0.15;
+        } else if (yearDiff > 5) {
+          score -= 0.2;
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = candidate;
+      }
     }
 
-    // Get unique event IDs (any event with at least one person match)
-    const candidateEventIds = [
-      ...new Set(eventPeopleData.map((row) => row.event_id)),
-    ];
-
-    // Find events with similar title among the candidates
-    let query = this.client
-      .from(this.tableName)
-      .select('*')
-      .eq('family_id', familyId)
-      .eq('redacted', false)
-      .in('id', candidateEventIds)
-      .ilike('title', `%${title}%`);
-
-    // If date provided, allow ±2 year tolerance
-    if (dateYear !== undefined) {
-      query = query
-        .gte('date_year', dateYear - 2)
-        .lte('date_year', dateYear + 2);
-    }
-
-    const { data, error } = await query.limit(1).maybeSingle();
-
-    if (error) {
-      throw new Error(`Failed to find similar event: ${error.message}`);
-    }
-
-    return data ? this.mapFromDb(data) : null;
+    return bestScore >= 0.6 ? bestMatch : null;
   }
 
   /**
@@ -190,6 +229,21 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
     );
 
     if (existing) {
+      // Enrich existing event with any new non-null fields
+      const enrichments: Partial<TimelineEvent> = {};
+      if (!existing.placeId && placeId) enrichments.placeId = placeId;
+      if (!existing.dateText && extracted.dateText)
+        enrichments.dateText = extracted.dateText;
+      if (!existing.dateYear && extracted.dateYear)
+        enrichments.dateYear = extracted.dateYear;
+      if (!existing.eventType && extracted.eventType)
+        enrichments.eventType = extracted.eventType;
+
+      if (Object.keys(enrichments).length > 0) {
+        const enriched = await this.update(familyId, existing.id, enrichments);
+        return { event: enriched, created: false };
+      }
+
       return { event: existing, created: false };
     }
 

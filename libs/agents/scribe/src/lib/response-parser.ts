@@ -9,6 +9,7 @@ import type {
   ImageReference,
   RawImageReference,
   LanguageCode,
+  InterpretationMetadata,
 } from '@sobremesa/shared-types';
 import { createLogger } from '@sobremesa/shared-utils';
 import { RawScribeResponseSchema, type RawScribeResponse } from './schema';
@@ -46,6 +47,24 @@ function extractYear(dateText?: string): number | undefined {
   if (!dateText) return undefined;
   const match = dateText.match(/\b(1[89]\d{2}|20[0-2]\d)\b/);
   return match ? parseInt(match[1], 10) : undefined;
+}
+
+/**
+ * Normalize event date text. The LLM sometimes outputs a JSON object
+ * (e.g. {"year":1992,"text":"summer of 92"}) instead of a plain string.
+ * Extract the "text" field when that happens.
+ */
+function normalizeDateText(date?: string): string | undefined {
+  if (!date) return undefined;
+  if (date.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(date);
+      if (parsed.text) return parsed.text;
+    } catch {
+      // not valid JSON, fall through
+    }
+  }
+  return date;
 }
 
 /**
@@ -122,7 +141,12 @@ export function parseScribeResponse(
     // Log understood message for debugging pronoun resolution
     if (raw.understood_message) {
       logger.debug(
-        { conversationEventId, understoodMessage: raw.understood_message },
+        {
+          conversationEventId,
+          resolvedText: raw.understood_message.resolved_text,
+          ambiguousReferences: raw.understood_message.ambiguous_references,
+          resolutionConfidence: raw.understood_message.resolution_confidence,
+        },
         'Scribe understood message',
       );
     }
@@ -161,7 +185,7 @@ export function parseScribeResponse(
   const events: ExtractedEvent[] = raw.events.map((e) => ({
     title: e.title,
     eventType: e.event_type,
-    dateText: e.date,
+    dateText: normalizeDateText(e.date),
     dateYear: extractYear(e.date),
     peopleInvolved: e.people_involved,
     placeName: e.place,
@@ -218,6 +242,23 @@ export function parseScribeResponse(
       }))
     : imageReferences;
 
+  // Build interpretation metadata from understood_message
+  let interpretation: InterpretationMetadata | undefined;
+  if (raw.understood_message) {
+    interpretation = {
+      resolvedText: raw.understood_message.resolved_text,
+      ambiguousReferences: raw.understood_message.ambiguous_references.map(
+        (ref) => ({
+          token: ref.token,
+          candidates: ref.candidates,
+          selected: ref.selected,
+          confidence: ref.confidence,
+        }),
+      ),
+      resolutionConfidence: raw.understood_message.resolution_confidence,
+    };
+  }
+
   return {
     conversationEventId,
     familyId,
@@ -230,6 +271,7 @@ export function parseScribeResponse(
     story,
     imageReferences: finalImageReferences,
     detectedLanguage: preprocessed?.detectedLanguage || raw.detected_language,
+    interpretation,
   };
 }
 

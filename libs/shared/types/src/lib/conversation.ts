@@ -23,6 +23,7 @@ export type ConversationEventType =
 export interface ConversationEvent {
   id: string;
   familyId: string;
+  sequenceNumber?: number;
 
   // Provider identity
   source: ChatProvider;
@@ -69,6 +70,29 @@ export interface RawImageReference {
 }
 
 /**
+ * Interpretation metadata stored in processing records.
+ */
+export interface ProcessingInterpretation {
+  resolvedText: string;
+  ambiguousReferences: Array<{
+    token: string;
+    candidates: string[];
+    selected: string;
+    confidence: number;
+  }>;
+  resolutionConfidence: 'high' | 'medium' | 'low' | 'ambiguous';
+}
+
+/**
+ * Processing metadata structure.
+ */
+export interface ProcessingMetadata {
+  agentVersion?: string;
+  tokenUsage?: { input: number; output: number };
+  interpretation?: ProcessingInterpretation;
+}
+
+/**
  * Preprocessing artifacts for a conversation event.
  * Separate from ConversationEvent to keep original events fully immutable.
  * This table is mutable and can be reprocessed/updated.
@@ -82,7 +106,7 @@ export interface ConversationEventProcessing {
   imageReferences?: RawImageReference[];
 
   // Processing metadata
-  processingMetadata?: Record<string, unknown>;
+  processingMetadata?: ProcessingMetadata;
   processedAt: Date;
   processedBy?: string;
 }

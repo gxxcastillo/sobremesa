@@ -385,14 +385,24 @@ export class MessageProcessor {
   async fetchContext(
     familyId: string,
     conversationId: string,
-    options?: { maxContextChars?: number; maxImages?: number },
+    options?: {
+      maxContextChars?: number;
+      maxImages?: number;
+      beforeSequenceNumber?: number;
+    },
   ): Promise<MessageContext> {
     const maxContextChars = options?.maxContextChars ?? 2500; // ~600 tokens
     const maxImages = options?.maxImages ?? 5;
 
     // Fetch data in parallel
     const [recentEvents, recentImages] = await Promise.all([
-      this.eventRepo.findRecent(familyId, conversationId, CONTEXT_QUERY_LIMIT),
+      this.eventRepo.findRecent(
+        familyId,
+        conversationId,
+        CONTEXT_QUERY_LIMIT,
+        false,
+        options?.beforeSequenceNumber,
+      ),
       this.imageRepo.findRecentInConversation(
         familyId,
         conversationId,
@@ -504,7 +514,10 @@ export class MessageProcessor {
       });
 
       // Fetch context once and share between all processors
-      const context = await this.fetchContext(familyId, event.conversationId);
+      // Only include messages before the current one to prevent future-message leakage
+      const context = await this.fetchContext(familyId, event.conversationId, {
+        beforeSequenceNumber: event.sequenceNumber,
+      });
 
       // Handle media events: create Image record for async Curator
       let imageId: string | undefined;
@@ -770,6 +783,33 @@ export class MessageProcessor {
           },
           'Scribe extraction complete',
         );
+
+        this.logger.debug(
+          { eventId, domainModel },
+          'Scribe domain model (pre-registrar)',
+        );
+
+        // Store interpretation metadata if present
+        if (domainModel.interpretation) {
+          await this.processingRepo.updateMetadata(
+            eventId,
+            familyId,
+            {
+              interpretation: domainModel.interpretation,
+            },
+            'scribe',
+          );
+          this.logger.debug(
+            {
+              eventId,
+              resolutionConfidence:
+                domainModel.interpretation.resolutionConfidence,
+              ambiguousCount:
+                domainModel.interpretation.ambiguousReferences.length,
+            },
+            'Stored interpretation metadata',
+          );
+        }
       }
     }
 

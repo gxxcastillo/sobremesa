@@ -80,9 +80,28 @@ const ImageReferenceSchema = z.object({
   context_provided: z.string().optional(),
 });
 
+/**
+ * Schema for ambiguous references detected during pronoun resolution.
+ */
+const AmbiguousReferenceSchema = z.object({
+  token: z.string(), // The ambiguous text (e.g., "it", "he")
+  candidates: z.array(z.string()), // Possible referents
+  selected: z.string(), // Best candidate chosen (conservative pick)
+  confidence: z.number(), // 0.0-1.0
+});
+
+/**
+ * Structured understood_message schema for better interpretation tracking.
+ */
+const UnderstoodMessageSchema = z.object({
+  resolved_text: z.string(), // Full interpretation with pronouns resolved
+  ambiguous_references: z.array(AmbiguousReferenceSchema).default([]),
+  resolution_confidence: z.enum(['high', 'medium', 'low', 'ambiguous']),
+});
+
 export const RawScribeResponseSchema = z.object({
-  // Debug field: message with pronouns resolved (for debugging extraction issues)
-  understood_message: z.string().optional(),
+  // Structured interpretation with ambiguity tracking
+  understood_message: UnderstoodMessageSchema.optional(),
   people: z.array(PersonSchema).default([]),
   places: z.array(PlaceSchema).default([]),
   events: z.array(EventSchema).default([]),
@@ -90,7 +109,7 @@ export const RawScribeResponseSchema = z.object({
   claims: z.array(ClaimSchema).default([]),
   stories: z.array(StorySchema).default([]),
   image_references: z.array(ImageReferenceSchema).default([]),
-  detected_language: z.enum(['en', 'es', 'unknown']),
+  detected_language: z.enum(['en', 'es', 'pt', 'fr', 'de', 'unknown']),
 });
 
 /** TypeScript type derived from Zod schema */

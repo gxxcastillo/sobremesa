@@ -109,7 +109,7 @@ export function subjectsMatch(subject1: string, subject2: string): boolean {
 
   // If they share most key words, consider them matching
   const totalUnique = new Set([...words1, ...words2]).size;
-  if (totalUnique > 0 && intersection.length / totalUnique > 0.5) {
+  if (totalUnique > 0 && intersection.length / totalUnique >= 0.5) {
     return true;
   }
 

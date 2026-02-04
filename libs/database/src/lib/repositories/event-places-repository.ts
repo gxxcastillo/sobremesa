@@ -1,6 +1,10 @@
 import type { DatabaseClient } from '../client';
 import type { EventPlace } from '@sobremesa/shared-types';
-import { mapRowToCamelCase, mapRecordToSnakeCase } from '../base-repository.js';
+import {
+  mapRowToCamelCase,
+  mapRecordToSnakeCase,
+  dedupeByKeys,
+} from '../base-repository.js';
 
 /**
  * Repository for event-place relationships (many-to-many join table).
@@ -48,7 +52,7 @@ export class EventPlacesRepository {
 
     const { data, error } = await this.client
       .from(this.tableName)
-      .insert(dbRecord)
+      .upsert(dbRecord, { onConflict: 'family_id,event_id,place_id' })
       .select()
       .single();
 
@@ -64,11 +68,15 @@ export class EventPlacesRepository {
   ): Promise<EventPlace[]> {
     if (links.length === 0) return [];
 
-    const dbRecords = links.map(mapRecordToSnakeCase);
+    const dbRecords = dedupeByKeys(links.map(mapRecordToSnakeCase), [
+      'family_id',
+      'event_id',
+      'place_id',
+    ]);
 
     const { data, error } = await this.client
       .from(this.tableName)
-      .insert(dbRecords)
+      .upsert(dbRecords, { onConflict: 'family_id,event_id,place_id' })
       .select();
 
     if (error) {
