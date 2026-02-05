@@ -21,6 +21,7 @@
     "@sobremesa/shared-utils": "workspace:*",
     "@sobremesa/database": "workspace:*",
     "@sobremesa/queue": "workspace:*",
-    "@sobremesa/ingester": "workspace:*"
+    "@sobremesa/ingester": "workspace:*",
+    "@sobremesa/agents-admin": "workspace:*"
   }
 }

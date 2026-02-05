@@ -276,6 +276,7 @@
       "name": "@sobremesa/telegram",
       "version": "0.0.1",
       "dependencies": {
+        "@sobremesa/agents-admin": "workspace:*",
         "@sobremesa/auth": "workspace:*",
         "@sobremesa/database": "workspace:*",
         "@sobremesa/ingester": "workspace:*",

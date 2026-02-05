@@ -1,11 +1,13 @@
 import type { Telegraf, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
-import type { Message, Update, User } from 'telegraf/types';
+import type { CallbackQuery, Message, Update, User } from 'telegraf/types';
 import { createLogger } from '@sobremesa/shared-utils';
 import {
   FamilyRepository,
+  FamilyAccessRepository,
   AllowedChatRepository,
   IdentityRepository,
+  PersonRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
 import {
@@ -13,6 +15,7 @@ import {
   buildAccessPassUrl,
   determineRoleFromAdminStatus,
 } from '@sobremesa/auth';
+import { DEFAULT_LANGUAGE } from '@sobremesa/shared-types';
 import type pino from 'pino';
 import type { BotHandler } from './types';
 import {
@@ -23,6 +26,11 @@ import {
   type MemberEventInput,
 } from '@sobremesa/ingester';
 import { AdminSyncHandler } from './handlers/admin-sync';
+import {
+  TIMEZONE_KEYBOARD,
+  TIMEZONE_KEYBOARD_OTHER,
+  formatTimezoneConfirmation,
+} from '@sobremesa/agents-admin';
 
 type TextMessageContext = Context<Update.MessageUpdate<Message.TextMessage>>;
 type PhotoMessageContext = Context<Update.MessageUpdate<Message.PhotoMessage>>;
@@ -212,6 +220,24 @@ export class ChatbotHandler implements BotHandler {
       }
     });
 
+    // Handle /timezone command - only works in private chats
+    bot.command('timezone', async (ctx) => {
+      try {
+        await this.handleTimezoneCommand(ctx);
+      } catch (error) {
+        this.logger.error({ error }, 'Failed to handle /timezone command');
+      }
+    });
+
+    // Handle /whoami command - only works in private chats
+    bot.command('whoami', async (ctx) => {
+      try {
+        await this.handleWhoamiCommand(ctx);
+      } catch (error) {
+        this.logger.error({ error }, 'Failed to handle /whoami command');
+      }
+    });
+
     // Handle text messages - enqueue for processing
     bot.on(message('text'), async (ctx) => {
       try {
@@ -268,7 +294,441 @@ export class ChatbotHandler implements BotHandler {
       }
     });
 
+    // Handle callback queries (inline keyboard button presses)
+    bot.on('callback_query', async (ctx) => {
+      try {
+        await this.handleCallbackQuery(ctx);
+      } catch (error) {
+        this.logger.error({ error }, 'Failed to handle callback_query');
+      }
+    });
+
     this.logger.info('Chatbot handlers configured');
+  }
+
+  /**
+   * Handle callback query from inline keyboard button press.
+   * Currently handles timezone selection (tz:*).
+   */
+  private async handleCallbackQuery(
+    ctx: Context<Update.CallbackQueryUpdate>,
+  ): Promise<void> {
+    const callbackQuery = ctx.callbackQuery as CallbackQuery.DataQuery;
+    const data = callbackQuery?.data;
+
+    if (!data) {
+      await ctx.answerCbQuery();
+      return;
+    }
+
+    // Handle timezone selection callbacks
+    if (data.startsWith('tz:')) {
+      await this.handleTimezoneCallback(ctx, data);
+      return;
+    }
+
+    // Unknown callback - just acknowledge
+    await ctx.answerCbQuery();
+  }
+
+  /**
+   * Handle timezone selection callback from inline keyboard.
+   */
+  private async handleTimezoneCallback(
+    ctx: Context<Update.CallbackQueryUpdate>,
+    data: string,
+  ): Promise<void> {
+    const timezone = data.slice(3); // Remove 'tz:' prefix
+    const user = ctx.callbackQuery?.from;
+
+    if (!user) {
+      await ctx.answerCbQuery('Error: User not found');
+      return;
+    }
+
+    // Handle special cases
+    if (timezone === 'other') {
+      // Show expanded timezone list
+      try {
+        await ctx.editMessageReplyMarkup(TIMEZONE_KEYBOARD_OTHER);
+        await ctx.answerCbQuery();
+      } catch {
+        await ctx.answerCbQuery();
+      }
+      return;
+    }
+
+    if (timezone === 'back') {
+      // Go back to main timezone keyboard
+      try {
+        await ctx.editMessageReplyMarkup(TIMEZONE_KEYBOARD);
+        await ctx.answerCbQuery();
+      } catch {
+        await ctx.answerCbQuery();
+      }
+      return;
+    }
+
+    // Save timezone to identity
+    const identityRepo = new IdentityRepository(this.dbClient);
+    const identity = await identityRepo.findByProviderUserId(
+      'telegram',
+      String(user.id),
+    );
+
+    if (!identity) {
+      await ctx.answerCbQuery('Error: Please try again later');
+      return;
+    }
+
+    // Update timezone
+    const updated = await identityRepo.updateTimezone(identity.id, timezone);
+    if (!updated) {
+      await ctx.answerCbQuery('Error: Failed to save timezone');
+      return;
+    }
+
+    // Get confirmation message
+    const confirmationMessage = formatTimezoneConfirmation(
+      DEFAULT_LANGUAGE,
+      timezone,
+    );
+
+    // Update the message to show confirmation (remove keyboard)
+    try {
+      await ctx.editMessageText(confirmationMessage);
+    } catch {
+      // If edit fails, just reply
+      await ctx.reply(confirmationMessage);
+    }
+
+    await ctx.answerCbQuery('Timezone saved!');
+
+    this.logger.info(
+      { userId: user.id, timezone, identityId: identity.id },
+      'Timezone saved via callback',
+    );
+  }
+
+  /**
+   * Handle /timezone command in private DMs.
+   * Shows the timezone selection keyboard directly.
+   */
+  private async handleTimezoneCommand(ctx: Context): Promise<void> {
+    const chatType = ctx.chat?.type;
+    const user = (ctx.message as Message.TextMessage)?.from;
+
+    if (!user) {
+      return;
+    }
+
+    // Only works in private chats
+    if (chatType !== 'private') {
+      await ctx.reply(
+        'Use /sobremesa timezone in the group chat, or DM me directly to change your timezone.',
+      );
+      return;
+    }
+
+    // Check if user already has a timezone set
+    const identityRepo = new IdentityRepository(this.dbClient);
+    const identity = await identityRepo.findByProviderUserId(
+      'telegram',
+      String(user.id),
+    );
+
+    const currentTimezone = identity?.timezone;
+    let message: string;
+
+    if (currentTimezone) {
+      const displayName = this.getTimezoneDisplayName(currentTimezone);
+      message = `Your current timezone is *${displayName}*.\n\nSelect a new timezone to update it:`;
+    } else {
+      message =
+        "What's your timezone? This helps me understand dates like 'tomorrow' or 'next week'.";
+    }
+
+    await ctx.reply(message, {
+      parse_mode: 'Markdown',
+      reply_markup: TIMEZONE_KEYBOARD,
+    });
+
+    this.logger.info(
+      { userId: user.id, currentTimezone },
+      'Timezone keyboard shown via /timezone command',
+    );
+  }
+
+  /**
+   * Handle /sobremesa timezone command in group chats.
+   * Sends a DM with the timezone keyboard and confirms in the group.
+   */
+  private async handleGroupTimezoneCommand(
+    ctx: Context,
+    user: User,
+  ): Promise<void> {
+    const displayName = getDisplayName(user);
+
+    // Try to send DM with timezone keyboard
+    try {
+      // Check current timezone
+      const identityRepo = new IdentityRepository(this.dbClient);
+      const identity = await identityRepo.findByProviderUserId(
+        'telegram',
+        String(user.id),
+      );
+
+      const currentTimezone = identity?.timezone;
+      let dmMessage: string;
+
+      if (currentTimezone) {
+        const tzDisplayName = this.getTimezoneDisplayName(currentTimezone);
+        dmMessage = `Your current timezone is *${tzDisplayName}*.\n\nSelect a new timezone to update it:`;
+      } else {
+        dmMessage =
+          "What's your timezone? This helps me understand dates like 'tomorrow' or 'next week'.";
+      }
+
+      await ctx.telegram.sendMessage(user.id, dmMessage, {
+        parse_mode: 'Markdown',
+        reply_markup: TIMEZONE_KEYBOARD,
+      });
+
+      // Confirm in group
+      await ctx.reply(
+        `${displayName}, check your DMs! I've sent you a message to update your timezone.`,
+      );
+
+      this.logger.info(
+        { userId: user.id, displayName },
+        'Timezone DM sent via /sobremesa timezone',
+      );
+    } catch (error) {
+      // DM failed - user hasn't started chat with bot
+      this.logger.warn(
+        { userId: user.id, error },
+        'Failed to send timezone DM',
+      );
+
+      await ctx.reply(
+        `${displayName}, I couldn't send you a DM. Please start a chat with me first by tapping my name, then try again.`,
+      );
+    }
+  }
+
+  /**
+   * Get display name for a timezone code.
+   */
+  private getTimezoneDisplayName(timezone: string): string {
+    const TIMEZONE_DISPLAY_NAMES: Record<string, string> = {
+      'America/Los_Angeles': 'Pacific Time (US)',
+      'America/Denver': 'Mountain Time (US)',
+      'America/Chicago': 'Central Time (US)',
+      'America/New_York': 'Eastern Time (US)',
+      'America/Mexico_City': 'Mexico City',
+      'America/Sao_Paulo': 'São Paulo (Brazil)',
+      'Europe/London': 'London (UK)',
+      'Europe/Madrid': 'Madrid/Paris',
+      'Asia/Tokyo': 'Tokyo (Japan)',
+      'Asia/Shanghai': 'Shanghai (China)',
+      'Asia/Kolkata': 'Mumbai (India)',
+      'Australia/Sydney': 'Sydney (Australia)',
+      'Europe/Moscow': 'Moscow (Russia)',
+      'Africa/Johannesburg': 'Johannesburg (South Africa)',
+      'Asia/Dubai': 'Dubai (UAE)',
+      'Asia/Singapore': 'Singapore',
+    };
+    return TIMEZONE_DISPLAY_NAMES[timezone] || timezone;
+  }
+
+  /**
+   * Handle /whoami command in private DMs.
+   * Shows user profile and settings across all families.
+   */
+  private async handleWhoamiCommand(ctx: Context): Promise<void> {
+    const chatType = ctx.chat?.type;
+    const user = (ctx.message as Message.TextMessage)?.from;
+
+    if (!user) {
+      return;
+    }
+
+    // Only works in private chats
+    if (chatType !== 'private') {
+      await ctx.reply(
+        'Use /sobremesa whoami in the group chat, or DM me directly.',
+      );
+      return;
+    }
+
+    // Look up identity
+    const identityRepo = new IdentityRepository(this.dbClient);
+    const identity = await identityRepo.findByProviderUserId(
+      'telegram',
+      String(user.id),
+    );
+
+    if (!identity) {
+      await ctx.reply(
+        "I don't have any information about you yet. Join a family group chat to get started!",
+      );
+      return;
+    }
+
+    // Build profile message
+    const lines: string[] = ['👤 *Your Profile*\n'];
+
+    // Display name
+    const displayName = identity.displayName || getDisplayName(user);
+    lines.push(`*Name:* ${displayName}`);
+
+    // Telegram username
+    if (user.username) {
+      lines.push(`*Username:* @${user.username}`);
+    }
+
+    // Timezone
+    if (identity.timezone) {
+      const tzDisplay = this.getTimezoneDisplayName(identity.timezone);
+      lines.push(`*Timezone:* ${tzDisplay}`);
+    } else {
+      lines.push(`*Timezone:* Not set (use /timezone to set)`);
+    }
+
+    // Get family memberships
+    const personRepo = new PersonRepository(this.dbClient);
+
+    // Query all family access records for this identity
+    const { data: accessRecords } = await this.dbClient
+      .from('family_access')
+      .select('family_id, role, person_id')
+      .eq('identity_id', identity.id)
+      .in('status', ['pending', 'active']);
+
+    if (accessRecords && accessRecords.length > 0) {
+      lines.push('\n📚 *Families*\n');
+
+      for (const access of accessRecords) {
+        const family = await this.familyRepo.findById(access.family_id);
+        if (family) {
+          let familyLine = `• *${family.name}* (${access.role})`;
+
+          // Add claimed identity if any
+          if (access.person_id) {
+            const person = await personRepo.findById(
+              family.id,
+              access.person_id,
+            );
+            if (person) {
+              familyLine += `\n  _Linked to: ${person.name}_`;
+            }
+          }
+
+          lines.push(familyLine);
+        }
+      }
+    }
+
+    await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' });
+
+    this.logger.info(
+      { userId: user.id, identityId: identity.id },
+      'Whoami shown via /whoami command',
+    );
+  }
+
+  /**
+   * Handle /sobremesa whoami command in group chats.
+   * Sends user profile and settings via DM.
+   */
+  private async handleGroupWhoamiCommand(
+    ctx: Context,
+    user: User,
+    familyId: string,
+  ): Promise<void> {
+    const displayName = getDisplayName(user);
+
+    // Look up identity
+    const identityRepo = new IdentityRepository(this.dbClient);
+    const identity = await identityRepo.findByProviderUserId(
+      'telegram',
+      String(user.id),
+    );
+
+    if (!identity) {
+      await ctx.reply(
+        `${displayName}, I don't have any information about you yet. Send me a message to get started!`,
+      );
+      return;
+    }
+
+    // Look up family and family access
+    const family = await this.familyRepo.findById(familyId);
+    const familyAccessRepo = new FamilyAccessRepository(this.dbClient);
+    const access = await familyAccessRepo.findByIdentityAndFamily(
+      identity.id,
+      familyId,
+    );
+
+    // Build profile message
+    const lines: string[] = [
+      `👤 *Your Profile in ${family?.name || 'this family'}*\n`,
+    ];
+
+    // Timezone
+    if (identity.timezone) {
+      const tzDisplay = this.getTimezoneDisplayName(identity.timezone);
+      lines.push(`*Timezone:* ${tzDisplay}`);
+    } else {
+      lines.push(`*Timezone:* Not set`);
+    }
+
+    // Role in this family
+    if (access) {
+      lines.push(`*Role:* ${access.role}`);
+
+      // Claimed identity
+      if (access.personId) {
+        const personRepo = new PersonRepository(this.dbClient);
+        const person = await personRepo.findById(familyId, access.personId);
+        if (person) {
+          lines.push(`*Linked to:* ${person.name}`);
+          if (person.aliases && person.aliases.length > 0) {
+            lines.push(`*Aliases:* ${person.aliases.join(', ')}`);
+          }
+        }
+      } else {
+        lines.push(`*Linked to:* Not set`);
+      }
+    }
+
+    // Hint for settings
+    lines.push(`\n_Use /sobremesa timezone to update your timezone_`);
+    lines.push(`_Use /sobremesa studio-link to manage your profile_`);
+
+    // Send via DM
+    try {
+      await ctx.telegram.sendMessage(user.id, lines.join('\n'), {
+        parse_mode: 'Markdown',
+      });
+
+      // Confirm in group
+      await ctx.reply(
+        `${displayName}, check your DMs! I've sent you your profile.`,
+      );
+
+      this.logger.info(
+        { userId: user.id, identityId: identity.id, familyId },
+        'Whoami sent via DM from /sobremesa whoami',
+      );
+    } catch (error) {
+      // DM failed - user hasn't started chat with bot
+      this.logger.warn({ userId: user.id, error }, 'Failed to send whoami DM');
+
+      await ctx.reply(
+        `${displayName}, I couldn't send you a DM. Please start a chat with me first by tapping my name, then try again.`,
+      );
+    }
   }
 
   /**
@@ -488,22 +948,38 @@ export class ChatbotHandler implements BotHandler {
         let helpText =
           `📖 *Sobremesa Commands*\n\n` +
           `*/sobremesa status* - Show current status\n` +
-          `*/sobremesa studio-link* - Get a link to access Sobremesa Studio\n`;
+          `*/sobremesa studio-link* - Get a link to access Sobremesa Studio\n` +
+          `*/sobremesa timezone* - Update your timezone\n` +
+          `*/sobremesa whoami* - Show your profile and settings\n`;
 
         if (isAdmin) {
           helpText +=
             `*/sobremesa pause* - Pause message processing\n` +
             `*/sobremesa resume* - Resume message processing\n` +
-            `*/sobremesa lang:en* - Set language to English\n` +
-            `*/sobremesa lang:es* - Set language to Español\n` +
-            `*/sobremesa lang:pt* - Set language to Português\n` +
-            `*/sobremesa lang:fr* - Set language to Français\n` +
-            `*/sobremesa lang:de* - Set language to Deutsch\n`;
+            `*/sobremesa lang:<code>* - Set language (en, es, pt, fr, de)\n`;
         }
 
         helpText += `*/sobremesa help* - Show this help message`;
 
         await ctx.reply(helpText, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      // Handle timezone command - send DM with timezone keyboard
+      if (args === 'timezone' || args === 'tz') {
+        const user = (ctx.message as Message.TextMessage)?.from;
+        if (user) {
+          await this.handleGroupTimezoneCommand(ctx, user);
+        }
+        return;
+      }
+
+      // Handle whoami command - show user profile and settings
+      if (args === 'whoami' || args === 'me') {
+        const user = (ctx.message as Message.TextMessage)?.from;
+        if (user) {
+          await this.handleGroupWhoamiCommand(ctx, user, existingFamily.id);
+        }
         return;
       }
 

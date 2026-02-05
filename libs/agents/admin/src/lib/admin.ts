@@ -1,6 +1,8 @@
 import {
   ConversationEventRepository,
   FamilyRepository,
+  FamilyAccessRepository,
+  IdentityRepository,
   EventLogRepository,
   ProcessingQueueRepository,
   type DatabaseClient,
@@ -22,6 +24,7 @@ import {
   formatMentionMessage,
   formatStatusMessage,
 } from './messages';
+import { OnboardingHandler } from './onboarding-handler';
 
 export type { MessageSender };
 
@@ -37,6 +40,10 @@ export interface AdminAgentOptions {
   eventRepo?: ConversationEventRepository;
   /** Family repository */
   familyRepo?: FamilyRepository;
+  /** Family access repository */
+  familyAccessRepo?: FamilyAccessRepository;
+  /** Identity repository */
+  identityRepo?: IdentityRepository;
   /** Event log repository */
   eventLog?: EventLogRepository;
   /** Processing queue repository */
@@ -77,8 +84,11 @@ export class AdminAgent {
   private messageSender: MessageSender;
   private eventRepo!: ConversationEventRepository;
   private familyRepo!: FamilyRepository;
+  private familyAccessRepo!: FamilyAccessRepository;
+  private identityRepo!: IdentityRepository;
   private eventLog!: EventLogRepository;
   private queueRepo!: ProcessingQueueRepository;
+  private onboardingHandler!: OnboardingHandler;
   private logger: pino.Logger;
 
   constructor(options: AdminAgentOptions) {
@@ -94,6 +104,18 @@ export class AdminAgent {
       this.familyRepo = options.familyRepo;
     } else if (dbClient) {
       this.familyRepo = new FamilyRepository(dbClient);
+    }
+
+    if (options.familyAccessRepo) {
+      this.familyAccessRepo = options.familyAccessRepo;
+    } else if (dbClient) {
+      this.familyAccessRepo = new FamilyAccessRepository(dbClient);
+    }
+
+    if (options.identityRepo) {
+      this.identityRepo = options.identityRepo;
+    } else if (dbClient) {
+      this.identityRepo = new IdentityRepository(dbClient);
     }
 
     if (options.eventLog) {
@@ -121,6 +143,15 @@ export class AdminAgent {
 
     this.messageSender = options.messageSender;
     this.logger = options.logger || createLogger({ name: 'admin' });
+
+    // Initialize onboarding handler if we have all dependencies
+    if (dbClient && this.familyAccessRepo && this.identityRepo) {
+      this.onboardingHandler = new OnboardingHandler({
+        dbClient,
+        messageSender: this.messageSender,
+        logger: this.logger,
+      });
+    }
   }
 
   /**
@@ -419,7 +450,81 @@ export class AdminAgent {
       },
     });
 
+    // Trigger onboarding for new members
+    if (this.onboardingHandler) {
+      await this.triggerOnboardingForJoinedMembers(
+        familyId,
+        conversationId,
+        familyName,
+        language,
+        joinEvents,
+      );
+    }
+
     return { success: true, action: 'member_event', messageSent: true };
+  }
+
+  /**
+   * Trigger onboarding DMs for members who just joined.
+   */
+  private async triggerOnboardingForJoinedMembers(
+    familyId: string,
+    conversationId: string,
+    familyName: string,
+    language: SupportedLanguage,
+    joinEvents: Array<{
+      actorExternalId: string;
+      actorDisplayName?: string;
+      actorUsername?: string;
+    }>,
+  ): Promise<void> {
+    // Process each unique member who joined
+    const seenIds = new Set<string>();
+
+    for (const event of joinEvents) {
+      const actorId = event.actorExternalId;
+      if (!actorId || seenIds.has(actorId)) {
+        continue;
+      }
+      seenIds.add(actorId);
+
+      try {
+        // Find or create identity for this user
+        const { identity } = await this.identityRepo.findOrCreate(
+          'telegram',
+          actorId,
+          event.actorUsername,
+          event.actorDisplayName,
+        );
+
+        // Check if user already has timezone set (skip onboarding)
+        if (identity.timezone) {
+          this.logger.debug(
+            { identityId: identity.id, timezone: identity.timezone },
+            'User already has timezone, skipping onboarding',
+          );
+          continue;
+        }
+
+        // Send onboarding DM
+        const userName =
+          event.actorDisplayName || event.actorUsername || 'friend';
+
+        await this.onboardingHandler.sendOnboardingDm(
+          identity.id,
+          familyId,
+          familyName,
+          language,
+          conversationId,
+          userName,
+        );
+      } catch (error) {
+        this.logger.warn(
+          { actorId, error },
+          'Failed to trigger onboarding for member',
+        );
+      }
+    }
   }
 
   /**

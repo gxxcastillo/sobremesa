@@ -711,6 +711,9 @@ CREATE TABLE IF NOT EXISTS identities (
   display_name VARCHAR(255),
   avatar_url TEXT,
 
+  -- User settings
+  timezone VARCHAR(50),                        -- IANA timezone (e.g., 'America/New_York')
+
   -- Auth tracking
   last_login_at TIMESTAMPTZ,
 
@@ -732,6 +735,7 @@ COMMENT ON TABLE identities IS
 COMMENT ON COLUMN identities.user_id IS 'Reference to the global user account (for web auth and cross-provider linking)';
 COMMENT ON COLUMN identities.provider IS 'Chat provider: telegram, discord, whatsapp, etc.';
 COMMENT ON COLUMN identities.provider_user_id IS 'User ID from the chat provider';
+COMMENT ON COLUMN identities.timezone IS 'User IANA timezone (e.g., America/New_York). Used for relative date resolution.';
 
 CREATE INDEX IF NOT EXISTS idx_identities_provider_user
   ON identities(provider, provider_user_id);
@@ -774,6 +778,12 @@ CREATE TABLE IF NOT EXISTS family_access (
     CHECK (granted_by IN ('chat_join', 'studio_link', 'admin', 'system', 'telegram_login', 'access_pass')),
   granted_at TIMESTAMPTZ DEFAULT NOW(),
 
+  -- Onboarding state (for timezone collection flow)
+  onboarding_state VARCHAR(20) DEFAULT 'not_started'
+    CHECK (onboarding_state IN ('not_started', 'dm_sent', 'completed', 'skipped')),
+  onboarding_dm_sent_at TIMESTAMPTZ,
+  family_relation TEXT,                        -- How they relate to the family (e.g., "son", "daughter-in-law")
+
   -- Revocation tracking
   revoked_at TIMESTAMPTZ,
   revoked_by UUID REFERENCES identities(id),
@@ -799,6 +809,9 @@ COMMENT ON COLUMN family_access.role IS 'Family-scoped role: admin (full access)
 COMMENT ON COLUMN family_access.status IS 'Access status: pending (chat user), active (web authenticated), revoked, suspended';
 COMMENT ON COLUMN family_access.person_id IS 'User-claimed identity: who this user is in this family genealogy';
 COMMENT ON COLUMN family_access.granted_by IS 'How access was granted: chat_join, studio_link, admin, system, telegram_login, access_pass';
+COMMENT ON COLUMN family_access.onboarding_state IS 'Onboarding flow state: not_started, dm_sent, completed, skipped';
+COMMENT ON COLUMN family_access.onboarding_dm_sent_at IS 'When the onboarding DM was sent (for tracking/retry logic)';
+COMMENT ON COLUMN family_access.family_relation IS 'User-provided description of how they relate to this family';
 
 CREATE INDEX IF NOT EXISTS idx_family_access_identity
   ON family_access(identity_id);
@@ -820,6 +833,15 @@ CREATE INDEX IF NOT EXISTS idx_family_access_identity_status
 CREATE INDEX IF NOT EXISTS idx_family_access_person
   ON family_access(family_id, person_id)
   WHERE person_id IS NOT NULL;
+
+-- Onboarding indexes
+CREATE INDEX IF NOT EXISTS idx_family_access_onboarding
+  ON family_access(family_id, onboarding_state)
+  WHERE onboarding_state = 'not_started';
+
+CREATE INDEX IF NOT EXISTS idx_family_access_onboarding_dm_pending
+  ON family_access(family_id, onboarding_state, onboarding_dm_sent_at)
+  WHERE onboarding_state = 'dm_sent';
 
 DROP TRIGGER IF EXISTS update_family_access_updated_at ON family_access;
 CREATE TRIGGER update_family_access_updated_at

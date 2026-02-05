@@ -152,9 +152,52 @@ export interface Identity {
   displayName?: string;
   /** Avatar URL (latest known from provider) */
   avatarUrl?: string;
+  /** IANA timezone (e.g., 'America/New_York'). Used for relative date resolution. */
+  timezone?: string;
   /** Last login timestamp */
   lastLoginAt?: Date;
   isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Onboarding state for a user in a family.
+ */
+export type OnboardingState =
+  | 'not_started'
+  | 'dm_sent'
+  | 'completed'
+  | 'skipped';
+
+/**
+ * Family access record linking an identity to a family with permissions.
+ */
+export interface FamilyAccess {
+  id: string;
+  identityId: string;
+  familyId: string;
+  /** Family-scoped role: admin, member, viewer */
+  role: 'admin' | 'member' | 'viewer';
+  /** Access status: pending (chat user), active (web authenticated), revoked, suspended */
+  status: 'pending' | 'active' | 'revoked' | 'suspended';
+  /** User-claimed identity: who this user is in this family genealogy */
+  personId?: string;
+  /** How access was granted */
+  grantedBy:
+    | 'chat_join'
+    | 'studio_link'
+    | 'admin'
+    | 'system'
+    | 'telegram_login'
+    | 'access_pass';
+  grantedAt: Date;
+  /** Onboarding flow state */
+  onboardingState: OnboardingState;
+  /** When the onboarding DM was sent */
+  onboardingDmSentAt?: Date;
+  /** User-provided description of how they relate to this family */
+  familyRelation?: string;
   createdAt: Date;
   updatedAt: Date;
 }

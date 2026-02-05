@@ -383,6 +383,7 @@ export function authRoutes<T extends AnyElysia>(dbClient: DatabaseClient) {
               provider: auth.identity.provider,
               providerUsername: auth.identity.providerUsername,
               role: auth.user.role,
+              timezone: auth.identity.timezone || null,
             },
             families,
           };
@@ -391,6 +392,53 @@ export function authRoutes<T extends AnyElysia>(dbClient: DatabaseClient) {
           detail: {
             tags: ['Auth'],
             description: 'Get current authenticated user info',
+          },
+        },
+      )
+      /**
+       * PATCH /api/auth/me/timezone
+       * Update current user's timezone
+       *
+       * Auto-detects timezone from browser or allows manual override
+       */
+      .patch(
+        '/me/timezone',
+        async ({ auth, body, set }) => {
+          if (!auth.isAuthenticated || !auth.identity) {
+            set.status = 401;
+            return { error: 'Not authenticated' };
+          }
+
+          const { timezone } = body;
+
+          // Basic validation - ensure it's a valid IANA timezone
+          try {
+            Intl.DateTimeFormat(undefined, { timeZone: timezone });
+          } catch {
+            set.status = 400;
+            return { error: 'Invalid timezone' };
+          }
+
+          const authIdentityRepo = new AuthIdentityRepository(dbClient);
+          const updated = await authIdentityRepo.updateTimezone(
+            auth.identity.id,
+            timezone,
+          );
+
+          if (!updated) {
+            set.status = 500;
+            return { error: 'Failed to update timezone' };
+          }
+
+          return { success: true, timezone: updated.timezone };
+        },
+        {
+          body: t.Object({
+            timezone: t.String(),
+          }),
+          detail: {
+            tags: ['Auth'],
+            description: 'Update current user timezone',
           },
         },
       )

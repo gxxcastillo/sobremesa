@@ -258,6 +258,25 @@ export class IdentityRepository {
   }
 
   /**
+   * Update an identity's timezone.
+   * IANA timezone string (e.g., 'America/New_York').
+   */
+  async updateTimezone(id: string, timezone: string): Promise<Identity | null> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .update({ timezone })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return this.mapFromDb(data);
+  }
+
+  /**
    * Find all active identities.
    */
   async findAllActive(): Promise<Identity[]> {

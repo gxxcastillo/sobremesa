@@ -130,6 +130,10 @@ export default function App() {
     }
   };
 
+  const handleSettings = () => {
+    navigate('/settings');
+  };
+
   // Load data on mount
   onMount(() => {
     loadFamilySummary();
@@ -163,6 +167,13 @@ export default function App() {
             title="Identity Settings"
           >
             Identity
+          </button>
+          <button
+            class="btn-secondary btn-small"
+            onClick={handleSettings}
+            title="Account Settings"
+          >
+            Settings
           </button>
           <Show when={auth.state.families.length > 1}>
             <button

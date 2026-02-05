@@ -161,6 +161,20 @@ export const AuthProvider: ParentComponent = (props) => {
       setUser(response.user);
       setFamilies(response.families);
 
+      // Auto-detect and save timezone if not set
+      if (!response.user.timezone) {
+        try {
+          const browserTimezone =
+            Intl.DateTimeFormat().resolvedOptions().timeZone;
+          await client.updateMyTimezone(browserTimezone);
+          // Update local user state with the new timezone
+          setUser({ ...response.user, timezone: browserTimezone });
+        } catch (tzError) {
+          // Non-critical - just log and continue
+          console.warn('Failed to auto-detect timezone:', tzError);
+        }
+      }
+
       // Restore family selection
       const storedFamilyId = getStoredFamily();
       const matchingFamily = response.families.find(

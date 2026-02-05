@@ -6,6 +6,7 @@ import { Login } from './pages/Login';
 import { AccessPass } from './pages/AccessPass';
 import { SelectFamily } from './pages/SelectFamily';
 import { IdentitySettings } from './pages/IdentitySettings';
+import { Settings } from './pages/Settings';
 import App from './app/App';
 import './styles.css';
 
@@ -41,6 +42,14 @@ if (root) {
             component={() => (
               <ProtectedRoute requireFamily>
                 <IdentitySettings />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/settings"
+            component={() => (
+              <ProtectedRoute>
+                <Settings />
               </ProtectedRoute>
             )}
           />

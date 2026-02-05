@@ -317,6 +317,17 @@ export class AuthIdentityRepository {
     const user = await this.getUser(identityId);
     return user?.role === 'super_admin';
   }
+
+  /**
+   * Update identity timezone.
+   * IANA timezone string (e.g., 'America/New_York').
+   */
+  async updateTimezone(
+    identityId: string,
+    timezone: string,
+  ): Promise<Identity | null> {
+    return this.identityRepo.updateTimezone(identityId, timezone);
+  }
 }
 
 /** @deprecated Use AuthIdentityRepository instead */

@@ -1,0 +1,312 @@
+/* Settings Page Styles */
+
+.settings-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  padding: 2rem;
+}
+
+.settings-container {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.settings-header {
+  text-align: center;
+  margin-bottom: 2rem;
+  position: relative;
+}
+
+.settings-header h1 {
+  font-size: 2rem;
+  color: #2c3e50;
+  margin: 0 0 0.5rem 0;
+}
+
+.settings-header p {
+  color: #7f8c8d;
+  margin: 0;
+}
+
+.settings-main {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+/* Messages */
+.error-message {
+  background: #fee;
+  color: #c33;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid #c33;
+}
+
+.success-message {
+  background: #efe;
+  color: #363;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid #3c3;
+}
+
+/* Sections */
+.settings-section {
+  margin-bottom: 2rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid #e0e6ff;
+}
+
+.settings-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.settings-section h2 {
+  font-size: 1.25rem;
+  color: #2c3e50;
+  border-left: 4px solid #667eea;
+  padding-left: 1rem;
+  margin: 0 0 0.5rem 0;
+}
+
+.section-description {
+  color: #7f8c8d;
+  margin: 0 0 1.5rem 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* Current timezone display */
+.current-timezone {
+  background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+  border: 1px solid #e0e6ff;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.current-timezone .label {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.current-timezone .value {
+  color: #667eea;
+  font-weight: 500;
+}
+
+.current-timezone .current-time {
+  color: #95a5a6;
+  font-weight: 400;
+  margin-left: 0.25rem;
+}
+
+/* Form elements */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.timezone-select-wrapper {
+  position: relative;
+}
+
+.timezone-select-wrapper select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  border: 2px solid #e0e6ff;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s ease;
+  background: white;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23667eea' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 1rem;
+  padding-right: 2.5rem;
+}
+
+.timezone-select-wrapper select:focus {
+  border-color: #667eea;
+}
+
+.timezone-select-wrapper select:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.preview-time {
+  display: block;
+  font-size: 0.85rem;
+  color: #667eea;
+  margin-top: 0.5rem;
+  font-style: italic;
+}
+
+/* Timezone actions */
+.timezone-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.btn-detect {
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #667eea;
+  background: white;
+  border: 2px solid #667eea;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-detect:hover:not(:disabled) {
+  background: #f8f9ff;
+}
+
+.btn-detect:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  flex: 1;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.timezone-hint {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: #fffef0;
+  border: 1px solid #f0e68c;
+  border-radius: 8px;
+  color: #8b7500;
+  font-size: 0.9rem;
+}
+
+/* Account info */
+.account-info {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e0e6ff;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-row .label {
+  font-weight: 600;
+  color: #2c3e50;
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.info-row .value {
+  color: #7f8c8d;
+}
+
+.info-row .value.capitalize {
+  text-transform: capitalize;
+}
+
+/* Back button - reuse from IdentitySettings */
+.back-btn {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: none;
+  border: none;
+  color: #667eea;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.back-btn:hover {
+  background: rgba(102, 126, 234, 0.1);
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .settings-page {
+    padding: 1rem;
+  }
+
+  .settings-main {
+    padding: 1.5rem;
+  }
+
+  .timezone-actions {
+    flex-direction: column;
+  }
+
+  .btn-detect {
+    order: 2;
+  }
+
+  .btn-primary {
+    order: 1;
+  }
+
+  .info-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .info-row .label {
+    width: auto;
+  }
+}

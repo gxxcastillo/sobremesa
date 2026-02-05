@@ -31,6 +31,22 @@ export type HiddenRole = (typeof HIDDEN_ROLES)[number];
 export type AIRole = (typeof AI_ROLES)[number];
 
 /**
+ * Inline keyboard button for Telegram inline keyboards.
+ */
+export interface InlineKeyboardButton {
+  text: string;
+  callback_data?: string;
+  url?: string;
+}
+
+/**
+ * Inline keyboard markup for Telegram messages.
+ */
+export interface InlineKeyboardMarkup {
+  inline_keyboard: InlineKeyboardButton[][];
+}
+
+/**
  * Outgoing message structure for bot messaging.
  */
 export interface OutgoingMessage {
@@ -38,6 +54,8 @@ export interface OutgoingMessage {
   text: string;
   parseMode?: 'Markdown' | 'MarkdownV2' | 'HTML';
   replyToMessageId?: number;
+  /** Inline keyboard for message (Telegram-specific) */
+  replyMarkup?: InlineKeyboardMarkup;
 }
 
 /**

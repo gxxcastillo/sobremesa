@@ -1,4 +1,5 @@
 import type {
+  ChatProvider,
   LanguageCode,
   RawImageReference,
   ScribeDomainModel,
@@ -6,6 +7,7 @@ import type {
 import {
   ConversationEventRepository,
   FamilyRepository,
+  IdentityRepository,
   ImageRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
@@ -33,6 +35,8 @@ export interface ScribeAgentOptions {
   eventRepo?: ConversationEventRepository;
   /** Family repository */
   familyRepo?: FamilyRepository;
+  /** Identity repository (for sender timezone lookup) */
+  identityRepo?: IdentityRepository;
   /** Image repository (for recent images context) */
   imageRepo?: ImageRepository;
   /** Logger instance */
@@ -51,6 +55,7 @@ export class ScribeAgent {
   private model: string;
   private eventRepo: ConversationEventRepository;
   private familyRepo: FamilyRepository;
+  private identityRepo?: IdentityRepository;
   private imageRepo: ImageRepository;
   private logger: pino.Logger;
   private config: ScribeConfig;
@@ -68,6 +73,12 @@ export class ScribeAgent {
       this.familyRepo = options.familyRepo;
     } else if (dbClient) {
       this.familyRepo = new FamilyRepository(dbClient);
+    }
+
+    if (options.identityRepo) {
+      this.identityRepo = options.identityRepo;
+    } else if (dbClient) {
+      this.identityRepo = new IdentityRepository(dbClient);
     }
 
     if (options.imageRepo) {
@@ -137,6 +148,13 @@ export class ScribeAgent {
       ],
     };
 
+    // Load sender's timezone (falls back to family timezone)
+    const senderTimezone = await this.loadSenderTimezone(
+      event.actorExternalId,
+      event.source,
+      familyConfig?.timezone,
+    );
+
     // Build context (use preloaded if available, otherwise fetch from DB)
     // Note: People/places removed - Registrar handles entity matching
     const context = await buildScribeContext(
@@ -157,6 +175,7 @@ export class ScribeAgent {
       event.actorDisplayName || event.actorUsername || 'Unknown',
       context,
       new Date(event.occurredAt),
+      senderTimezone,
     );
 
     // Call AI provider
@@ -223,7 +242,7 @@ export class ScribeAgent {
    */
   private async loadFamilyConfig(
     familyId: string,
-  ): Promise<{ culturalTerms?: string[] } | null> {
+  ): Promise<{ culturalTerms?: string[]; timezone?: string } | null> {
     try {
       const family = await this.familyRepo.findById(familyId);
       if (!family?.config) return null;
@@ -233,10 +252,43 @@ export class ScribeAgent {
         culturalTerms: Array.isArray(config.culturalTerms)
           ? config.culturalTerms
           : [],
+        timezone:
+          typeof config.timezone === 'string' ? config.timezone : undefined,
       };
     } catch (error) {
       this.logger.warn({ familyId, error }, 'Failed to load family config');
       return null;
+    }
+  }
+
+  /**
+   * Load sender's timezone from their identity.
+   * Falls back to family timezone if sender has no timezone set.
+   */
+  private async loadSenderTimezone(
+    actorExternalId: string,
+    source: ChatProvider,
+    familyTimezone?: string,
+  ): Promise<string | undefined> {
+    if (!this.identityRepo) {
+      return familyTimezone;
+    }
+
+    try {
+      // Look up identity by provider user ID
+      const identity = await this.identityRepo.findByProviderUserId(
+        source,
+        actorExternalId,
+      );
+
+      // Use sender's timezone if set, otherwise fall back to family timezone
+      return identity?.timezone || familyTimezone;
+    } catch (error) {
+      this.logger.warn(
+        { actorExternalId, error },
+        'Failed to load sender timezone',
+      );
+      return familyTimezone;
     }
   }
 

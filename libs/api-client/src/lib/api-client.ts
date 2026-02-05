@@ -78,6 +78,8 @@ export interface AuthUser {
   provider: string;
   providerUsername: string | null;
   role: 'user' | 'super_admin';
+  /** IANA timezone (e.g., 'America/New_York'). Null if not set. */
+  timezone: string | null;
 }
 
 export interface FamilyWithRole {
@@ -309,6 +311,20 @@ export class StudioApiClient {
    */
   async getMe(): Promise<MeResponse> {
     return this.request<MeResponse>('/auth/me');
+  }
+
+  /**
+   * Update current user's timezone
+   * @param timezone IANA timezone string (e.g., 'America/New_York')
+   */
+  async updateMyTimezone(timezone: string): Promise<void> {
+    await this.request<{ success: boolean; timezone: string }>(
+      '/auth/me/timezone',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ timezone }),
+      },
+    );
   }
 
   // ============================================================================

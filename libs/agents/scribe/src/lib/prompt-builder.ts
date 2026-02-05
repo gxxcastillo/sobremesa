@@ -38,6 +38,7 @@ export function buildUserMessage(
   senderName: string,
   context: ScribeContext,
   messageTimestamp?: Date,
+  timezone?: string,
 ): string {
   logger.debug(
     {
@@ -51,13 +52,16 @@ export function buildUserMessage(
   const parts: string[] = [];
 
   // Add current date context for resolving relative dates
+  // Use family timezone to ensure dates match user's local perspective
   const currentDate = messageTimestamp || new Date();
-  const dateStr = currentDate.toLocaleDateString('en-US', {
+  const dateOptions: Intl.DateTimeFormatOptions = {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
     weekday: 'long',
-  });
+    ...(timezone && { timeZone: timezone }),
+  };
+  const dateStr = currentDate.toLocaleDateString('en-US', dateOptions);
   parts.push(`TODAY: ${dateStr}`);
   parts.push('');
 

@@ -175,15 +175,22 @@ export class BotManager {
 
         // Send the message
         try {
+          // Build options object
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sendOptions: any = {
+            parse_mode: item.message.parseMode,
+            reply_parameters: item.message.replyToMessageId
+              ? { message_id: item.message.replyToMessageId }
+              : undefined,
+          };
+          // Add reply_markup if present (cast to Telegraf type)
+          if (item.message.replyMarkup) {
+            sendOptions.reply_markup = item.message.replyMarkup;
+          }
           const result = await this.bot.telegram.sendMessage(
             item.message.chatId,
             item.message.text,
-            {
-              parse_mode: item.message.parseMode,
-              reply_parameters: item.message.replyToMessageId
-                ? { message_id: item.message.replyToMessageId }
-                : undefined,
-            },
+            sendOptions,
           );
 
           this.lastSendTimes.set(chatId, Date.now());
