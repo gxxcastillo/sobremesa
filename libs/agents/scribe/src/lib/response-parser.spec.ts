@@ -108,5 +108,60 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
       expect(model.claims[0].claimType).toBe('date');
       expect(model.detectedLanguage).toBe('es');
     });
+
+    it('normalizes controlled vocabulary fields (#8)', () => {
+      const raw = JSON.stringify({
+        places: [{ name: 'Buenos Aires', type: 'City' }],
+        events: [{ title: 'Moved to Miami', event_type: 'emigration' }],
+        relationships: [
+          {
+            person_a: 'Maria',
+            person_b: 'Roberto',
+            relationship_type: 'wife',
+          },
+        ],
+        image_references: [
+          {
+            image_id: 'img-1',
+            reference_type: 'context',
+          },
+        ],
+      });
+
+      const model = parse(raw);
+
+      expect(model.places[0].type).toBe('city');
+      expect(model.events[0].eventType).toBe('migration');
+      expect(model.relationships[0].relationshipType).toBe('spouse');
+      expect(model.imageReferences[0].referenceType).toBe('provides_context');
+    });
+
+    it('drops unknown optional place/event types without dropping the extraction (#8)', () => {
+      const raw = JSON.stringify({
+        places: [{ name: 'Somewhere', type: 'planet' }],
+        events: [{ title: 'A specific memory', event_type: 'legend' }],
+      });
+
+      const model = parse(raw);
+
+      expect(model.places[0].name).toBe('Somewhere');
+      expect(model.places[0].type).toBeUndefined();
+      expect(model.events[0].title).toBe('A specific memory');
+      expect(model.events[0].eventType).toBeUndefined();
+    });
+
+    it('throws on unknown relationship_type because relationship data is structural (#8)', () => {
+      const raw = JSON.stringify({
+        relationships: [
+          {
+            person_a: 'Maria',
+            person_b: 'Roberto',
+            relationship_type: 'cousin',
+          },
+        ],
+      });
+
+      expect(() => parse(raw)).toThrow(ScribeParseError);
+    });
   });
 });

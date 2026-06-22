@@ -20,11 +20,11 @@ First, resolve what the message actually means:
 
 **People:** Anyone mentioned by name. Calculate birth_year from ages ("turned 43" in 2026 → 1983).
 
-**Places:** Name and type (city/country/region/etc.)
+**Places:** Name and type. Use place type values only from: city, country, address, region, landmark, neighborhood, building.
 
-**Events:** Always extract events — they are how downstream agents group related claims into narratives. Include the broader event and notable sub-events as separate entries. Use consistent titles when re-extracting enriched events from context. Calculate dates from relative references.
+**Events:** Always extract events — they are how downstream agents group related claims into narratives. Include the broader event and notable sub-events as separate entries. Use consistent titles when re-extracting enriched events from context. Calculate dates from relative references. Use event_type values only from: birth, death, marriage, immigration, migration, business, education, military, residence, travel, celebration, medical, work, other.
 
-**Relationships:** Who is related to whom and how. Use relationships array AND create claims for provenance. Parent relationship: person_a=parent, person_b=child.
+**Relationships:** Who is related to whom and how. Use relationships array AND create claims for provenance. Use relationship_type values only from: parent, spouse, guardian, godparent, mentor, friend, caregiver. Parent relationship: person_a=parent, person_b=child. Do not store derived family-tree relationships like sibling, cousin, aunt, uncle, or grandparent in the relationships array; capture them as relationship claims instead.
 
 **Image References:** When a message references a recently shared image (usually provided by preprocessing). Types: describes, identifies_people, provides_context, asks_about.
 

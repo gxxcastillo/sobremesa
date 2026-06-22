@@ -1,7 +1,30 @@
+import { wordTokens } from './name-match';
+
 /**
  * Conflict detection utilities for the Registrar agent.
  */
+const SUBJECT_STOPWORDS = new Set([
+  'the',
+  'a',
+  'an',
+  'of',
+  'in',
+  'at',
+  'to',
+  'for',
+  'on',
+  'and',
+  'or',
+  's',
+]);
 
+function subjectTokens(subject: string): Set<string> {
+  return new Set(
+    wordTokens(subject).filter(
+      (word) => word.length > 1 && !SUBJECT_STOPWORDS.has(word),
+    ),
+  );
+}
 /**
  * Claim types that should have a single value and can conflict.
  * These match the Scribe schema enum (minus 'detail' which is additive).
@@ -90,28 +113,63 @@ export function detectClaimConflict(
 }
 
 /**
- * Check if a subject string matches another subject for conflict checking.
+ * Score whether two subject strings refer to the same thing. Uses Jaccard over
+ * whole-word tokens, not raw substring containment, so "wedding" does not match
+ * every subject containing the word wedding.
  */
-export function subjectsMatch(subject1: string, subject2: string): boolean {
+export function subjectMatchScore(subject1: string, subject2: string): number {
   const s1 = subject1.toLowerCase().trim();
   const s2 = subject2.toLowerCase().trim();
 
-  // Exact match
-  if (s1 === s2) return true;
+  if (s1 === s2) return 1;
 
-  // One contains the other
-  if (s1.includes(s2) || s2.includes(s1)) return true;
+  const words1 = subjectTokens(s1);
+  const words2 = subjectTokens(s2);
+  if (words1.size === 0 || words2.size === 0) return 0;
 
-  // Both contain the same key terms (for compound subjects)
-  const words1 = new Set(s1.split(/\s+/).filter((w) => w.length > 3));
-  const words2 = new Set(s2.split(/\s+/).filter((w) => w.length > 3));
-  const intersection = [...words1].filter((w) => words2.has(w));
-
-  // If they share most key words, consider them matching
-  const totalUnique = new Set([...words1, ...words2]).size;
-  if (totalUnique > 0 && intersection.length / totalUnique >= 0.5) {
-    return true;
+  let intersection = 0;
+  for (const word of words1) {
+    if (words2.has(word)) intersection++;
   }
 
-  return false;
+  const union = new Set([...words1, ...words2]).size;
+  return intersection / union;
+}
+
+/**
+ * Pick a single best subject match only when it is strong and unambiguous.
+ */
+export function findBestSubjectMatch(
+  subject: string,
+  candidates: Iterable<[string, string]>,
+  threshold = 0.66,
+  minMargin = 0.15,
+): string | undefined {
+  let bestId: string | undefined;
+  let bestScore = 0;
+  let runnerUpScore = 0;
+
+  for (const [candidateSubject, candidateId] of candidates) {
+    const score = subjectMatchScore(subject, candidateSubject);
+    if (score > bestScore) {
+      runnerUpScore = bestScore;
+      bestScore = score;
+      bestId = candidateId;
+    } else if (score > runnerUpScore) {
+      runnerUpScore = score;
+    }
+  }
+
+  if (bestScore < threshold) return undefined;
+  if (runnerUpScore > 0 && bestScore - runnerUpScore < minMargin) {
+    return undefined;
+  }
+  return bestId;
+}
+
+/**
+ * Check if a subject string matches another subject for conflict checking.
+ */
+export function subjectsMatch(subject1: string, subject2: string): boolean {
+  return subjectMatchScore(subject1, subject2) >= 0.66;
 }

@@ -81,8 +81,16 @@ that an identity claim may later merge into a named person.
 Controlled-vocabulary fields (`Place.type`, `Event.eventType`, `Relationship.relationshipType`,
 image `referenceType`) are constrained at the **Scribe extraction layer** (Zod enums) rather than by DB
 `CHECK` constraints, so the vocabulary stays normalized — keeping merge/match heuristics that switch on
-these values reliable — without coupling it to a migration. `Place.type` ∈
-`city|country|address|region|landmark|neighborhood|building`.
+these values reliable — without coupling it to a migration.
+
+- `Place.type`:
+  `city|country|address|region|landmark|neighborhood|building`
+- `Event.eventType`:
+  `birth|death|marriage|immigration|migration|business|education|military|residence|travel|celebration|medical|work|other`
+- `Relationship.relationshipType`:
+  `parent|spouse|guardian|godparent|mentor|friend|caregiver`
+- Image `referenceType`:
+  `describes|identifies_people|provides_context|asks_about`
 
 **Join tables** connect entities and provenance: `event_people`, `event_places`, `story_people`,
 `story_places`, `story_events`, and `story_conversation_events` (which messages a story was drawn

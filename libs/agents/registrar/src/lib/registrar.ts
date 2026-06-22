@@ -24,7 +24,11 @@ import {
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
-import { detectClaimConflict, subjectsMatch } from './conflict-detector';
+import {
+  detectClaimConflict,
+  findBestSubjectMatch,
+  subjectsMatch,
+} from './conflict-detector';
 import { textMentionsName } from './name-match';
 import {
   EntityMatcherService,
@@ -772,12 +776,7 @@ export class RegistrarAgent {
         }
 
         if (!subjectEventId) {
-          for (const [eventTitle, eventId] of eventIdMap) {
-            if (subjectsMatch(claim.subject, eventTitle)) {
-              subjectEventId = eventId;
-              break;
-            }
-          }
+          subjectEventId = findBestSubjectMatch(claim.subject, eventIdMap);
         }
 
         // If no person resolved, use event as primary subject entity

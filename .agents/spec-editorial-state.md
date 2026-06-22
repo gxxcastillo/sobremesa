@@ -23,21 +23,9 @@ This file holds stateful notes that should not be part of `spec/`.
 
 ## Spec-ahead-of-code drift (entity-resolution review, commit 967fece)
 
-These `spec/` statements describe the **decided target** behavior; the code does not yet satisfy them.
-Each is tracked in the implementation plan `.agents/entity-resolution-fixes-plan.md`. Remove the note
-when the corresponding code lands.
-
-- **overview §1.7 invariant 6 (precision over recall).** Partially satisfied. Done: timeline date
-  filter + no-people guard (#1/#2) and claim→person word-boundary linking (#4). Still violating: story
-  dedup over-merges untitled stories (#3) and claim→event resolution attaches to the wrong event (#5).
-- ~~agent-pipeline §3.3 (atomic & recoverable Scribe parse)~~ — **DONE** (plan item #6). Code now
-  matches the spec: `parseScribeResponse` throws `ScribeParseError` on hard failure and the event is
-  retried/dead-lettered rather than marked `done`.
-- **agent-pipeline §3.4 step 5 (union themes / carry timeframe on story merge).** Code currently appends
-  only `content_original`; themes/timeframe are dropped (plan item #7). Entity-linking on merge already
-  matches the spec.
-- **data-model §2.2 (controlled-vocabulary `_type` fields at Scribe layer).** Code currently types all
-  four as free-form `z.string()`; only `Place.type`'s DB CHECK was removed in 967fece (plan item #8).
+No active drift notes. P0 and P1 code now satisfy the target spec statements for precision-first
+entity resolution, atomic Scribe parsing, story merge enrichment, and Scribe-layer controlled
+vocabulary normalization.
 
 ## Docs routing notes
 

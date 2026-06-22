@@ -21,7 +21,7 @@ Source: verified code review of commit `967fece` ("improved entity resolution").
   `data-model.md` §2.2.
 - **P0 — DONE** (silent data loss + graph corruption): #6 ✓, #4 ✓, #1/#2 ✓. All typecheck, lint, and
   unit-tested; full `nx run-many -t types test` green across 19 projects.
-- **P1 — TODO** (same-root over-merge + enrichment + vocab): #5, #3, #7, #8.
+- **P1 — DONE** (same-root over-merge + enrichment + vocab): #5 ✓, #3 ✓, #7 ✓, #8 ✓.
 - **P2 — TODO** (correctness/i18n): #9, #10.
 
 ### P0 landed — what shipped
@@ -39,6 +39,25 @@ Source: verified code review of commit `967fece` ("improved entity resolution").
 
 Each code item lands with: the matching `spec-editorial-state.md` drift note removed, unit tests for the
 failure scenario, and a short note in the PR description.
+
+### P1 landed — what shipped
+
+- **#5** `conflict-detector.ts` now scores subject matches with whole-token Jaccard, removes raw
+  substring containment, and exposes `findBestSubjectMatch()` with a minimum runner-up margin.
+  `registrar.ts` uses it for claim→event resolution, so weak or ambiguous event subjects are not
+  promoted to primary `event` links. New `conflict-detector.spec.ts` covers substring rejection, best
+  candidate selection, and ambiguity.
+- **#3** `story-repository.ts` `findSimilar` now requires a structural gate: titled stories need a real
+  title anchor; untitled stories need person+theme corroboration plus content similarity. New
+  `story-repository.spec.ts` covers the previous untitled over-merge class.
+- **#7** `appendToStory()` now unions themes and fills `timeframe` only when the existing story lacks
+  one; `findOrCreate()` passes the extracted enrichment data through. Tests cover theme union and
+  no-overwrite timeframe behavior.
+- **#8** `schema.ts` now normalizes controlled vocabularies at the Scribe layer: place types, event
+  types, relationship types, and image reference types. Optional descriptive types (`place.type`,
+  `event_type`) drop unknown values without dropping the extraction; unknown structural
+  `relationship_type` fails loud. `scribe.txt` names the allowed values, and parser tests cover
+  normalization/failure behavior.
 
 ---
 

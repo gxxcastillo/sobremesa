@@ -10,6 +10,122 @@ import type { JsonSchema } from '@sobremesa/ai-provider';
  * for structured outputs.
  */
 
+const PLACE_TYPES = [
+  'city',
+  'country',
+  'address',
+  'region',
+  'landmark',
+  'neighborhood',
+  'building',
+] as const;
+
+const EVENT_TYPES = [
+  'birth',
+  'death',
+  'marriage',
+  'immigration',
+  'migration',
+  'business',
+  'education',
+  'military',
+  'residence',
+  'travel',
+  'celebration',
+  'medical',
+  'work',
+  'other',
+] as const;
+
+const RELATIONSHIP_TYPES = [
+  'parent',
+  'spouse',
+  'guardian',
+  'godparent',
+  'mentor',
+  'friend',
+  'caregiver',
+] as const;
+
+const IMAGE_REFERENCE_TYPES = [
+  'describes',
+  'identifies_people',
+  'provides_context',
+  'asks_about',
+] as const;
+
+function normalizeVocabularyValue(
+  value: unknown,
+  aliases: Record<string, string> = {},
+): unknown {
+  if (typeof value !== 'string') return value;
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, '_');
+  return aliases[normalized] || normalized;
+}
+
+const PlaceTypeSchema = z
+  .preprocess(
+    (value) => normalizeVocabularyValue(value),
+    z.enum(PLACE_TYPES).optional(),
+  )
+  .catch(undefined);
+
+const EventTypeSchema = z
+  .preprocess(
+    (value) =>
+      normalizeVocabularyValue(value, {
+        emigration: 'migration',
+        moved: 'migration',
+        move: 'migration',
+        job: 'work',
+        employment: 'work',
+        school: 'education',
+        birthday: 'birth',
+      }),
+    z.enum(EVENT_TYPES).optional(),
+  )
+  .catch(undefined);
+
+const RelationshipTypeSchema = z.preprocess(
+  (value) =>
+    normalizeVocabularyValue(value, {
+      mother: 'parent',
+      father: 'parent',
+      mom: 'parent',
+      dad: 'parent',
+      husband: 'spouse',
+      wife: 'spouse',
+      marriage: 'spouse',
+      partner: 'spouse',
+      godfather: 'godparent',
+      godmother: 'godparent',
+      padrino: 'godparent',
+      madrina: 'godparent',
+      best_friend: 'friend',
+      family_friend: 'friend',
+      caretaker: 'caregiver',
+    }),
+  z.enum(RELATIONSHIP_TYPES),
+);
+
+const ImageReferenceTypeSchema = z
+  .preprocess(
+    (value) =>
+      normalizeVocabularyValue(value, {
+        identify_people: 'identifies_people',
+        identifies: 'identifies_people',
+        people: 'identifies_people',
+        context: 'provides_context',
+        asks: 'asks_about',
+        question: 'asks_about',
+      }),
+    z.enum(IMAGE_REFERENCE_TYPES),
+  )
+  .catch('describes');
+
 const PersonSchema = z.object({
   name: z.string(),
   aliases: z.array(z.string()).default([]),
@@ -19,7 +135,7 @@ const PersonSchema = z.object({
 
 const PlaceSchema = z.object({
   name: z.string(),
-  type: z.string().optional(),
+  type: PlaceTypeSchema,
   city: z.string().optional(),
   region: z.string().optional(),
   country: z.string().optional(),
@@ -27,7 +143,7 @@ const PlaceSchema = z.object({
 
 const EventSchema = z.object({
   title: z.string(),
-  event_type: z.string().optional(),
+  event_type: EventTypeSchema,
   date: z.string().optional(),
   people_involved: z.array(z.string()).default([]),
   place: z.string().optional(),
@@ -43,7 +159,7 @@ const StorySchema = z.object({
 const RelationshipSchema = z.object({
   person_a: z.string(),
   person_b: z.string(),
-  relationship_type: z.string(),
+  relationship_type: RelationshipTypeSchema,
 });
 
 /**
@@ -75,7 +191,7 @@ const ClaimSchema = z.object({
 
 const ImageReferenceSchema = z.object({
   image_id: z.string(),
-  reference_type: z.string(),
+  reference_type: ImageReferenceTypeSchema,
   people_identified: z.array(z.string()).default([]),
   context_provided: z.string().optional(),
 });

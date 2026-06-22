@@ -102,14 +102,18 @@ Processing order inside `persist`:
 1. **People** — `EntityMatcherService.matchPerson()` (fuzzy match + biographical guard); update aliases
    / enrich birth-death years on match, else create new. Track a name→id map for downstream linking.
 2. **Places** — `findOrCreate` (dedupe by name/location).
-3. **Events** — resolve place ids; `findOrCreate` (dedupe by title + people + date); link people.
+3. **Events** — resolve place ids; `findOrCreate` (dedupe by title + people + date, requiring
+   person overlap or date corroboration and rejecting dated candidates outside the hard year window);
+   link people.
 4. **Relationships** — resolve person ids; `findOrCreate` with confidence metadata.
-5. **Stories** — `findOrCreate` (dedupe by title + content overlap + theme Jaccard); when matched,
-   append content, **union new `themes` and carry over `timeframe` when the existing record lacks
-   one**, and link new people/places/events; link source conversation events.
+5. **Stories** — `findOrCreate` (dedupe by title + content overlap + theme Jaccard, but only after a
+   structural gate: title anchor or corroborated person+theme overlap for untitled stories); when
+   matched, append content, **union new `themes` and carry over `timeframe` when the existing record
+   lacks one**, and link new people/places/events; link source conversation events.
 6. **Claims** — the core path (per claim):
    - skip unresolved pronouns / clarification questions / invalid types;
-   - resolve the subject entity id;
+   - resolve the subject entity id; event-subject resolution scores all candidate event titles and
+     picks one only when the top score is strong and separated from the runner-up;
    - **identity claims** → merge descriptive person into the real person via `MergeHandlerService`;
    - `ConflictDetectorService.detectConflicts()` → conflicts with existing same-entity claims;
    - `StrengthCalculatorService.calculate()` → score + `needsLlmEvaluation`;

@@ -10,6 +10,11 @@ import {
   jaccardSimilarity,
 } from '../text-similarity.js';
 
+const STORY_MATCH_THRESHOLD = 0.55;
+const TITLE_ANCHOR_THRESHOLD = 0.6;
+const UNTITLED_CONTENT_THRESHOLD = 0.55;
+const THEME_ANCHOR_THRESHOLD = 0.5;
+
 /**
  * Repository for coherent narrative fragments.
  */
@@ -161,6 +166,8 @@ export class StoryRepository extends BaseRepository<Story> {
     storyId: string,
     additionalContent: string,
     conversationEventId: string,
+    additionalThemes: string[] = [],
+    timeframe?: string,
   ): Promise<Story> {
     // First fetch the existing story
     const existing = await this.findById(familyId, storyId);
@@ -168,9 +175,16 @@ export class StoryRepository extends BaseRepository<Story> {
       throw new Error(`Story not found: ${storyId}`);
     }
 
-    // Append content only (source events tracked via story_conversation_events join table)
+    const mergedThemes = [
+      ...new Set([...(existing.themes || []), ...additionalThemes]),
+    ];
+
+    // Append content and additive enrichment only (source events tracked via
+    // story_conversation_events join table).
     const updates = {
       content_original: existing.contentOriginal + '\n\n' + additionalContent,
+      themes: mergedThemes,
+      timeframe: existing.timeframe || timeframe,
     };
 
     const { data, error } = await this.client
@@ -269,25 +283,41 @@ export class StoryRepository extends BaseRepository<Story> {
     let bestScore = 0;
 
     for (const candidate of candidates) {
-      let score = 0;
+      const titleSimilarity =
+        title && candidate.title
+          ? wordOverlapSimilarity(title, candidate.title)
+          : 0;
+      const candidateSnippet = (candidate.contentOriginal || '').slice(0, 200);
+      const contentSimilarity = wordOverlapSimilarity(
+        contentSnippet,
+        candidateSnippet,
+      );
+      const themeSimilarity = jaccardSimilarity(themes, candidate.themes || []);
+      const hasPersonOverlap = personOverlapSet.has(candidate.id);
 
-      // Title similarity (weight 0.4) — only if both have titles
-      if (title && candidate.title) {
-        score += wordOverlapSimilarity(title, candidate.title) * 0.4;
-      } else if (!title && !candidate.title) {
-        // Both untitled — give partial credit so content/themes can decide
-        score += 0.1;
+      const hasTitleAnchor = titleSimilarity >= TITLE_ANCHOR_THRESHOLD;
+      const hasPersonThemeAnchor =
+        hasPersonOverlap && themeSimilarity >= THEME_ANCHOR_THRESHOLD;
+      const hasUntitledAnchor =
+        !title &&
+        !candidate.title &&
+        hasPersonThemeAnchor &&
+        contentSimilarity >= UNTITLED_CONTENT_THRESHOLD;
+
+      // Precision over recall: title/content similarity alone is not enough for
+      // untitled stories. A merge needs either a real title anchor or corroborated
+      // person+theme overlap.
+      if (!hasTitleAnchor && !hasUntitledAnchor) {
+        continue;
       }
 
-      // Content similarity (weight 0.35) — compare first 200 chars
-      const candidateSnippet = (candidate.contentOriginal || '').slice(0, 200);
-      score += wordOverlapSimilarity(contentSnippet, candidateSnippet) * 0.35;
-
-      // Theme overlap (weight 0.25)
-      score += jaccardSimilarity(themes, candidate.themes || []) * 0.25;
-
-      // Person overlap boost
-      if (personOverlapSet.has(candidate.id)) {
+      let score = 0;
+      if (title && candidate.title) {
+        score += titleSimilarity * 0.4;
+      }
+      score += contentSimilarity * 0.35;
+      score += themeSimilarity * 0.25;
+      if (hasPersonOverlap) {
         score += 0.15;
       }
 
@@ -297,7 +327,7 @@ export class StoryRepository extends BaseRepository<Story> {
       }
     }
 
-    return bestScore >= 0.55 ? bestMatch : null;
+    return bestScore >= STORY_MATCH_THRESHOLD ? bestMatch : null;
   }
 
   /**
@@ -332,6 +362,8 @@ export class StoryRepository extends BaseRepository<Story> {
         existing.id,
         story.content,
         conversationEventId,
+        story.themes,
+        story.timeframe,
       );
       return { story: updated, created: false };
     }
