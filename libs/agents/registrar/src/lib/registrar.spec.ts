@@ -37,11 +37,6 @@ const mockRelationshipRepo = {
   findOrCreate: vi.fn(),
 };
 
-const mockQuestionRepo = {
-  createFromGenerated: vi.fn(),
-  markAnswered: vi.fn(),
-};
-
 const mockEventLog = {
   log: vi.fn(),
 };
@@ -193,9 +188,6 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     events: [],
     relationships: [],
     claims: [],
-    questions: [],
-    answers: [],
-    conflicts: [],
     imageReferences,
     detectedLanguage: 'en',
   });
@@ -293,6 +285,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-123',
           referenceType: 'identifies_people',
+          peopleIdentified: [],
           confidence: 'medium',
         },
       ]);
@@ -309,6 +302,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-456',
           referenceType: 'provides_context',
+          peopleIdentified: [],
           contextProvided:
             'This was taken at the wedding in Buenos Aires, 1962',
           confidence: 'high',
@@ -330,6 +324,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-456',
           referenceType: 'provides_context',
+          peopleIdentified: [],
           contextProvided: '',
           confidence: 'medium',
         },
@@ -345,6 +340,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-456',
           referenceType: 'provides_context',
+          peopleIdentified: [],
           confidence: 'medium',
         },
       ]);
@@ -361,6 +357,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-789',
           referenceType: 'describes',
+          peopleIdentified: [],
           contextProvided:
             'A family gathering with about 20 people at a long table',
           confidence: 'medium',
@@ -384,6 +381,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-999',
           referenceType: 'asks_about',
+          peopleIdentified: [],
           confidence: 'medium',
         },
       ]);
@@ -415,6 +413,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-good',
           referenceType: 'provides_context',
+          peopleIdentified: [],
           contextProvided: 'Some context',
           confidence: 'high',
         },
@@ -458,6 +457,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-123',
           referenceType: 'provides_context',
+          peopleIdentified: [],
           contextProvided: 'Wedding photo from 1962',
           confidence: 'high',
         },
@@ -512,18 +512,21 @@ describe('RegistrarAgent - Image Reference Handling', () => {
         {
           imageId: 'img-1',
           referenceType: 'provides_context',
+          peopleIdentified: [],
           contextProvided: 'Context 1',
           confidence: 'high',
         },
         {
           imageId: 'img-2',
           referenceType: 'provides_context',
+          peopleIdentified: [],
           contextProvided: 'Context 2',
           confidence: 'high',
         },
         {
           imageId: 'img-3',
           referenceType: 'asks_about',
+          peopleIdentified: [],
           confidence: 'medium',
         },
       ]);
@@ -639,9 +642,6 @@ describe('RegistrarAgent - Event Deduplication', () => {
     ],
     relationships: [],
     claims: [],
-    questions: [],
-    answers: [],
-    conflicts: [],
     imageReferences: [],
     detectedLanguage: 'en',
   });

@@ -25,6 +25,7 @@ import {
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 import { detectClaimConflict, subjectsMatch } from './conflict-detector';
+import { textMentionsName } from './name-match';
 import {
   EntityMatcherService,
   ConflictDetectorService,
@@ -1268,8 +1269,9 @@ export class RegistrarAgent {
 
         for (const [personName, personId] of personIdMap) {
           if (linkedPersonIds.has(personId)) continue;
-          if (personName.length < 3) continue;
-          if (claimText.includes(personName.toLowerCase())) {
+          // Word-boundary match (not raw substring): 'Ann' must not match inside
+          // 'Anna'/'banana'. See name-match.ts and invariant 6.
+          if (textMentionsName(claimText, personName)) {
             await this.claimEntityRepo.link(
               familyId,
               newClaim.id,

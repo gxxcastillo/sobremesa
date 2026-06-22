@@ -100,8 +100,10 @@ const UnderstoodMessageSchema = z.object({
 });
 
 export const RawScribeResponseSchema = z.object({
-  // Structured interpretation with ambiguity tracking
-  understood_message: UnderstoodMessageSchema.optional(),
+  // Structured interpretation with ambiguity tracking.
+  // Metadata-only: degrade to undefined on a malformed value rather than failing
+  // the whole parse (which would discard the entire extraction — see response-parser).
+  understood_message: UnderstoodMessageSchema.optional().catch(undefined),
   people: z.array(PersonSchema).default([]),
   places: z.array(PlaceSchema).default([]),
   events: z.array(EventSchema).default([]),
@@ -109,7 +111,11 @@ export const RawScribeResponseSchema = z.object({
   claims: z.array(ClaimSchema).default([]),
   stories: z.array(StorySchema).default([]),
   image_references: z.array(ImageReferenceSchema).default([]),
-  detected_language: z.enum(['en', 'es', 'pt', 'fr', 'de', 'unknown']),
+  // Metadata-only: an out-of-list or missing language degrades to 'unknown' rather
+  // than failing the whole parse and discarding the extraction.
+  detected_language: z
+    .enum(['en', 'es', 'pt', 'fr', 'de', 'unknown'])
+    .catch('unknown'),
 });
 
 /** TypeScript type derived from Zod schema */

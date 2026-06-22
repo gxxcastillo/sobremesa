@@ -154,10 +154,10 @@ describe('TimelineEventRepository - findSimilar', () => {
     expect(result).toBeNull();
   });
 
-  it('should match event with rephrased title via word overlap', async () => {
+  it('should match event with rephrased title via word overlap when dates anchor it', async () => {
     const event = makeEventRow({
       title: 'High school football game',
-      date_year: null,
+      date_year: 1962,
     });
 
     // No personIds → findAllActive
@@ -170,15 +170,81 @@ describe('TimelineEventRepository - findSimilar', () => {
 
     // "football game loss" vs "High school football game"
     // tokens: ["football", "game", "loss"] vs ["high", "school", "football", "game"]
-    // overlap: 2 / min(3, 4) = 0.67 ≥ 0.6 → match
+    // overlap: 2 / min(3, 4) = 0.67; corroborating dates +0.15 → 0.82 ≥ 0.6 → match
     const result = await eventRepo.findSimilar(
       'fam1',
       'football game loss',
       [],
+      1962,
     );
 
     expect(result).not.toBeNull();
     expect(result?.id).toBe('event-1');
+  });
+
+  it('should NOT merge on title alone with no people and no dates (#2)', async () => {
+    // The over-merge this fixes: a generic-titled, person-less event collapsing
+    // into any title-overlapping event with no corroborating signal.
+    const event = makeEventRow({
+      title: 'High school football game',
+      date_year: null,
+    });
+    const eventsChain = createChainableMock({ data: [event], error: null });
+    mockSupabaseClient.from.mockReturnValue(eventsChain);
+
+    // Identical-ish title, but no personIds and no dateYear → no structural anchor
+    const result = await eventRepo.findSimilar('fam1', 'football game', []);
+
+    expect(result).toBeNull();
+  });
+
+  it('should NOT merge same-title events years apart even with a shared person (#1)', async () => {
+    // 'Birthday Party' 1950 vs 1990 with a shared person must stay distinct.
+    const event = makeEventRow({ title: 'Birthday Party', date_year: 1950 });
+
+    const eventPeopleChain = createChainableMock({
+      data: [{ event_id: 'event-1' }],
+      error: null,
+    });
+    const eventsChain = createChainableMock({ data: [event], error: null });
+    const overlapChain = createChainableMock({
+      data: [{ event_id: 'event-1', person_id: 'person-1' }],
+      error: null,
+    });
+
+    let callCount = 0;
+    mockSupabaseClient.from.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return eventPeopleChain;
+      if (callCount === 2) return eventsChain;
+      return overlapChain;
+    });
+
+    const result = await eventRepo.findSimilar(
+      'fam1',
+      'Birthday Party',
+      ['person-1'],
+      1990,
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('should NOT merge dated events 3-5 years apart (closed the no-penalty gap, #1)', async () => {
+    // Previously a 3-5yr gap got neither boost nor penalty, so identical titles
+    // merged. Now it is outside MAX_YEAR_GAP and hard-filtered out.
+    const event = makeEventRow({ title: 'Birthday Party', date_year: 1990 });
+    const eventsChain = createChainableMock({ data: [event], error: null });
+    mockSupabaseClient.from.mockReturnValue(eventsChain);
+
+    const result = await eventRepo.findSimilar(
+      'fam1',
+      'Birthday Party',
+      [],
+      1994,
+    );
+
+    expect(result).toBeNull();
   });
 
   it('should apply date proximity boost for close dates', async () => {
@@ -217,8 +283,7 @@ describe('TimelineEventRepository - findSimilar', () => {
     });
     mockSupabaseClient.from.mockReturnValue(eventsChain);
 
-    // "football game loss" vs "High school football game" = ~0.67
-    // date penalty -0.2 → 0.47 < 0.6 → no match
+    // Both dated but 12 years apart (> MAX_YEAR_GAP) → candidate hard-filtered out
     const result = await eventRepo.findSimilar(
       'fam1',
       'football game loss',

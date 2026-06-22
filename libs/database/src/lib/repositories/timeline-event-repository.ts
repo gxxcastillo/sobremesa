@@ -8,6 +8,20 @@ import {
 import { wordOverlapSimilarity } from '../text-similarity.js';
 
 /**
+ * Event-dedup scoring constants. Entity resolution favors precision over recall
+ * (spec overview §1.7 invariant 6): a false merge collapses two distinct events
+ * into one and destroys a memory, so matches must be structurally anchored.
+ */
+/** Two dated events more than this many years apart are never the same event. */
+const MAX_YEAR_GAP = 2;
+/** Score boost when an existing candidate shares a person with the new event. */
+const PERSON_OVERLAP_BOOST = 0.1;
+/** Score boost when both events are dated and within MAX_YEAR_GAP. */
+const DATE_PROXIMITY_BOOST = 0.15;
+/** Minimum score (after boosts) to treat a candidate as the same event. */
+const MATCH_THRESHOLD = 0.6;
+
+/**
  * Repository for timeline events derived from claims.
  */
 export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
@@ -182,22 +196,34 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
     let bestScore = 0;
 
     for (const candidate of candidates) {
+      const hasPersonOverlap = personOverlapSet.has(candidate.id);
+
+      const bothDated = dateYear !== undefined && candidate.dateYear != null;
+      const yearDiff = bothDated
+        ? Math.abs(dateYear - (candidate.dateYear as number))
+        : undefined;
+
+      // Hard date filter (#1): two dated events more than MAX_YEAR_GAP apart are
+      // different events regardless of how similar their titles are. Excluding the
+      // candidate outright restores the old ±2yr SQL gate that became a soft penalty.
+      if (yearDiff !== undefined && yearDiff > MAX_YEAR_GAP) {
+        continue;
+      }
+
+      const dateCorroborates =
+        yearDiff !== undefined && yearDiff <= MAX_YEAR_GAP;
+
+      // Structural anchor required (#2): title similarity alone is never enough to
+      // merge — that let generic-titled, person-less events ('lunch', 'the trip')
+      // collapse into any title-overlapping event. Require either a shared person
+      // or corroborating dates before a title score can count.
+      if (!hasPersonOverlap && !dateCorroborates) {
+        continue;
+      }
+
       let score = wordOverlapSimilarity(title, candidate.title);
-
-      // Boost for person overlap
-      if (personOverlapSet.has(candidate.id)) {
-        score += 0.1;
-      }
-
-      // Date proximity boost/penalty
-      if (dateYear !== undefined && candidate.dateYear) {
-        const yearDiff = Math.abs(dateYear - candidate.dateYear);
-        if (yearDiff <= 2) {
-          score += 0.15;
-        } else if (yearDiff > 5) {
-          score -= 0.2;
-        }
-      }
+      if (hasPersonOverlap) score += PERSON_OVERLAP_BOOST;
+      if (dateCorroborates) score += DATE_PROXIMITY_BOOST;
 
       if (score > bestScore) {
         bestScore = score;
@@ -205,7 +231,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
       }
     }
 
-    return bestScore >= 0.6 ? bestMatch : null;
+    return bestScore >= MATCH_THRESHOLD ? bestMatch : null;
   }
 
   /**

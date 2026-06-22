@@ -20,6 +20,9 @@
       "options": {
         "command": "eslint {projectRoot}"
       }
+    },
+    "test": {
+      "executor": "@nx/vitest:test"
     }
   }
 }

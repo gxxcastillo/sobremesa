@@ -17,6 +17,32 @@ import { RawScribeResponseSchema, type RawScribeResponse } from './schema';
 const logger = createLogger({ name: 'scribe-parser' });
 
 /**
+ * Thrown when the Scribe response cannot be parsed into a valid domain model.
+ *
+ * This MUST propagate (never be swallowed into an empty model): a silent empty
+ * result is indistinguishable from "nothing to extract", so the processor would
+ * mark the event `done` and the extraction would be lost. Because
+ * `conversation_events` is immutable, letting this throw means the queue retries
+ * and ultimately dead-letters the event, keeping it re-extractable.
+ * See spec `agent-pipeline.md` §3.3 (atomic & recoverable extraction).
+ */
+export class ScribeParseError extends Error {
+  readonly conversationEventId: string;
+  constructor(
+    message: string,
+    conversationEventId: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message);
+    this.name = 'ScribeParseError';
+    this.conversationEventId = conversationEventId;
+    if (options?.cause !== undefined) {
+      (this as { cause?: unknown }).cause = options.cause;
+    }
+  }
+}
+
+/**
  * Infer confidence from certainty language.
  */
 function inferConfidence(certaintyLanguage?: string): Confidence {
@@ -118,47 +144,51 @@ export function parseScribeResponse(
     imageReferences?: RawImageReference[];
   },
 ): ScribeDomainModel {
-  let raw: RawScribeResponse;
-
+  // Parse JSON first. Invalid JSON fails loud (see ScribeParseError) — never a
+  // silent empty model, which would be marked done and lose the extraction.
+  let parsedJson: unknown;
   try {
-    const jsonStr = extractJson(rawText);
-    const parseResult = RawScribeResponseSchema.safeParse(JSON.parse(jsonStr));
-
-    if (!parseResult.success) {
-      logger.warn(
-        { error: parseResult.error.flatten(), rawText: rawText.slice(0, 500) },
-        'Zod validation failed for Scribe response',
-      );
-      return createEmptyDomainModel(
-        conversationEventId,
-        familyId,
-        preprocessed?.detectedLanguage,
-      );
-    }
-
-    raw = parseResult.data;
-
-    // Log understood message for debugging pronoun resolution
-    if (raw.understood_message) {
-      logger.debug(
-        {
-          conversationEventId,
-          resolvedText: raw.understood_message.resolved_text,
-          ambiguousReferences: raw.understood_message.ambiguous_references,
-          resolutionConfidence: raw.understood_message.resolution_confidence,
-        },
-        'Scribe understood message',
-      );
-    }
+    parsedJson = JSON.parse(extractJson(rawText));
   } catch (error) {
     logger.warn(
       { err: error, rawText: rawText.slice(0, 500) },
-      'Failed to parse Scribe response JSON',
+      'Scribe response is not valid JSON',
     );
-    return createEmptyDomainModel(
+    throw new ScribeParseError(
+      'Scribe response is not valid JSON',
       conversationEventId,
-      familyId,
-      preprocessed?.detectedLanguage,
+      { cause: error },
+    );
+  }
+
+  // Validate against the schema. Malformed entity data fails loud; only the
+  // metadata fields (understood_message, detected_language) degrade via .catch()
+  // in the schema itself — entity arrays do not, so a bad element reaches here.
+  const parseResult = RawScribeResponseSchema.safeParse(parsedJson);
+  if (!parseResult.success) {
+    logger.warn(
+      { error: parseResult.error.flatten(), rawText: rawText.slice(0, 500) },
+      'Zod validation failed for Scribe response',
+    );
+    throw new ScribeParseError(
+      'Scribe response failed schema validation',
+      conversationEventId,
+      { cause: parseResult.error },
+    );
+  }
+
+  const raw: RawScribeResponse = parseResult.data;
+
+  // Log understood message for debugging pronoun resolution
+  if (raw.understood_message) {
+    logger.debug(
+      {
+        conversationEventId,
+        resolvedText: raw.understood_message.resolved_text,
+        ambiguousReferences: raw.understood_message.ambiguous_references,
+        resolutionConfidence: raw.understood_message.resolution_confidence,
+      },
+      'Scribe understood message',
     );
   }
 
@@ -272,27 +302,5 @@ export function parseScribeResponse(
     imageReferences: finalImageReferences,
     detectedLanguage: preprocessed?.detectedLanguage || raw.detected_language,
     interpretation,
-  };
-}
-
-/**
- * Create an empty domain model (used when parsing fails).
- */
-function createEmptyDomainModel(
-  conversationEventId: string,
-  familyId: string,
-  detectedLanguage?: LanguageCode,
-): ScribeDomainModel {
-  return {
-    conversationEventId,
-    familyId,
-    processedAt: new Date(),
-    people: [],
-    places: [],
-    events: [],
-    relationships: [],
-    claims: [],
-    imageReferences: [],
-    detectedLanguage,
   };
 }
