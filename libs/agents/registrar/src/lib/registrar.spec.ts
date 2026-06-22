@@ -28,6 +28,7 @@ const mockStoryRepo = {
 
 const mockClaimRepo = {
   findActiveBySubject: vi.fn(),
+  findByEntity: vi.fn(),
   createFromExtracted: vi.fn(),
   addConflict: vi.fn(),
 };
@@ -53,6 +54,8 @@ const mockImageRepo = {
 
 const mockClaimAnalysisRepo = {
   create: vi.fn(),
+  createForClaim: vi.fn(),
+  findByClaimIds: vi.fn(),
   update: vi.fn(),
 };
 
@@ -62,6 +65,7 @@ const mockEntityMergeRepo = {
 };
 
 const mockClaimEntityRepo = {
+  link: vi.fn(),
   linkEntityToClaim: vi.fn(),
   findClaimsByEntity: vi.fn(),
 };
@@ -773,5 +777,160 @@ describe('RegistrarAgent - Event Deduplication', () => {
 
     // Should not call createMany when no people involved
     expect(mockEventPeopleRepo.createMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('RegistrarAgent - Claim Subject Resolution', () => {
+  let registrar: RegistrarAgent;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockConversationEventRepo.findById.mockResolvedValue({
+      id: 'event-123',
+      actorDisplayName: 'Test User',
+      actorUsername: 'testuser',
+    });
+
+    mockPersonRepo.findBestMatch.mockResolvedValue(null);
+    mockPersonRepo.createNew.mockImplementation(async (_familyId, person) => ({
+      id: `person-${person.name.toLowerCase().replace(/\s+/g, '-')}`,
+      ...person,
+    }));
+
+    mockPlaceRepo.findOrCreate.mockImplementation(async (_familyId, place) => ({
+      id: `place-${place.name.toLowerCase().replace(/\s+/g, '-')}`,
+      ...place,
+      createdAt: new Date(Date.now() - 10000),
+    }));
+
+    mockClaimRepo.findActiveBySubject.mockResolvedValue([]);
+    mockClaimRepo.findByEntity.mockResolvedValue([]);
+    mockClaimRepo.createFromExtracted.mockImplementation(
+      async (_familyId, claim) => ({
+        id: 'claim-1',
+        ...claim,
+      }),
+    );
+    mockClaimAnalysisRepo.createForClaim.mockResolvedValue({});
+    mockClaimAnalysisRepo.findByClaimIds.mockResolvedValue([]);
+    mockClaimEntityRepo.link.mockResolvedValue({});
+    mockClaimRelationshipRepo.create.mockResolvedValue({});
+    mockEventRepo.findOrCreate.mockImplementation(async (_familyId, event) => ({
+      event: {
+        id: `event-${event.title.toLowerCase().replace(/\s+/g, '-')}`,
+        title: event.title,
+      },
+      created: true,
+    }));
+    mockEventPeopleRepo.createMany.mockResolvedValue([]);
+    mockEventLog.log.mockResolvedValue(undefined);
+
+    registrar = new RegistrarAgent({
+      personRepo: mockPersonRepo as any,
+      placeRepo: mockPlaceRepo as any,
+      eventRepo: mockEventRepo as any,
+      storyRepo: mockStoryRepo as any,
+      claimRepo: mockClaimRepo as any,
+      claimAnalysisRepo: mockClaimAnalysisRepo as any,
+      relationshipRepo: mockRelationshipRepo as any,
+      eventLog: mockEventLog as any,
+      conversationEventRepo: mockConversationEventRepo as any,
+      imageRepo: mockImageRepo as any,
+      entityMergeRepo: mockEntityMergeRepo as any,
+      claimEntityRepo: mockClaimEntityRepo as any,
+      claimRelationshipRepo: mockClaimRelationshipRepo as any,
+      storyPeopleRepo: mockStoryPeopleRepo as any,
+      storyPlacesRepo: mockStoryPlacesRepo as any,
+      storyEventsRepo: mockStoryEventsRepo as any,
+      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
+      eventPeopleRepo: mockEventPeopleRepo as any,
+      eventPlacesRepo: mockEventPlacesRepo as any,
+      llmQueueRepo: mockLlmQueueRepo as any,
+      logger: mockLogger as any,
+    });
+  });
+
+  it('uses referencedPeople to resolve a multilingual possessive subject (#10)', async () => {
+    const domainModel: ScribeDomainModel = {
+      conversationEventId: 'event-123',
+      familyId: 'family-abc',
+      processedAt: new Date(),
+      people: [{ name: 'María', aliases: [], confidence: 'medium' }],
+      places: [],
+      events: [],
+      relationships: [],
+      claims: [
+        {
+          claimType: 'detail',
+          subject: 'la boda de María',
+          claimValue: 'fue en Buenos Aires',
+          confidence: 'medium',
+          claimedBy: 'Test User',
+          claimedBySource: 'direct',
+          referencedPeople: ['María'],
+        },
+      ],
+      imageReferences: [],
+      detectedLanguage: 'es',
+    };
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockClaimEntityRepo.link).toHaveBeenCalledWith(
+      'family-abc',
+      'claim-1',
+      'person-maría',
+      'person',
+      { role: 'subject' },
+    );
+    expect(mockClaimEntityRepo.link).not.toHaveBeenCalledWith(
+      'family-abc',
+      'claim-1',
+      'person-maría',
+      'person',
+      { role: 'related' },
+    );
+  });
+
+  it('uses a multilingual event title as the event subject (#10)', async () => {
+    const domainModel: ScribeDomainModel = {
+      conversationEventId: 'event-123',
+      familyId: 'family-abc',
+      processedAt: new Date(),
+      people: [],
+      places: [],
+      events: [
+        {
+          title: 'boda de María',
+          eventType: 'marriage',
+          peopleInvolved: [],
+          confidence: 'medium',
+        },
+      ],
+      relationships: [],
+      claims: [
+        {
+          claimType: 'location',
+          subject: 'la boda de María',
+          claimValue: 'Buenos Aires',
+          confidence: 'medium',
+          claimedBy: 'Test User',
+          claimedBySource: 'direct',
+        },
+      ],
+      imageReferences: [],
+      detectedLanguage: 'es',
+    };
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockClaimEntityRepo.link).toHaveBeenCalledWith(
+      'family-abc',
+      'claim-1',
+      'event-boda-de-maría',
+      'event',
+      { role: 'subject' },
+    );
   });
 });

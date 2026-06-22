@@ -16,6 +16,8 @@ import { RawScribeResponseSchema, type RawScribeResponse } from './schema';
 
 const logger = createLogger({ name: 'scribe-parser' });
 
+type RawEventDate = RawScribeResponse['events'][number]['date'];
+
 /**
  * Thrown when the Scribe response cannot be parsed into a valid domain model.
  *
@@ -66,31 +68,57 @@ function inferConfidence(certaintyLanguage?: string): Confidence {
   return 'medium';
 }
 
-/**
- * Extract a year from a date string like "1920", "summer 1920", "around 1889".
- */
-function extractYear(dateText?: string): number | undefined {
-  if (!dateText) return undefined;
-  const match = dateText.match(/\b(1[89]\d{2}|20[0-2]\d)\b/);
-  return match ? parseInt(match[1], 10) : undefined;
+function normalizeYear(year: number): number | undefined {
+  if (year >= 1800 && year <= 2029) return year;
+  if (year >= 0 && year <= 29) return 2000 + year;
+  if (year >= 30 && year <= 99) return 1900 + year;
+  return undefined;
 }
 
-/**
- * Normalize event date text. The LLM sometimes outputs a JSON object
- * (e.g. {"year":1992,"text":"summer of 92"}) instead of a plain string.
- * Extract the "text" field when that happens.
- */
-function normalizeDateText(date?: string): string | undefined {
-  if (!date) return undefined;
+function extractYearFromText(dateText?: string): number | undefined {
+  if (!dateText) return undefined;
+  const fourDigit = dateText.match(/\b(1[89]\d{2}|20[0-2]\d)\b/);
+  if (fourDigit) return parseInt(fourDigit[1], 10);
+  const twoDigit = dateText.match(/\b(?:'|’)?(\d{2})\b/);
+  return twoDigit ? normalizeYear(parseInt(twoDigit[1], 10)) : undefined;
+}
+
+function parseEventDate(date?: RawEventDate): {
+  dateText?: string;
+  dateYear?: number;
+} {
+  if (!date) return {};
+
+  if (typeof date === 'object') {
+    const dateText = date.text;
+    const dateYear =
+      typeof date.year === 'number'
+        ? normalizeYear(date.year)
+        : extractYearFromText(dateText);
+    return { dateText, dateYear };
+  }
+
   if (date.startsWith('{')) {
     try {
-      const parsed = JSON.parse(date);
-      if (parsed.text) return parsed.text;
+      const parsed = JSON.parse(date) as {
+        year?: unknown;
+        text?: unknown;
+      };
+      const dateText = typeof parsed.text === 'string' ? parsed.text : date;
+      const dateYear =
+        typeof parsed.year === 'number'
+          ? normalizeYear(parsed.year)
+          : extractYearFromText(dateText);
+      return { dateText, dateYear };
     } catch {
-      // not valid JSON, fall through
+      // not valid JSON, parse as plain text
     }
   }
-  return date;
+
+  return {
+    dateText: date,
+    dateYear: extractYearFromText(date),
+  };
 }
 
 /**
@@ -212,15 +240,18 @@ export function parseScribeResponse(
   }));
 
   // Parse events
-  const events: ExtractedEvent[] = raw.events.map((e) => ({
-    title: e.title,
-    eventType: e.event_type,
-    dateText: normalizeDateText(e.date),
-    dateYear: extractYear(e.date),
-    peopleInvolved: e.people_involved,
-    placeName: e.place,
-    confidence: 'medium',
-  }));
+  const events: ExtractedEvent[] = raw.events.map((e) => {
+    const parsedDate = parseEventDate(e.date);
+    return {
+      title: e.title,
+      eventType: e.event_type,
+      dateText: parsedDate.dateText,
+      dateYear: parsedDate.dateYear,
+      peopleInvolved: e.people_involved,
+      placeName: e.place,
+      confidence: 'medium',
+    };
+  });
 
   // Parse relationships (confidence removed from schema)
   const relationships: ExtractedRelationship[] = raw.relationships.map((r) => ({
@@ -239,6 +270,8 @@ export function parseScribeResponse(
     certaintyLanguage: c.certainty_language,
     claimedBy: c.claimed_by,
     claimedBySource: c.claimed_by_source,
+    referencedPeople: c.referenced_people,
+    referencedPlaces: c.referenced_places,
   }));
 
   // Parse story (take first one if multiple)

@@ -22,7 +22,7 @@ Source: verified code review of commit `967fece` ("improved entity resolution").
 - **P0 — DONE** (silent data loss + graph corruption): #6 ✓, #4 ✓, #1/#2 ✓. All typecheck, lint, and
   unit-tested; full `nx run-many -t types test` green across 19 projects.
 - **P1 — DONE** (same-root over-merge + enrichment + vocab): #5 ✓, #3 ✓, #7 ✓, #8 ✓.
-- **P2 — TODO** (correctness/i18n): #9, #10.
+- **P2 — DONE** (correctness/i18n): #9 ✓, #10 ✓.
 
 ### P0 landed — what shipped
 
@@ -58,6 +58,20 @@ failure scenario, and a short note in the PR description.
   `event_type`) drop unknown values without dropping the extraction; unknown structural
   `relationship_type` fails loud. `scribe.txt` names the allowed values, and parser tests cover
   normalization/failure behavior.
+
+### P2 landed — what shipped
+
+- **#9** `response-parser.ts` now parses event dates once from plain strings, JSON-string dates, or
+  structured date objects. `dateYear` is read from the structured `year` field when present, including
+  numeric-string and two-digit years (`"1992"` → `1992`, `92` → `1992`), so dedup date anchors are not
+  silently lost.
+- **#10** `schema.ts` now accepts `referenced_people` and `referenced_places` on claims, and
+  `response-parser.ts` maps them into `ExtractedClaim`. `registrar.ts` uses a structured
+  `referencedPeople` subject hint before possessive-string fallback, with diacritic-insensitive
+  whole-token matching for multilingual subjects such as `la boda de María`. Event subjects also get a
+  stricter multilingual title resolver that requires at least two meaningful event-title tokens, so
+  `boda de María` can match `la boda de María` without promoting one-word generic events like
+  `wedding`.
 
 ---
 
@@ -265,8 +279,7 @@ sites to cover Romance "de"/"de la"/"du" forms.
   (per repository or a shared module) rather than inline magic numbers, so the precision/recall point
   is reviewable in one place.
 
-## Open decisions (do not block P0)
+## Open decisions / follow-ups
 
-1. `event_type` and `relationship_type` enum domains (#8) — verify before coding.
-2. Dead-letter visibility/alerting for `status='error'` (#6 operational follow-up).
-3. `completeness` ladder for stories (#7 deferred) — needs a rubric.
+1. Dead-letter visibility/alerting for `status='error'` (#6 operational follow-up).
+2. `completeness` ladder for stories (#7 deferred) — needs a rubric.

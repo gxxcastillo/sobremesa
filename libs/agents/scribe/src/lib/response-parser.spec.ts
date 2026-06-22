@@ -109,6 +109,75 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
       expect(model.detectedLanguage).toBe('es');
     });
 
+    it('extracts dateYear from structured event date objects (#9)', () => {
+      const raw = JSON.stringify({
+        events: [
+          {
+            title: 'Summer trip',
+            date: { year: 92, text: 'summer of 92' },
+          },
+        ],
+      });
+
+      const model = parse(raw);
+
+      expect(model.events[0].dateText).toBe('summer of 92');
+      expect(model.events[0].dateYear).toBe(1992);
+    });
+
+    it('coerces numeric string years in structured event date objects (#9)', () => {
+      const raw = JSON.stringify({
+        events: [
+          {
+            title: 'Summer trip',
+            date: { year: '1992', text: 'summer 1992' },
+          },
+        ],
+      });
+
+      const model = parse(raw);
+
+      expect(model.events[0].dateText).toBe('summer 1992');
+      expect(model.events[0].dateYear).toBe(1992);
+    });
+
+    it('extracts dateYear from JSON-string event dates (#9)', () => {
+      const raw = JSON.stringify({
+        events: [
+          {
+            title: 'Birthday party',
+            date: JSON.stringify({ year: 2005, text: 'May 2005' }),
+          },
+        ],
+      });
+
+      const model = parse(raw);
+
+      expect(model.events[0].dateText).toBe('May 2005');
+      expect(model.events[0].dateYear).toBe(2005);
+    });
+
+    it('maps referenced_people and referenced_places onto claims (#10)', () => {
+      const raw = JSON.stringify({
+        claims: [
+          {
+            claim_type: 'location',
+            subject: 'la boda de María',
+            claim_value: 'Buenos Aires',
+            claimed_by: 'Ana',
+            claimed_by_source: 'direct',
+            referenced_people: ['María'],
+            referenced_places: ['Buenos Aires'],
+          },
+        ],
+      });
+
+      const model = parse(raw);
+
+      expect(model.claims[0].referencedPeople).toEqual(['María']);
+      expect(model.claims[0].referencedPlaces).toEqual(['Buenos Aires']);
+    });
+
     it('normalizes controlled vocabulary fields (#8)', () => {
       const raw = JSON.stringify({
         places: [{ name: 'Buenos Aires', type: 'City' }],

@@ -42,6 +42,130 @@ import registrarPkg from '../../package.json' with { type: 'json' };
 
 const REGISTRAR_VERSION = registrarPkg.version;
 
+const ENTITY_MENTION_STOPWORDS = new Set([
+  'the',
+  'a',
+  'an',
+  'of',
+  'in',
+  'at',
+  'to',
+  'for',
+  'on',
+  'and',
+  'or',
+  's',
+  'el',
+  'la',
+  'los',
+  'las',
+  'de',
+  'del',
+  'da',
+  'do',
+  'dos',
+  'das',
+  'du',
+  'des',
+  'le',
+  'les',
+]);
+
+function normalizeLookup(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .normalize('NFC')
+    .trim();
+}
+
+function normalizedTokens(value: string): string[] {
+  return normalizeLookup(value)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((token) => token.length > 0);
+}
+
+function meaningfulTokens(value: string, minTokenLength = 2): string[] {
+  return normalizedTokens(value).filter(
+    (token) =>
+      token.length >= minTokenLength && !ENTITY_MENTION_STOPWORDS.has(token),
+  );
+}
+
+function textMentionsNameNormalized(
+  text: string,
+  name: string,
+  minTokenLength = 2,
+): boolean {
+  const nameTokens = meaningfulTokens(name, minTokenLength);
+  if (nameTokens.length === 0) return false;
+  const textTokens = new Set(normalizedTokens(text));
+  return nameTokens.every((token) => textTokens.has(token));
+}
+
+function getEntityIdByName(
+  entityIdMap: Map<string, string>,
+  name: string,
+): string | undefined {
+  const exact = entityIdMap.get(name);
+  if (exact) return exact;
+
+  const normalizedName = normalizeLookup(name);
+  for (const [candidateName, entityId] of entityIdMap) {
+    if (normalizeLookup(candidateName) === normalizedName) {
+      return entityId;
+    }
+  }
+  return undefined;
+}
+
+function resolveSingleReferencedEntity(
+  subject: string,
+  referencedNames: string[] | undefined,
+  entityIdMap: Map<string, string>,
+): string | undefined {
+  const matchedIds = new Set<string>();
+  for (const name of referencedNames || []) {
+    const entityId = getEntityIdByName(entityIdMap, name);
+    if (entityId && textMentionsNameNormalized(subject, name)) {
+      matchedIds.add(entityId);
+    }
+  }
+  return matchedIds.size === 1 ? [...matchedIds][0] : undefined;
+}
+
+function resolveSingleMentionedEntity(
+  subject: string,
+  entityIdMap: Map<string, string>,
+): string | undefined {
+  const matchedIds = new Set<string>();
+  for (const [name, entityId] of entityIdMap) {
+    if (textMentionsNameNormalized(subject, name)) {
+      matchedIds.add(entityId);
+    }
+  }
+  return matchedIds.size === 1 ? [...matchedIds][0] : undefined;
+}
+
+function resolveSingleMentionedEventTitle(
+  subject: string,
+  eventIdMap: Map<string, string>,
+): string | undefined {
+  const subjectTokens = new Set(meaningfulTokens(subject));
+  const matchedIds = new Set<string>();
+
+  for (const [title, eventId] of eventIdMap) {
+    const titleTokens = meaningfulTokens(title);
+    if (titleTokens.length < 2) continue;
+    if (titleTokens.every((token) => subjectTokens.has(token))) {
+      matchedIds.add(eventId);
+    }
+  }
+
+  return matchedIds.size === 1 ? [...matchedIds][0] : undefined;
+}
+
 /**
  * Options for creating a RegistrarAgent.
  */
@@ -752,13 +876,28 @@ export class RegistrarAgent {
 
         // Try to resolve entity from subject
         // First try exact match
-        let subjectPersonId = personIdMap.get(claim.subject);
+        let subjectPersonId = getEntityIdByName(personIdMap, claim.subject);
+
+        if (!subjectPersonId) {
+          subjectPersonId = resolveSingleReferencedEntity(
+            claim.subject,
+            claim.referencedPeople,
+            personIdMap,
+          );
+        }
 
         // If no exact match, try extracting name from possessive subjects
         // e.g., "Beth's birth" → "Beth", "Timothy's age" → "Timothy"
         if (!subjectPersonId && claim.subject.includes("'s ")) {
           const possessiveName = claim.subject.split("'s ")[0].trim();
-          subjectPersonId = personIdMap.get(possessiveName);
+          subjectPersonId = getEntityIdByName(personIdMap, possessiveName);
+        }
+
+        if (!subjectPersonId) {
+          subjectPersonId = resolveSingleMentionedEntity(
+            claim.subject,
+            personIdMap,
+          );
         }
 
         if (subjectPersonId) {
@@ -768,11 +907,18 @@ export class RegistrarAgent {
 
         // Resolve claim subject to a timeline event
         let subjectEventId: string | undefined;
-        subjectEventId = eventIdMap.get(claim.subject);
+        subjectEventId = getEntityIdByName(eventIdMap, claim.subject);
 
         if (!subjectEventId && claim.subject.includes("'s ")) {
           const possessiveName = claim.subject.split("'s ")[0].trim();
-          subjectEventId = eventIdMap.get(possessiveName);
+          subjectEventId = getEntityIdByName(eventIdMap, possessiveName);
+        }
+
+        if (!subjectEventId) {
+          subjectEventId = resolveSingleMentionedEventTitle(
+            claim.subject,
+            eventIdMap,
+          );
         }
 
         if (!subjectEventId) {
@@ -1208,8 +1354,11 @@ export class RegistrarAgent {
         // Link referenced people and places
         if (claim.referencedPeople) {
           for (const personName of claim.referencedPeople) {
-            const personId = personIdMap.get(personName);
-            if (personId) {
+            const personId = getEntityIdByName(personIdMap, personName);
+            if (
+              personId &&
+              !(entityType === 'person' && entityId === personId)
+            ) {
               await this.claimEntityRepo.link(
                 familyId,
                 newClaim.id,
@@ -1225,8 +1374,8 @@ export class RegistrarAgent {
 
         if (claim.referencedPlaces) {
           for (const placeName of claim.referencedPlaces) {
-            const placeId = placeIdMap.get(placeName);
-            if (placeId) {
+            const placeId = getEntityIdByName(placeIdMap, placeName);
+            if (placeId && !(entityType === 'place' && entityId === placeId)) {
               await this.claimEntityRepo.link(
                 familyId,
                 newClaim.id,

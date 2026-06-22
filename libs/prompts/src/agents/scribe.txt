@@ -35,6 +35,8 @@ First, resolve what the message actually means:
 - `claimed_by`: Who made this claim
 - `claimed_by_source`: direct (firsthand) | attributed (citing someone) | hearsay
 - `certainty_language`: Capture hedging ("I thought", "maybe", "probably"). For pure clarification questions that assert no fact ("Which game?", "What do you mean?"), use "questioning". Do NOT use "questioning" for questions that assert alternatives ("Was it 1972?") — capture the actual hedging instead.
+- `referenced_people`: Names of people directly referenced by this claim, matching extracted people names when possible
+- `referenced_places`: Names of places directly referenced by this claim, matching extracted place names when possible
 
 **Structured claim values (as JSON strings):**
 - date: `{"year": 1992, "month": 3, "day": 13, "text": "March 13, 1992"}`

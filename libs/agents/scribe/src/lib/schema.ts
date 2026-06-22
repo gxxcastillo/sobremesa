@@ -54,6 +54,14 @@ const IMAGE_REFERENCE_TYPES = [
   'asks_about',
 ] as const;
 
+const DateNumberSchema = z.preprocess((value) => {
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : value;
+  }
+  return value;
+}, z.number().optional());
+
 function normalizeVocabularyValue(
   value: unknown,
   aliases: Record<string, string> = {},
@@ -144,7 +152,19 @@ const PlaceSchema = z.object({
 const EventSchema = z.object({
   title: z.string(),
   event_type: EventTypeSchema,
-  date: z.string().optional(),
+  date: z
+    .union([
+      z.string(),
+      z
+        .object({
+          year: DateNumberSchema,
+          month: DateNumberSchema,
+          day: DateNumberSchema,
+          text: z.string().optional(),
+        })
+        .passthrough(),
+    ])
+    .optional(),
   people_involved: z.array(z.string()).default([]),
   place: z.string().optional(),
 });
@@ -187,6 +207,8 @@ const ClaimSchema = z.object({
   certainty_language: z.string().optional(),
   claimed_by: z.string(),
   claimed_by_source: z.enum(['direct', 'attributed', 'hearsay']),
+  referenced_people: z.array(z.string()).default([]),
+  referenced_places: z.array(z.string()).default([]),
 });
 
 const ImageReferenceSchema = z.object({

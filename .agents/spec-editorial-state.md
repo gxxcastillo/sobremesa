@@ -23,9 +23,9 @@ This file holds stateful notes that should not be part of `spec/`.
 
 ## Spec-ahead-of-code drift (entity-resolution review, commit 967fece)
 
-No active drift notes. P0 and P1 code now satisfy the target spec statements for precision-first
-entity resolution, atomic Scribe parsing, story merge enrichment, and Scribe-layer controlled
-vocabulary normalization.
+No active drift notes. P0/P1/P2 code now satisfy the target spec statements for precision-first entity
+resolution, atomic Scribe parsing, story merge enrichment, Scribe-layer controlled vocabulary
+normalization, structured date parsing, and claim referenced-entity extraction.
 
 ## Docs routing notes
 

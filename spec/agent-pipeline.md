@@ -80,6 +80,11 @@ Key behaviours:
   re-extracting claims already present in context messages.
 - **Resolves pronouns/ambiguous references internally**, using the recent-message context; resolution
   notes go in `interpretation`.
+- **Normalizes event dates** from plain strings, JSON-string dates, or structured date objects into
+  `dateText` and `dateYear`; structured `year` fields are authoritative when present and numeric
+  string years are coerced.
+- **Extracts claim references** into `referencedPeople` / `referencedPlaces` so Registrar can resolve
+  multilingual subjects without relying only on English possessive syntax.
 - **Flags but never resolves** conflicts.
 - **Extraction is atomic and recoverable.** `parseScribeResponse` never silently discards a non-empty
   extraction. Malformed _optional metadata_ (`understood_message`, `detected_language`) degrades to a
@@ -112,8 +117,10 @@ Processing order inside `persist`:
    lacks one**, and link new people/places/events; link source conversation events.
 6. **Claims** — the core path (per claim):
    - skip unresolved pronouns / clarification questions / invalid types;
-   - resolve the subject entity id; event-subject resolution scores all candidate event titles and
-     picks one only when the top score is strong and separated from the runner-up;
+   - resolve the subject entity id; structured `referencedPeople` can identify a single person subject
+     before possessive-string fallback, while event-subject resolution uses strict multilingual
+     title-token matching and scored candidate matching, picking one only when the match is strong and
+     unambiguous;
    - **identity claims** → merge descriptive person into the real person via `MergeHandlerService`;
    - `ConflictDetectorService.detectConflicts()` → conflicts with existing same-entity claims;
    - `StrengthCalculatorService.calculate()` → score + `needsLlmEvaluation`;
