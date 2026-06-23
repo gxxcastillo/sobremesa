@@ -2,6 +2,105 @@
 // Types
 // ============================================================================
 
+export type LanguageCode = 'en' | 'es' | 'pt' | 'fr' | 'de' | 'unknown';
+
+export interface ParsedMessage {
+  externalEventId: string;
+  rawTimestamp: string;
+  occurredAt: Date;
+  actorRawName: string;
+  actorDisplayName: string;
+  eventType:
+    | 'message'
+    | 'photo'
+    | 'video'
+    | 'audio'
+    | 'document'
+    | 'sticker'
+    | 'system';
+  content: string;
+  messageNumber: number;
+}
+
+export interface ParticipantConfig {
+  rawName: string;
+  displayName: string;
+  timezone: string;
+  role: 'admin' | 'member';
+}
+
+export interface ImportConfig {
+  family: {
+    name: string;
+    defaultLanguage: LanguageCode;
+    timezone: string;
+  };
+  participants: ParticipantConfig[];
+}
+
+export type ImportJobStatus =
+  | 'pending'
+  | 'creating_family'
+  | 'creating_identities'
+  | 'submitting'
+  | 'awaiting_intern'
+  | 'running_intern'
+  | 'intern_complete'
+  | 'processing_scribe'
+  | 'processing'
+  | 'hydrating'
+  | 'complete'
+  | 'failed'
+  | 'cancelled';
+
+export interface ImportStatus {
+  jobId: string;
+  status: ImportJobStatus;
+  progress: {
+    current: number;
+    total: number;
+    percentage: number;
+  };
+  stage: string;
+  batchId?: string;
+  familyId?: string;
+  error?: string;
+  startedAt: Date;
+  completedAt?: Date;
+  internStats?: {
+    toProcess: number;
+    toSkip: number;
+    overridden: number;
+  };
+}
+
+export type InternDecisionType = 'process' | 'skip';
+
+export interface MessageWithDecision {
+  id: string;
+  occurredAt: Date;
+  actorDisplayName: string;
+  content: string;
+  eventType: string;
+  decision: InternDecisionType;
+  reason: string | null;
+  overridden: boolean;
+}
+
+export interface MessageFingerprint {
+  occurredAt: Date | string;
+  actorRawName: string;
+  contentPrefix: string;
+}
+
+export interface DuplicateCheckResult {
+  totalMessages: number;
+  alreadyExist: number;
+  newMessages: number;
+  existingFamilyId?: string;
+  existingFamilyName?: string;
+}
+
 export interface FamilySummary {
   familyId?: string;
   familyName: string;
@@ -370,13 +469,70 @@ export class StudioApiClient {
     audience = 'general',
   ): Promise<string> {
     const response = await this.request<{ narrative: string }>(
-      '/narrative/generate',
+      `/family/${familyId}/narrative`,
       {
         method: 'POST',
-        body: JSON.stringify({ familyId, audience }),
+        body: JSON.stringify({ audience }),
       },
     );
     return response.narrative;
+  }
+
+  /**
+   * Reprocess all messages for a family through the Scribe
+   * @param familyId The family ID
+   * @param options Reprocessing options
+   * @returns Result with counts of enqueued, skipped, and total messages
+   */
+  async reprocessFamily(
+    familyId: string,
+    options: {
+      includeAlreadyProcessed?: boolean;
+      skipInQueue?: boolean;
+    } = {},
+  ): Promise<{
+    success: boolean;
+    message: string;
+    enqueued: number;
+    skipped: number;
+    errors?: number;
+    total: number;
+  }> {
+    return this.request<{
+      success: boolean;
+      message: string;
+      enqueued: number;
+      skipped: number;
+      errors?: number;
+      total: number;
+    }>(`/family/${familyId}/reprocess`, {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
+  }
+
+  /**
+   * Get processing queue statistics for a family
+   * @param familyId The family ID
+   * @returns Queue stats and processing counts
+   */
+  async getQueueStats(familyId: string): Promise<{
+    queue: { queued: number; processing: number; done: number; error: number };
+    totalEvents: number;
+    processedEvents: number;
+    unprocessedEvents: number;
+  }> {
+    return this.request<{
+      queue: {
+        queued: number;
+        processing: number;
+        done: number;
+        error: number;
+      };
+      totalEvents: number;
+      processedEvents: number;
+      unprocessedEvents: number;
+    }>(`/family/${familyId}/queue-stats`);
   }
 
   /**
@@ -394,11 +550,14 @@ export class StudioApiClient {
       headers['Authorization'] = `Bearer ${this.authToken}`;
     }
 
-    const response = await fetch(`${this.baseUrl}/api/book/generate`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ familyId, audience }),
-    });
+    const response = await fetch(
+      `${this.baseUrl}/api/family/${familyId}/book`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ audience }),
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to generate book: ${response.statusText}`);
@@ -517,7 +676,7 @@ export class StudioApiClient {
    * @returns Promise<AllowedChat[]>
    */
   async getAllowedChats(): Promise<AllowedChat[]> {
-    return this.request<AllowedChat[]>('/admin/chats');
+    return this.request<AllowedChat[]>('/chats');
   }
 
   /**
@@ -526,7 +685,7 @@ export class StudioApiClient {
    * @param note Optional note about the authorization
    */
   async authorizeChat(chatId: string, note?: string): Promise<void> {
-    await this.request<void>('/admin/chats', {
+    await this.request<void>('/chats', {
       method: 'POST',
       body: JSON.stringify({ chatId, note }),
     });
@@ -537,8 +696,181 @@ export class StudioApiClient {
    * @param chatId The chat ID to remove
    */
   async removeChat(chatId: string): Promise<void> {
-    await this.request<void>(`/admin/chats/${encodeURIComponent(chatId)}`, {
+    await this.request<void>(`/chat/${encodeURIComponent(chatId)}`, {
       method: 'DELETE',
+    });
+  }
+
+  // ============================================================================
+  // Import Methods (Super Admin only)
+  // ============================================================================
+
+  /**
+   * Check how many messages already exist in the database
+   * @param source Import source ('whatsapp', 'telegram', 'other')
+   * @param messages Array of message fingerprints to check
+   * @returns Duplicate check result with counts
+   */
+  async checkDuplicates(
+    source: 'whatsapp' | 'telegram' | 'other',
+    messages: MessageFingerprint[],
+  ): Promise<DuplicateCheckResult> {
+    return this.request<DuplicateCheckResult>('/imports/check-duplicates', {
+      method: 'POST',
+      body: JSON.stringify({ source, messages }),
+    });
+  }
+
+  /**
+   * Start a WhatsApp import job
+   * @param file The raw WhatsApp export .txt file
+   * @param config Import configuration (family, participants)
+   * @returns Job ID for tracking progress
+   */
+  async startWhatsAppImport(
+    file: File,
+    config: ImportConfig,
+  ): Promise<{ jobId: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('config', JSON.stringify(config));
+    formData.append('source', 'whatsapp');
+
+    const url = `${this.baseUrl}/api/imports`;
+    const headers: Record<string, string> = {};
+    if (this.authToken) {
+      headers['Authorization'] = `Bearer ${this.authToken}`;
+    }
+
+    // Don't set Content-Type - browser sets it with multipart boundary
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ error: response.statusText }));
+      throw new Error(error.error || `API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get import job status
+   * @param jobId The job ID to check
+   * @returns Current status of the import job
+   */
+  async getImportStatus(jobId: string): Promise<ImportStatus> {
+    return this.request<ImportStatus>(`/import/${jobId}`);
+  }
+
+  /**
+   * Cancel an in-progress import job
+   * @param jobId The job ID to cancel
+   */
+  async cancelImport(jobId: string): Promise<void> {
+    await this.request<void>(`/import/${jobId}/cancel`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Resume a failed import job
+   * @param jobId The job ID to resume
+   */
+  async resumeImport(jobId: string): Promise<void> {
+    await this.request<void>(`/import/${jobId}/resume`, {
+      method: 'POST',
+    });
+  }
+
+  // ============================================================================
+  // Intern Review Methods (Super Admin only)
+  // ============================================================================
+
+  /**
+   * Run Intern classification on all messages for a job
+   * @param jobId The import job ID
+   * @returns Stats on how many messages will be processed/skipped
+   */
+  async runIntern(
+    jobId: string,
+  ): Promise<{
+    success: boolean;
+    stats: { toProcess: number; toSkip: number; overridden: number };
+  }> {
+    return this.request<{
+      success: boolean;
+      stats: { toProcess: number; toSkip: number; overridden: number };
+    }>(`/import/${jobId}/run-intern`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Get Intern decisions for all messages
+   * @param jobId The import job ID
+   * @param filter Optional filter: 'all', 'process', or 'skip'
+   * @returns Messages with their Intern decisions
+   */
+  async getInternDecisions(
+    jobId: string,
+    filter?: 'all' | 'process' | 'skip',
+  ): Promise<{
+    messages: MessageWithDecision[];
+    stats: { toProcess: number; toSkip: number; overridden: number };
+    total: number;
+  }> {
+    const params = filter ? `?filter=${filter}` : '';
+    return this.request<{
+      messages: MessageWithDecision[];
+      stats: { toProcess: number; toSkip: number; overridden: number };
+      total: number;
+    }>(`/import/${jobId}/decisions${params}`);
+  }
+
+  /**
+   * Override an Intern decision for a specific message
+   * @param jobId The import job ID
+   * @param eventId The conversation event ID
+   * @param decision The new decision: 'process' or 'skip'
+   */
+  async overrideInternDecision(
+    jobId: string,
+    eventId: string,
+    decision: InternDecisionType,
+  ): Promise<{
+    success: boolean;
+    stats: { toProcess: number; toSkip: number; overridden: number };
+  }> {
+    return this.request<{
+      success: boolean;
+      stats: { toProcess: number; toSkip: number; overridden: number };
+    }>(`/import/${jobId}/decisions/${eventId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ decision }),
+    });
+  }
+
+  /**
+   * Submit selected messages to Scribe for processing
+   * @param jobId The import job ID
+   */
+  async submitToScribe(jobId: string): Promise<{
+    success: boolean;
+    processed: number;
+    skipped: number;
+  }> {
+    return this.request<{
+      success: boolean;
+      processed: number;
+      skipped: number;
+    }>(`/import/${jobId}/submit-scribe`, {
+      method: 'POST',
     });
   }
 }

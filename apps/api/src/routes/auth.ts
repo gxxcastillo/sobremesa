@@ -462,5 +462,130 @@ export function authRoutes<T extends AnyElysia>(dbClient: DatabaseClient) {
           },
         },
       )
+      /**
+       * POST /api/auth/login
+       * Login by Telegram user ID
+       *
+       * Finds or creates a user by Telegram user ID and returns a session token.
+       * - Dev mode: secret is optional
+       * - Prod mode: requires ADMIN_LOGIN_SECRET env var to match
+       *
+       * Auto-creates super_admin only for the very first user.
+       * After that, unknown users are rejected with 403.
+       */
+      .post(
+        '/login',
+        async ({ body, set }) => {
+          const { telegramUserId, displayName, secret: providedSecret } = body;
+
+          // Security: In production, require valid secret
+          const isDev = process.env.NODE_ENV !== 'production';
+          const adminSecret = process.env.ADMIN_LOGIN_SECRET;
+
+          if (!isDev) {
+            if (!adminSecret) {
+              set.status = 500;
+              return { error: 'ADMIN_LOGIN_SECRET not configured' };
+            }
+            if (providedSecret !== adminSecret) {
+              set.status = 401;
+              return { error: 'Invalid credentials' };
+            }
+          }
+
+          const providerUserId = String(telegramUserId);
+
+          // Try to find existing identity
+          const authIdentityRepo = new AuthIdentityRepository(dbClient);
+          let identity = await authIdentityRepo.findByProviderUserId(
+            'telegram',
+            providerUserId,
+          );
+
+          let user;
+          let isNew = false;
+
+          if (identity) {
+            // Existing user - get their info
+            user = await authIdentityRepo.getUser(identity.id);
+            if (!user) {
+              set.status = 500;
+              return { error: 'User record not found for identity' };
+            }
+          } else {
+            // Only auto-create as super_admin if no users exist yet (first user).
+            // Otherwise reject — an existing admin must grant access.
+            const { count } = await dbClient
+              .from('users')
+              .select('*', { count: 'exact', head: true });
+
+            if (count && count > 0) {
+              set.status = 403;
+              return {
+                error: 'User not found. Contact an existing admin for access.',
+              };
+            }
+
+            isNew = true;
+            const result = await authIdentityRepo.findOrCreateFromProvider(
+              'telegram',
+              providerUserId,
+              null, // no username
+              displayName || null,
+              null, // no avatar
+            );
+            user = result.user;
+            identity = result.authIdentity;
+
+            // First user gets super_admin
+            await dbClient
+              .from('users')
+              .update({ role: 'super_admin' })
+              .eq('id', user.id);
+            user.role = 'super_admin';
+          }
+
+          const accessRepo = new FamilyAccessRepository(dbClient);
+          const families = await accessRepo.getFamiliesWithRoles(identity.id);
+
+          const token = await createSessionToken(
+            {
+              userId: user.id,
+              identityId: identity.id,
+              provider: 'telegram',
+              providerUserId,
+              displayName: user.displayName || displayName || undefined,
+              role: user.role,
+            },
+            secret,
+          );
+
+          return {
+            token,
+            user: {
+              id: user.id,
+              displayName: user.displayName || displayName || null,
+              avatarUrl: user.avatarUrl,
+              provider: 'telegram',
+              providerUsername: identity.providerUsername,
+              role: user.role,
+            },
+            families,
+            isNew,
+          };
+        },
+        {
+          body: t.Object({
+            telegramUserId: t.Number(),
+            displayName: t.Optional(t.String()),
+            secret: t.Optional(t.String()),
+          }),
+          detail: {
+            tags: ['Auth'],
+            description:
+              'Login by Telegram user ID. Auto-creates super_admin only for the very first user. Requires ADMIN_LOGIN_SECRET in production.',
+          },
+        },
+      )
   );
 }

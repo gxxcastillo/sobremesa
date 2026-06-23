@@ -9,6 +9,8 @@ import {
 import { createAuthPlugin, hasAccessToFamily } from '@sobremesa/auth';
 import { authRoutes } from './routes/auth';
 import { identityRoutes } from './routes/identity';
+import { importRoutes } from './routes/import';
+import { familyRoutes } from './routes/family';
 
 /**
  * Validate required environment variables on startup
@@ -59,10 +61,17 @@ const tlsConfig =
 
 const app = new Elysia()
   .use(swagger())
-  .use(cors())
+  .use(
+    cors({
+      origin: process.env.STUDIO_URL || 'https://localhost:3000',
+      credentials: true,
+    }),
+  )
   .use(authPlugin)
   .use(authRoutes(dbClient))
   .use(identityRoutes(dbClient))
+  .use(importRoutes(dbClient))
+  .use(familyRoutes(dbClient))
   .get(
     '/health',
     () => ({
@@ -82,34 +91,50 @@ const app = new Elysia()
    */
   .get(
     '/api/public/stats',
-    async () => {
-      // Get aggregate stats across all families
-      const [familiesCount, peopleCount, storiesCount, eventsCount] =
-        await Promise.all([
-          dbClient
-            .from('families')
-            .select('*', { count: 'exact', head: true })
-            .eq('is_active', true),
-          dbClient
-            .from('people')
-            .select('*', { count: 'exact', head: true })
-            .eq('redacted', false),
-          dbClient
-            .from('stories')
-            .select('*', { count: 'exact', head: true })
-            .eq('redacted', false),
-          dbClient
-            .from('events')
-            .select('*', { count: 'exact', head: true })
-            .eq('redacted', false),
-        ]);
+    async ({ set }) => {
+      try {
+        // Get aggregate stats across all families
+        const [familiesCount, peopleCount, storiesCount, eventsCount] =
+          await Promise.all([
+            dbClient
+              .from('families')
+              .select('*', { count: 'exact', head: true })
+              .eq('is_active', true),
+            dbClient
+              .from('people')
+              .select('*', { count: 'exact', head: true })
+              .eq('redacted', false),
+            dbClient
+              .from('stories')
+              .select('*', { count: 'exact', head: true })
+              .eq('redacted', false),
+            dbClient
+              .from('events')
+              .select('*', { count: 'exact', head: true })
+              .eq('redacted', false),
+          ]);
 
-      return {
-        totalFamilies: familiesCount.count || 0,
-        totalPeople: peopleCount.count || 0,
-        totalStories: storiesCount.count || 0,
-        totalEvents: eventsCount.count || 0,
-      };
+        // Log any database errors
+        if (familiesCount.error)
+          console.error('[public/stats] families error:', familiesCount.error);
+        if (peopleCount.error)
+          console.error('[public/stats] people error:', peopleCount.error);
+        if (storiesCount.error)
+          console.error('[public/stats] stories error:', storiesCount.error);
+        if (eventsCount.error)
+          console.error('[public/stats] events error:', eventsCount.error);
+
+        return {
+          totalFamilies: familiesCount.count || 0,
+          totalPeople: peopleCount.count || 0,
+          totalStories: storiesCount.count || 0,
+          totalEvents: eventsCount.count || 0,
+        };
+      } catch (err) {
+        console.error('[public/stats] Unexpected error:', err);
+        set.status = 500;
+        return { error: 'Failed to fetch public stats' };
+      }
     },
     {
       detail: {
@@ -352,19 +377,19 @@ const app = new Elysia()
     },
   )
   /**
-   * POST /api/narrative/generate
+   * POST /api/family/:familyId/narrative
    * Generate a narrative for a family
    * Requires authentication and family membership
    */
   .post(
-    '/api/narrative/generate',
-    async ({ body, auth, set }) => {
+    '/api/family/:familyId/narrative',
+    async ({ params: { familyId }, body, auth, set }) => {
       if (!auth.isAuthenticated || !auth.identity) {
         set.status = 401;
         return { error: 'Authentication required' };
       }
 
-      const { familyId, audience = 'general' } = body;
+      const { audience = 'general' } = body || {};
 
       // Check access
       if (!hasAccessToFamily(auth, familyId)) {
@@ -381,30 +406,32 @@ const app = new Elysia()
       };
     },
     {
-      body: t.Object({
-        familyId: t.String(),
-        audience: t.Optional(t.String({ default: 'general' })),
-      }),
+      params: t.Object({ familyId: t.String() }),
+      body: t.Optional(
+        t.Object({
+          audience: t.Optional(t.String({ default: 'general' })),
+        }),
+      ),
       detail: {
-        tags: ['Narrative'],
+        tags: ['Family'],
         description: 'Generate a narrative for a family',
       },
     },
   )
   /**
-   * POST /api/book/generate
+   * POST /api/family/:familyId/book
    * Generate a book for a family
    * Requires authentication and family membership
    */
   .post(
-    '/api/book/generate',
-    async ({ body, auth, set }) => {
+    '/api/family/:familyId/book',
+    async ({ params: { familyId }, body, auth, set }) => {
       if (!auth.isAuthenticated || !auth.identity) {
         set.status = 401;
         return { error: 'Authentication required' };
       }
 
-      const { familyId, audience = 'general' } = body;
+      const { audience = 'general' } = body || {};
 
       // Check access
       if (!hasAccessToFamily(auth, familyId)) {
@@ -422,23 +449,25 @@ const app = new Elysia()
       };
     },
     {
-      body: t.Object({
-        familyId: t.String(),
-        audience: t.Optional(t.String({ default: 'general' })),
-      }),
+      params: t.Object({ familyId: t.String() }),
+      body: t.Optional(
+        t.Object({
+          audience: t.Optional(t.String({ default: 'general' })),
+        }),
+      ),
       detail: {
-        tags: ['Book'],
+        tags: ['Family'],
         description: 'Generate a book for a family',
       },
     },
   )
   /**
-   * GET /api/admin/chats
+   * GET /api/chats
    * List all allowed chats
    * Requires super admin
    */
   .get(
-    '/api/admin/chats',
+    '/api/chats',
     async ({ auth, set }) => {
       if (!auth.isAuthenticated || !auth.identity) {
         set.status = 401;
@@ -461,12 +490,12 @@ const app = new Elysia()
     },
   )
   /**
-   * POST /api/admin/chats
+   * POST /api/chats
    * Authorize a chat ID
    * Requires super admin
    */
   .post(
-    '/api/admin/chats',
+    '/api/chats',
     async ({ body, auth, set }) => {
       if (!auth.isAuthenticated || !auth.identity) {
         set.status = 401;
@@ -495,12 +524,67 @@ const app = new Elysia()
     },
   )
   /**
-   * DELETE /api/admin/chats/:chatId
+   * DELETE /api/family/:familyId
+   * Permanently delete a family and all its data
+   * Requires super admin
+   */
+  .delete(
+    '/api/family/:familyId',
+    async ({ params: { familyId }, auth, set }) => {
+      if (!auth.isAuthenticated || !auth.identity) {
+        set.status = 401;
+        return { error: 'Authentication required' };
+      }
+
+      if (!auth.isSuperAdmin) {
+        set.status = 403;
+        return { error: 'Super admin access required' };
+      }
+
+      // Verify family exists
+      const { data: family } = await dbClient
+        .from('families')
+        .select('id, name')
+        .eq('id', familyId)
+        .single();
+
+      if (!family) {
+        set.status = 404;
+        return { error: 'Family not found' };
+      }
+
+      // Use the approved hard-delete function so immutable child-table
+      // protections still block individual deletes but allow coherent
+      // whole-family cascades.
+      const { error } = await dbClient.rpc('delete_family_cascade', {
+        p_family_id: familyId,
+      });
+
+      if (error) {
+        console.error('[Admin] Failed to delete family:', error);
+        set.status = 500;
+        return { error: 'Failed to delete family' };
+      }
+
+      console.log(`[Admin] Deleted family: ${family.name} (${familyId})`);
+      return { success: true, deletedFamilyId: familyId };
+    },
+    {
+      params: t.Object({ familyId: t.String() }),
+      detail: {
+        tags: ['Admin'],
+        description:
+          'Permanently delete a family and all its data (super admin only)',
+      },
+    },
+  )
+  /**
+   * DELETE /api/chat/:chatId
    * Remove a chat ID from the allowlist
    * Requires super admin
    */
   .delete(
-    '/api/admin/chats/:chatId',
+    '/api/chat/:chatId',
     async ({ params: { chatId }, auth, set }) => {
       if (!auth.isAuthenticated || !auth.identity) {
         set.status = 401;

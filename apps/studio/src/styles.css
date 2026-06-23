@@ -471,6 +471,24 @@ body {
   transform: translateX(4px);
 }
 
+.family-card.import-card {
+  background: linear-gradient(135deg, #f0f4ff 0%, #e8eef5 100%);
+  border: 2px dashed #667eea;
+}
+
+.family-card.import-card:hover {
+  background: linear-gradient(135deg, #e8eef5 0%, #dde4f0 100%);
+  border-style: solid;
+}
+
+.family-card.import-card .family-name {
+  color: #667eea;
+}
+
+.import-family-btn {
+  margin-top: 1rem;
+}
+
 .family-info {
   display: flex;
   flex-direction: column;

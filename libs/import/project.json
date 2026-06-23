@@ -1,0 +1,8 @@
+{
+  "name": "import",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/import/src",
+  "projectType": "library",
+  "tags": ["scope:service"],
+  "targets": {}
+}

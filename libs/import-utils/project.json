@@ -1,0 +1,8 @@
+{
+  "name": "import-utils",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/import-utils/src",
+  "projectType": "library",
+  "tags": ["scope:shared"],
+  "targets": {}
+}

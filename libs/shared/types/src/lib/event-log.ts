@@ -26,6 +26,14 @@
  * - rule_changed: Family rule/setting changed
  * - lever_changed: Real-time lever adjusted
  *
+ * Import:
+ * - import_started: WhatsApp/chat import started
+ * - import_messages_inserted: Messages inserted into DB, awaiting Intern review
+ * - import_intern_complete: Intern classification complete
+ * - import_completed: Import finished successfully (Scribe processing done)
+ * - import_failed: Import encountered an error
+ * - import_cancelled: Import was cancelled by user
+ *
  * System:
  * - error: Error occurred during processing
  */
@@ -47,6 +55,12 @@ export type EventLogType =
   | 'mediation_sent'
   | 'rule_changed'
   | 'lever_changed'
+  | 'import_started'
+  | 'import_messages_inserted'
+  | 'import_intern_complete'
+  | 'import_completed'
+  | 'import_failed'
+  | 'import_cancelled'
   | 'error';
 
 /**

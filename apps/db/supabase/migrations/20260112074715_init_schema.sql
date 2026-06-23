@@ -186,31 +186,28 @@ CREATE INDEX IF NOT EXISTS idx_families_chat
   ON families(chat_source, chat_id)
   WHERE chat_source IS NOT NULL AND chat_id IS NOT NULL;
 
--- Prevent family deletion (tombstone via is_active instead)
-CREATE OR REPLACE FUNCTION prevent_family_deletes()
-RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION delete_family_cascade(p_family_id UUID)
+RETURNS VOID AS $$
 BEGIN
-  RAISE EXCEPTION 'Families cannot be deleted - use is_active=false for tombstoning (family_id: %)', OLD.id
-    USING HINT = 'Use UPDATE families SET is_active = false instead of DELETE';
-  RETURN NULL;
+  PERFORM pg_catalog.set_config('app.allow_family_hard_delete', 'on', true);
+
+  DELETE FROM public.families
+  WHERE id = p_family_id;
 END;
 $$ LANGUAGE plpgsql
+SECURITY DEFINER
 SET search_path = '';
 
-COMMENT ON FUNCTION prevent_family_deletes IS 'Prevents family deletion. Consistent with immutable claims architecture - use is_active=false instead.';
-
-DROP TRIGGER IF EXISTS enforce_families_no_delete ON families;
-CREATE TRIGGER enforce_families_no_delete
-  BEFORE DELETE ON families
-  FOR EACH ROW
-  EXECUTE FUNCTION prevent_family_deletes();
+COMMENT ON FUNCTION delete_family_cascade IS 'Approved whole-family hard delete path. Enables cascades through immutable child tables while direct child deletes remain blocked.';
+REVOKE ALL ON FUNCTION delete_family_cascade(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION delete_family_cascade(UUID) TO service_role;
 
 -- ============================================================================
 -- FAMILY CONFIG (Optional separate table)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS family_config (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   config JSONB NOT NULL,
   is_active BOOLEAN DEFAULT TRUE,
@@ -307,7 +304,7 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_batches_status
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS conversation_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   -- Ordering (assigned by trigger for deterministic replay)
   sequence_number BIGINT NOT NULL,
@@ -491,7 +488,7 @@ COMMENT ON FUNCTION get_next_sequence IS 'Atomically gets the next sequence numb
 -- Maintains ordered, retryable processing with priority support.
 CREATE TABLE IF NOT EXISTS processing_queue (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
   conversation_event_id UUID NOT NULL,
 
   -- Priority: 1=highest, 10=lowest, default 5
@@ -539,7 +536,7 @@ CREATE INDEX IF NOT EXISTS idx_processing_queue_global_ready
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS people (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   -- Primary identity
   name VARCHAR(255) NOT NULL,
@@ -853,7 +850,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS relationships (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   person_a_id UUID NOT NULL,
   person_b_id UUID NOT NULL,
@@ -912,9 +909,9 @@ CREATE TABLE IF NOT EXISTS relationships (
 
   -- Composite FKs enforce tenant integrity
   CONSTRAINT fk_relationships_person_a
-    FOREIGN KEY (family_id, person_a_id) REFERENCES people(family_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (family_id, person_a_id) REFERENCES people(family_id, id) ON DELETE CASCADE,
   CONSTRAINT fk_relationships_person_b
-    FOREIGN KEY (family_id, person_b_id) REFERENCES people(family_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (family_id, person_b_id) REFERENCES people(family_id, id) ON DELETE CASCADE,
   CONSTRAINT fk_relationships_conversation_event
     FOREIGN KEY (family_id, conversation_event_id) REFERENCES conversation_events(family_id, id) ON DELETE SET NULL
 );
@@ -956,7 +953,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS places (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   name VARCHAR(255) NOT NULL,
   type VARCHAR(50),                            -- 'city','country','address','region','landmark'
@@ -1023,7 +1020,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   title VARCHAR(500) NOT NULL,
   event_type VARCHAR(50),                      -- 'immigration','birth','death','marriage','business'
@@ -1151,7 +1148,7 @@ CREATE INDEX IF NOT EXISTS idx_event_places_place
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS stories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   title VARCHAR(500),
 
@@ -1312,7 +1309,7 @@ CREATE TABLE IF NOT EXISTS story_conversation_events (
   CONSTRAINT fk_story_conversation_events_story
     FOREIGN KEY (family_id, story_id) REFERENCES stories(family_id, id) ON DELETE CASCADE,
   CONSTRAINT fk_story_conversation_events_event
-    FOREIGN KEY (family_id, conversation_event_id) REFERENCES conversation_events(family_id, id) ON DELETE RESTRICT
+    FOREIGN KEY (family_id, conversation_event_id) REFERENCES conversation_events(family_id, id) ON DELETE CASCADE
 );
 
 COMMENT ON TABLE story_conversation_events IS 'Many-to-many: stories ↔ conversation_events. Tracks which raw chat messages were used to create this story.';
@@ -1328,7 +1325,7 @@ CREATE INDEX IF NOT EXISTS idx_story_conversation_events_event
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS claims (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   claim_type VARCHAR(50) NOT NULL,             -- 'date','location','relationship','detail','identity'
   subject VARCHAR(255) NOT NULL,               -- searchable human label
@@ -1368,7 +1365,7 @@ CREATE TABLE IF NOT EXISTS claims (
   -- Composite FK enforces tenant integrity
   CONSTRAINT uq_claims_family_id UNIQUE (family_id, id),
   CONSTRAINT fk_claims_conversation_event
-    FOREIGN KEY (family_id, conversation_event_id) REFERENCES conversation_events(family_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (family_id, conversation_event_id) REFERENCES conversation_events(family_id, id) ON DELETE CASCADE,
 
   -- Enum-like constraints
   CONSTRAINT valid_claim_type CHECK (
@@ -1463,7 +1460,7 @@ CREATE INDEX IF NOT EXISTS idx_claim_analysis_needs_llm
 -- CLAIM CONFLICTS (Explicit preservation, graph-friendly)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS claim_conflicts (
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
   claim_id UUID NOT NULL,
   conflicts_with_claim_id UUID NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -2051,22 +2048,27 @@ CREATE TRIGGER enforce_claims_immutable
   BEFORE UPDATE ON claims
   FOR EACH ROW EXECUTE FUNCTION enforce_claims_immutability();
 
--- Prevent claim deletes (use status=redacted instead)
+-- Prevent individual claim deletes. Family deletes still cascade coherently.
 CREATE OR REPLACE FUNCTION prevent_claim_deletes()
 RETURNS TRIGGER AS $$
 BEGIN
-  RAISE EXCEPTION 'Cannot delete claims. Use status=redacted instead.';
+  IF pg_catalog.current_setting('app.allow_family_hard_delete', true) = 'on' THEN
+    RETURN OLD;
+  END IF;
+
+  RAISE EXCEPTION 'Cannot delete individual claims. Use status=redacted instead.';
   RETURN NULL;
 END;
 $$ LANGUAGE plpgsql
 SET search_path = '';
 
-COMMENT ON FUNCTION prevent_claim_deletes IS 'Prevents claim deletion. Use status=redacted for soft delete.';
+COMMENT ON FUNCTION prevent_claim_deletes IS 'Prevents individual claim deletion. Whole-family deletion cascades through the family delete path.';
 
 DROP TRIGGER IF EXISTS enforce_claims_no_delete ON claims;
 CREATE TRIGGER enforce_claims_no_delete
   BEFORE DELETE ON claims
-  FOR EACH ROW EXECUTE FUNCTION prevent_claim_deletes();
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_claim_deletes();
 
 -- ============================================================================
 -- END PHASE 1C
@@ -2077,7 +2079,7 @@ CREATE TRIGGER enforce_claims_no_delete
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS images (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   -- Provider-neutral media id (often provider-specific)
   source VARCHAR(50) NOT NULL,                 -- matches conversation_events.source
@@ -2151,7 +2153,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS questions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   -- Question text (original language only)
   content_original TEXT NOT NULL,
@@ -2251,7 +2253,7 @@ CREATE TRIGGER validate_question_identity
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS facilitator_rules (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   max_questions_per_window INTEGER DEFAULT 2,
   question_window_hours INTEGER DEFAULT 48,
@@ -2293,7 +2295,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS real_time_levers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   active_conversation_cooldown INTEGER DEFAULT 30,      -- minutes
   storytelling_cooldown INTEGER DEFAULT 15,             -- minutes
@@ -2344,7 +2346,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 -- For POC: store aggregates per day or per evaluation window.
 CREATE TABLE IF NOT EXISTS facilitator_performance (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   window_start TIMESTAMPTZ NOT NULL,
   window_end TIMESTAMPTZ NOT NULL,
@@ -2372,7 +2374,7 @@ CREATE INDEX IF NOT EXISTS idx_fac_perf_family_window
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS event_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   created_at TIMESTAMPTZ DEFAULT NOW(),
 
@@ -2458,7 +2460,7 @@ CREATE INDEX IF NOT EXISTS idx_event_processing_processed_at
 -- Tracks redaction separately to keep conversation_events immutable
 CREATE TABLE IF NOT EXISTS conversation_redactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
   conversation_event_id UUID NOT NULL,
 
   -- Redaction metadata
@@ -2477,7 +2479,7 @@ CREATE TABLE IF NOT EXISTS conversation_redactions (
   CONSTRAINT fk_conversation_redactions_event
     FOREIGN KEY (family_id, conversation_event_id)
     REFERENCES conversation_events(family_id, id)
-    ON DELETE RESTRICT,
+    ON DELETE CASCADE,
   CONSTRAINT fk_conversation_redactions_event_log
     FOREIGN KEY (family_id, event_log_id)
     REFERENCES event_log(family_id, id)
@@ -2642,7 +2644,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS integrity_checkpoints (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id UUID NOT NULL REFERENCES families(id),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
 
   checkpoint_type VARCHAR(50) NOT NULL DEFAULT 'event_log', -- 'event_log','conversation_events'
   range_start TIMESTAMPTZ,
@@ -2845,18 +2847,22 @@ CREATE TRIGGER enforce_conversation_events_immutable
   FOR EACH ROW
   EXECUTE FUNCTION prevent_conversation_event_updates();
 
--- Prevent DELETEs (use redactions instead)
+-- Prevent individual event deletes. Family deletes still cascade coherently.
 CREATE OR REPLACE FUNCTION prevent_conversation_event_deletes()
 RETURNS TRIGGER AS $$
 BEGIN
-  RAISE EXCEPTION 'conversation_events is immutable - deletes are not allowed'
+  IF pg_catalog.current_setting('app.allow_family_hard_delete', true) = 'on' THEN
+    RETURN OLD;
+  END IF;
+
+  RAISE EXCEPTION 'conversation_events is immutable - individual deletes are not allowed'
     USING HINT = 'Use conversation_redactions for privacy controls';
   RETURN NULL;
 END;
 $$ LANGUAGE plpgsql
 SET search_path = '';
 
-COMMENT ON FUNCTION prevent_conversation_event_deletes IS 'Enforce immutability of conversation_events table';
+COMMENT ON FUNCTION prevent_conversation_event_deletes IS 'Prevents individual conversation event deletion. Whole-family deletion cascades through the family delete path.';
 
 DROP TRIGGER IF EXISTS enforce_conversation_events_no_delete ON conversation_events;
 CREATE TRIGGER enforce_conversation_events_no_delete
@@ -3530,6 +3536,195 @@ $$ LANGUAGE plpgsql STABLE;
 
 COMMENT ON FUNCTION get_participants_related_to_subject IS
   'Find participants connected to a subject (person/event/place/story) for focused question targeting.';
+
+-- ============================================================================
+-- IMPORT JOBS TABLE
+-- Tracks WhatsApp and other chat history import operations
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS import_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Who initiated the import
+  created_by UUID REFERENCES identities(id),
+
+  -- Job status (includes Intern review workflow statuses)
+  status VARCHAR(30) NOT NULL DEFAULT 'pending'
+    CHECK (status IN (
+      'pending',
+      'creating_family',
+      'creating_identities',
+      'submitting',
+      'awaiting_intern',      -- Messages in DB, waiting for Intern
+      'running_intern',       -- Intern processing messages
+      'intern_complete',      -- Intern done, awaiting user review
+      'processing_scribe',    -- Scribe Batch API in progress
+      'processing',           -- Legacy status
+      'hydrating',
+      'complete',
+      'failed',
+      'cancelled'
+    )),
+
+  -- Import source type
+  source VARCHAR(20) NOT NULL
+    CHECK (source IN ('whatsapp', 'telegram', 'other')),
+
+  -- Import configuration (family name, participants, timezones, etc.)
+  config JSONB NOT NULL,
+
+  -- Progress tracking
+  progress JSONB DEFAULT '{"current": 0, "total": 0, "stage": "pending"}'::jsonb,
+
+  -- Anthropic Batch API IDs (array for large imports split into multiple batches)
+  batch_ids TEXT[] DEFAULT '{}',
+
+  -- Created family reference (set after family is created)
+  family_id UUID REFERENCES families(id) ON DELETE CASCADE,
+
+  -- Conversation ID for resume support (matches conversation_events.conversation_id)
+  conversation_id VARCHAR(255),
+
+  -- Error message if failed
+  error TEXT,
+
+  -- Timestamps
+  started_at TIMESTAMPTZ DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+
+  -- Full message data for resume (stored as JSONB for flexibility)
+  metadata JSONB DEFAULT '{}'::jsonb,
+
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE import_jobs IS 'Tracks chat history import operations from WhatsApp, Telegram, etc.';
+COMMENT ON COLUMN import_jobs.config IS 'Import configuration including family name, default language, timezone, and participant configs';
+COMMENT ON COLUMN import_jobs.progress IS 'Current progress: {current, total, stage, lastProcessedEventId}';
+COMMENT ON COLUMN import_jobs.batch_ids IS 'Anthropic Batch API IDs for tracking batch processing';
+COMMENT ON COLUMN import_jobs.metadata IS 'Full ParsedMessage[] array for resume support. Large field.';
+
+-- Indexes for common queries
+CREATE INDEX IF NOT EXISTS idx_import_jobs_status
+  ON import_jobs(status)
+  WHERE status NOT IN ('complete', 'failed', 'cancelled');
+
+CREATE INDEX IF NOT EXISTS idx_import_jobs_created_by
+  ON import_jobs(created_by, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_import_jobs_family
+  ON import_jobs(family_id)
+  WHERE family_id IS NOT NULL;
+
+-- Updated-at trigger
+DROP TRIGGER IF EXISTS update_import_jobs_updated_at ON import_jobs;
+CREATE TRIGGER update_import_jobs_updated_at
+BEFORE UPDATE ON import_jobs
+FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- RLS POLICIES (super_admin only)
+ALTER TABLE import_jobs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY import_jobs_select_super_admin ON import_jobs
+  FOR SELECT
+  USING (is_super_admin());
+
+CREATE POLICY import_jobs_insert_super_admin ON import_jobs
+  FOR INSERT
+  WITH CHECK (is_super_admin());
+
+CREATE POLICY import_jobs_update_super_admin ON import_jobs
+  FOR UPDATE
+  USING (is_super_admin());
+
+CREATE POLICY import_jobs_delete_super_admin ON import_jobs
+  FOR DELETE
+  USING (is_super_admin());
+
+-- ============================================================================
+-- INTERN DECISIONS TABLE
+-- Stores Intern's classification decisions for each message during import
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS intern_decisions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Tenant isolation
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+
+  -- Link to import job
+  import_job_id UUID NOT NULL REFERENCES import_jobs(id) ON DELETE CASCADE,
+
+  -- Link to conversation event (uses composite FK for tenant integrity)
+  conversation_event_id UUID NOT NULL,
+
+  -- Intern's decision
+  decision VARCHAR(20) NOT NULL CHECK (decision IN ('process', 'skip')),
+
+  -- Reason for the decision
+  reason VARCHAR(255),
+
+  -- User override
+  overridden BOOLEAN NOT NULL DEFAULT FALSE,
+
+  -- Original decision before override (null if not overridden)
+  original_decision VARCHAR(20) CHECK (original_decision IS NULL OR original_decision IN ('process', 'skip')),
+
+  -- Timestamps
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Ensure one decision per event per job
+  UNIQUE (import_job_id, conversation_event_id),
+
+  -- Composite FK enforces tenant integrity
+  CONSTRAINT fk_intern_decisions_event
+    FOREIGN KEY (family_id, conversation_event_id)
+    REFERENCES conversation_events(family_id, id)
+    ON DELETE CASCADE
+);
+
+COMMENT ON TABLE intern_decisions IS 'Stores Intern classification decisions for import messages';
+COMMENT ON COLUMN intern_decisions.decision IS 'Current decision: process (send to Scribe) or skip';
+COMMENT ON COLUMN intern_decisions.reason IS 'Human-readable reason: emoji-only, media-only, greeting, contains-entities, etc.';
+COMMENT ON COLUMN intern_decisions.overridden IS 'Whether user manually changed the Intern decision';
+COMMENT ON COLUMN intern_decisions.original_decision IS 'Original Intern decision before user override';
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_intern_decisions_job
+  ON intern_decisions(import_job_id);
+
+CREATE INDEX IF NOT EXISTS idx_intern_decisions_family
+  ON intern_decisions(family_id);
+
+CREATE INDEX IF NOT EXISTS idx_intern_decisions_decision
+  ON intern_decisions(import_job_id, decision);
+
+-- Updated-at trigger
+DROP TRIGGER IF EXISTS update_intern_decisions_updated_at ON intern_decisions;
+CREATE TRIGGER update_intern_decisions_updated_at
+BEFORE UPDATE ON intern_decisions
+FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- RLS POLICIES (super_admin only)
+ALTER TABLE intern_decisions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY intern_decisions_select_super_admin ON intern_decisions
+  FOR SELECT
+  USING (is_super_admin());
+
+CREATE POLICY intern_decisions_insert_super_admin ON intern_decisions
+  FOR INSERT
+  WITH CHECK (is_super_admin());
+
+CREATE POLICY intern_decisions_update_super_admin ON intern_decisions
+  FOR UPDATE
+  USING (is_super_admin());
+
+CREATE POLICY intern_decisions_delete_super_admin ON intern_decisions
+  FOR DELETE
+  USING (is_super_admin());
 
 -- ============================================================================
 -- END OF SCHEMA

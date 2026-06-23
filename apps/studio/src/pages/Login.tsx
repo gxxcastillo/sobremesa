@@ -4,7 +4,13 @@
  * Landing page with Telegram login button and public stats.
  */
 
-import { type Component, createSignal, onMount, Show } from 'solid-js';
+import {
+  type Component,
+  createSignal,
+  createEffect,
+  onMount,
+  Show,
+} from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import { StudioApiClient, type PublicStats } from '@sobremesa/api-client';
 import {
@@ -34,16 +40,12 @@ export const Login: Component = () => {
     }
   });
 
-  // Redirect if already authenticated
-  if (auth.state.isAuthenticated) {
-    if (auth.state.currentFamily) {
-      navigate('/family/' + auth.state.currentFamily.familyId, {
-        replace: true,
-      });
-    } else if (auth.state.families.length > 0) {
-      navigate('/select-family', { replace: true });
+  // Redirect if already authenticated (reactive — fires when auth loads)
+  createEffect(() => {
+    if (auth.state.isAuthenticated) {
+      navigate('/', { replace: true });
     }
-  }
+  });
 
   const handleTelegramAuth = async (data: TelegramLoginData) => {
     setIsLoading(true);
@@ -109,7 +111,7 @@ export const Login: Component = () => {
             <p class="login-help">
               Don't have a family yet?{' '}
               <a
-                href="https://t.me/{TELEGRAM_BOT_NAME}"
+                href={`https://t.me/${TELEGRAM_BOT_NAME}`}
                 target="_blank"
                 rel="noopener"
               >

@@ -33,16 +33,14 @@ export class PersonRepository extends BaseRepository<Person> {
       .eq('family_id', familyId)
       .eq('redacted', false)
       .ilike('name', name)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        return null;
-      }
       throw new Error(`Failed to find person by name: ${error.message}`);
     }
 
-    return this.mapFromDb(data);
+    return data ? this.mapFromDb(data) : null;
   }
 
   /**
@@ -191,7 +189,7 @@ export class PersonRepository extends BaseRepository<Person> {
   async createNew(
     familyId: string,
     extracted: ExtractedPerson,
-    conversationEventId: string,
+    conversationEventId?: string,
     createdBy?: string,
     extractionVersion?: string,
   ): Promise<Person> {

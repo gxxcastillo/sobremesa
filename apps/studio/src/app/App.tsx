@@ -258,6 +258,16 @@ export default function App() {
               </div>
             )}
 
+            <div class="admin-actions">
+              <h3>Import Tools</h3>
+              <button
+                class="admin-btn"
+                onClick={() => navigate('/import/whatsapp')}
+              >
+                Import WhatsApp Chat
+              </button>
+            </div>
+
             <hr class="section-divider" />
           </section>
         </Show>

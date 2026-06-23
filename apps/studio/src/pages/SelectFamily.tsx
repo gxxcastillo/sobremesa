@@ -12,6 +12,8 @@ export const SelectFamily: Component = () => {
   const auth = useAuth();
   const navigate = useNavigate();
 
+  const isSuperAdmin = () => auth.state.user?.role === 'super_admin';
+
   const handleSelectFamily = (familyId: string) => {
     auth.selectFamily(familyId);
     navigate('/family/' + familyId);
@@ -43,11 +45,26 @@ export const SelectFamily: Component = () => {
             when={auth.state.families.length > 0}
             fallback={
               <div class="no-families">
-                <p>You don't have access to any families yet.</p>
-                <p>
-                  Request an access pass from your family group chat using{' '}
-                  <code>/sobremesa studio-link</code>
-                </p>
+                <Show
+                  when={isSuperAdmin()}
+                  fallback={
+                    <>
+                      <p>You don't have access to any families yet.</p>
+                      <p>
+                        Request an access pass from your family group chat using{' '}
+                        <code>/sobremesa studio-link</code>
+                      </p>
+                    </>
+                  }
+                >
+                  <p>No families yet. Import a chat history to get started.</p>
+                  <button
+                    class="btn-primary import-family-btn"
+                    onClick={() => navigate('/import/whatsapp')}
+                  >
+                    Import WhatsApp Chat
+                  </button>
+                </Show>
               </div>
             }
           >
@@ -68,6 +85,19 @@ export const SelectFamily: Component = () => {
                   </button>
                 )}
               </For>
+              <Show when={isSuperAdmin()}>
+                <button
+                  class="family-card import-card"
+                  onClick={() => navigate('/import/whatsapp')}
+                >
+                  <div class="family-info">
+                    <h3 class="family-name">+ Import New Family</h3>
+                    <p class="family-joined">
+                      Import from WhatsApp chat export
+                    </p>
+                  </div>
+                </button>
+              </Show>
             </div>
           </Show>
         </main>

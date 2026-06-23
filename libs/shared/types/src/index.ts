@@ -22,3 +22,6 @@ export * from './lib/outgoing-queue';
 
 // Event log types
 export * from './lib/event-log';
+
+// Import types (WhatsApp history import)
+export * from './lib/import';

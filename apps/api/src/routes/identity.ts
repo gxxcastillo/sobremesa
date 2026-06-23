@@ -38,7 +38,12 @@ export function identityRoutes(dbClient: DatabaseClient) {
        */
       .get(
         '/:familyId/identity',
-        async ({ params: { familyId }, auth, set }) => {
+        async (ctx) => {
+          const {
+            params: { familyId },
+            set,
+          } = ctx;
+          const auth = (ctx as any).auth;
           if (!auth.isAuthenticated || !auth.identity) {
             set.status = 401;
             return { error: 'Authentication required' };
@@ -152,7 +157,13 @@ export function identityRoutes(dbClient: DatabaseClient) {
        */
       .post(
         '/:familyId/identity/claim',
-        async ({ params: { familyId }, body, auth, set }) => {
+        async (ctx) => {
+          const {
+            params: { familyId },
+            body,
+            set,
+          } = ctx;
+          const auth = (ctx as any).auth;
           if (!auth.isAuthenticated || !auth.identity) {
             set.status = 401;
             return { error: 'Authentication required' };
@@ -222,7 +233,12 @@ export function identityRoutes(dbClient: DatabaseClient) {
        */
       .delete(
         '/:familyId/identity/claim',
-        async ({ params: { familyId }, auth, set }) => {
+        async (ctx) => {
+          const {
+            params: { familyId },
+            set,
+          } = ctx;
+          const auth = (ctx as any).auth;
           if (!auth.isAuthenticated || !auth.identity) {
             set.status = 401;
             return { error: 'Authentication required' };
@@ -252,7 +268,13 @@ export function identityRoutes(dbClient: DatabaseClient) {
        */
       .get(
         '/:familyId/people',
-        async ({ params: { familyId }, query, auth, set }) => {
+        async (ctx) => {
+          const {
+            params: { familyId },
+            query,
+            set,
+          } = ctx;
+          const auth = (ctx as any).auth;
           if (!auth.isAuthenticated || !auth.identity) {
             set.status = 401;
             return { error: 'Authentication required' };
@@ -310,7 +332,13 @@ export function identityRoutes(dbClient: DatabaseClient) {
        */
       .post(
         '/:familyId/people',
-        async ({ params: { familyId }, body, auth, set }) => {
+        async (ctx) => {
+          const {
+            params: { familyId },
+            body,
+            set,
+          } = ctx;
+          const auth = (ctx as any).auth;
           if (!auth.isAuthenticated || !auth.identity) {
             set.status = 401;
             return { error: 'Authentication required' };
@@ -399,7 +427,13 @@ export function identityRoutes(dbClient: DatabaseClient) {
        */
       .patch(
         '/:familyId/people/:personId',
-        async ({ params: { familyId, personId }, body, auth, set }) => {
+        async (ctx) => {
+          const {
+            params: { familyId, personId },
+            body,
+            set,
+          } = ctx;
+          const auth = (ctx as any).auth;
           if (!auth.isAuthenticated || !auth.identity) {
             set.status = 401;
             return { error: 'Authentication required' };

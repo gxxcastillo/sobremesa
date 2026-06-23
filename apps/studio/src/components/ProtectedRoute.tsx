@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 interface ProtectedRouteProps {
   requireFamily?: boolean;
   requireAdmin?: boolean;
+  requireSuperAdmin?: boolean;
 }
 
 export const ProtectedRoute: ParentComponent<ProtectedRouteProps> = (props) => {
@@ -46,6 +47,15 @@ export const ProtectedRoute: ParentComponent<ProtectedRouteProps> = (props) => {
         navigate('/family/' + auth.state.currentFamily.familyId, {
           replace: true,
         });
+      }
+    }
+
+    // Check super admin access if required
+    if (props.requireSuperAdmin) {
+      if (auth.state.user?.role !== 'super_admin') {
+        // User doesn't have super admin access
+        navigate('/select-family', { replace: true });
+        return;
       }
     }
   });
