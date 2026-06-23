@@ -9,7 +9,7 @@ Developer reference for Sobremesa's tooling. The canonical behavior spec lives i
 
 ### Language & Runtime
 
-- **TypeScript** 5.9.x (strict mode)
+- **TypeScript** 6.0.x (strict mode)
 - **Runtime:** Bun (Node-compatible TypeScript)
 - **Package Manager:** Bun
 

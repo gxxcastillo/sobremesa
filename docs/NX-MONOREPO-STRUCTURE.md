@@ -220,7 +220,7 @@ nx graph                          # Visualize dependencies
 - `@nx/esbuild` - Build tooling (chatbots, API)
 - `@nx/eslint` - Linting
 
-**TypeScript:** 5.9.x with strict mode, path mapping via `tsconfig.base.json`
+**TypeScript:** 6.0.x with strict mode, path mapping via `tsconfig.base.json`
 
 ---
 
