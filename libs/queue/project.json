@@ -13,6 +13,12 @@
       "options": {
         "command": "bun eslint libs/queue"
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun vitest run --config libs/queue/vite.config.ts"
+      }
     }
   }
 }

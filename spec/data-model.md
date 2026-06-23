@@ -1,212 +1,127 @@
 # Data Model
 
-Ground truth is `apps/db/supabase/migrations/20260112074715_init_schema.sql` (38 tables) and the
-TypeScript domain types in `libs/shared/types/src/lib/*`. Each table is reached from code through a
-repository in `libs/database/src/lib/repositories/*` that maps `snake_case` columns to `camelCase`
-domain objects.
+Ground truth is the Supabase migration in `apps/db/supabase/migrations/` and the domain types in
+`libs/shared/types/src/lib/*`. This file captures the shape and invariants, not every column.
 
-## 2.1 The claims-based architecture
+## 2.1 Core Model: Claims Over Facts
 
-Sobremesa does **not** store facts directly on entities. It stores **claims** — atomic, sourced,
-immutable statements — and treats entities (`people`, `places`, etc.) as the things claims are _about_.
-This gives provenance, conflict tracking, and an audit trail for free.
+Sobremesa stores family knowledge as **claims**: sourced, immutable statements about entities. Entities
+such as people, places, events, and stories are the things claims refer to; they are not treated as
+unsourced fact containers.
 
 ```
-conversation_event  (immutable raw message)
-        │  Scribe extracts
-        ▼
-   ExtractedClaim ──Registrar──►  claims (immutable: who said what, when, how sure)
-                                     │
-                          ┌──────────┼───────────────┬─────────────────┐
-                          ▼          ▼                ▼                 ▼
-                   claim_analysis  claim_entities  claim_relationships  claim_conflicts
-                   (mutable score) (links to       (supports/refines/   (disputes between
-                                    people/places/  contradicts other    claims)
-                                    events/stories)  claims)
+conversation_events ──Scribe──► extracted claims ──Registrar──► claims
+                                                               ├── claim_analysis
+                                                               ├── claim_entities
+                                                               ├── claim_relationships
+                                                               └── claim_conflicts
 ```
 
-### `claims` — immutable provenance (`claim-repository.ts`, `entities.ts`)
+Key rules:
 
-| Field                 | Meaning                                                                                      |
-| --------------------- | -------------------------------------------------------------------------------------------- |
-| `claimType`           | one of `date` · `location` · `relationship` · `detail` · `identity` (validated by Registrar) |
-| `subject`             | what the claim is about, with context (e.g. `"Maria's birth"`, `"Marcus's oldest son"`)      |
-| `claimValue`          | JSONB — string or structured (`{"year":1992,"month":3,"day":13,"text":"March 13, 1992"}`)    |
-| `conversationEventId` | the source message                                                                           |
-| `claimedBy`           | name of the person who made the claim                                                        |
-| `claimedBySource`     | `direct` · `attributed` · `hearsay`                                                          |
-| `claimedAt`           | when it was claimed                                                                          |
-| `confidence`          | extractor confidence: `high` · `medium` · `low`                                              |
-| `certaintyLanguage`   | natural-language hedging captured verbatim ("maybe", "definitely", "creo que")               |
-| `status`              | **the only mutable field:** `active` · `superseded` · `disputed` · `redacted`                |
+- `conversation_events` and `claims` are append-only. Mutable state lives in separate processing,
+  analysis, redaction, or status fields/tables.
+- Claims preserve who said what, when, from which source message, with confidence and certainty
+  language.
+- Conflicts are represented as links between claims; they are not erased by choosing a single truth.
+- Claim strength is recomputable in `claim_analysis`, so scoring can evolve without rewriting the
+  claim.
 
-Immutability is enforced in the database by the `enforce_claims_immutability` and
-`prevent_claim_deletes` triggers — application code cannot rewrite or delete a claim, only transition
-its `status`.
+## 2.2 Entities and Relationships
 
-### `claim_analysis` — mutable, system-computed (`claim-analysis-repository.ts`)
+Primary entity tables are `people`, `places`, `events`, and `stories`. They are family-scoped,
+soft-redactable, and merge-aware.
 
-Strength scoring is deliberately split out of the immutable claim into a 1:1 mutable record so it can
-be recomputed:
+- **People** may be placeholders (`isPlaceholder`) such as "Ralph's sister" until an identity claim
+  resolves them.
+- **Places**, **events**, **relationships**, and image references use controlled vocabularies enforced
+  at the extraction/type layer rather than as DB enum/check constraints.
+- Join tables connect stories/events to people, places, source messages, and each other.
 
-- `claimStrength` (0.0–1.0), `inferenceMethod` (`direct` | `logical_inference` | `llm_inference`)
-- `strengthFactors` — `{ algorithmScore, breakdown, llmScore?, llmReasoning?, final, evaluationTriggered[] }`
-- `needsLlmEvaluation` — flag that enqueues the claim for async LLM review (see §2.6)
+Relationships are intentionally minimal:
 
-### Claim link tables
+- **Stored structural:** `parent`, `spouse`.
+- **Stored extended:** `guardian`, `godparent`, `mentor`, `friend`, `caregiver`.
+- **Derived:** sibling, grandparent, aunt/uncle, cousin, and similar graph relationships.
 
-- **`claim_entities`** — many-to-many between a claim and the entities it touches. Fields: `entityType`
-  (`person|place|event|story|relationship`), `role` (`subject`, `related`, `location`, `witness`,
-  `identity_source`, `identity_target`), `resolved`, `entityMergeId`. Bidirectional, so "all claims
-  about Maria" is a single query.
-- **`claim_relationships`** — claim-to-claim edges: `supports`, `contradicts`, `refines`,
-  `supersedes`, `derived_from`.
-- **`claim_conflicts`** — recorded disputes between claims.
+## 2.3 Entity Merges
 
-## 2.2 Entities
+`entity_merges` records source entity → target entity, strategy, confidence, actor, and reason.
+Merges mark source entities as superseded but do not destroy claims. This makes undo and provenance
+possible. Merge logic must favor precision over recall: a duplicate entity is recoverable; a false
+merge corrupts memory.
 
-All four entity types are family-scoped, soft-deletable (`redacted`), and merge-aware (`supersededBy`,
-`supersededAt`).
+## 2.4 Ingestion, Queues, and Imports
 
-| Entity     | Table / repo                           | Key fields                                                                     |
-| ---------- | -------------------------------------- | ------------------------------------------------------------------------------ |
-| **Person** | `people` / `person-repository`         | `name`, `aliases[]`, `birthYear`, `deathYear`, `*Confidence`, `isPlaceholder`  |
-| **Place**  | `places` / `place-repository`          | `name`, `type`, `city`, `region`, `country`                                    |
-| **Event**  | `events` / `timeline-event-repository` | `title`, `eventType`, `dateText`, `dateYear`, `placeId`                        |
-| **Story**  | `stories` / `story-repository`         | `contentOriginal`, `contentLanguage`, `themes[]`, `completeness`, `confidence` |
+`conversation_events` is the immutable message ledger. It stores provider, conversation id, external
+event id, actor, event type, original content, language, metadata, timestamps, and per-family sequence.
 
-`isPlaceholder` marks descriptive (not-yet-resolved) people such as `"Ralph's sister"` or `"el vecino"`
-that an identity claim may later merge into a named person.
+Supporting ingestion tables:
 
-Controlled-vocabulary fields (`Place.type`, `Event.eventType`, `Relationship.relationshipType`,
-image `referenceType`) are constrained at the **Scribe extraction layer** (Zod enums) rather than by DB
-`CHECK` constraints, so the vocabulary stays normalized — keeping merge/match heuristics that switch on
-these values reliable — without coupling it to a migration.
+- `conversation_event_processing`: rerunnable preprocessing/interpretation metadata.
+- `conversation_redactions`: privacy redactions without mutating the raw event.
+- `ingestion_batches`: batch/import provenance.
+- `sequence_counters`: deterministic per-family event ordering.
 
-- `Place.type`:
-  `city|country|address|region|landmark|neighborhood|building`
-- `Event.eventType`:
-  `birth|death|marriage|immigration|migration|business|education|military|residence|travel|celebration|medical|work|other`
-- `Relationship.relationshipType`:
-  `parent|spouse|guardian|godparent|mentor|friend|caregiver`
-- Image `referenceType`:
-  `describes|identifies_people|provides_context|asks_about`
+Queues:
 
-**Join tables** connect entities and provenance: `event_people`, `event_places`, `story_people`,
-`story_places`, `story_events`, and `story_conversation_events` (which messages a story was drawn
-from).
+- `processing_queue`: ordered retryable event pipeline, with priority, leases, attempts, and
+  stale-lock recovery.
+- `llm_evaluation_queue`: async review queue for uncertain claim strength, entity matches, or
+  conflict resolution. Claims can be enqueued today; no live worker drains it.
 
-### Materialised fields from claims
+Imports:
 
-`ClaimAggregatorService` (`libs/database/src/lib/services/claim-aggregator.ts`) rolls multiple claims
-about the same entity field into a single materialised value:
+- `import_jobs`: super-admin WhatsApp import jobs. The implemented path parses a `.txt` export,
+  creates/reuses family and participant records, inserts immutable `conversation_events`, then pauses
+  for review.
+- `intern_decisions`: per-import-event `process|skip` decisions with optional user override. Selected
+  messages are queued into the normal Scribe/Registrar path.
 
-- **Consensus** (>70 % weighted agreement) → `high` confidence
-- **Close values** (e.g. birth years within 2) → weighted average, `medium`
-- **Conflict** (>50 % but <70 %) → `medium`; otherwise `low`
+## 2.5 Media, Questions, Audit, and Integrity
 
-It returns `{ value, confidence, supportingClaimIds, reasoning }` so the chosen value stays traceable.
+- `images`: media catalog and optional Curator analysis fields. The live app records media but does
+  not attach Curator analysis.
+- `questions`: Facilitator question lifecycle: `proposed → asked → answered`, with `retired` as an
+  exit state.
+- `event_log`: audit trail for ingestion, filtering/routing, redaction, questions, conflicts, imports,
+  and errors.
+- `integrity_checkpoints`: schema support for tamper-evident checkpoints; no application code writes
+  them today.
 
-## 2.3 Relationships (`relationships`, `relationships.ts`)
+Coaching tables (`facilitator_rules`, `real_time_levers`, `facilitator_performance`) exist in the
+schema but are not used by the live app.
 
-Relationships are split into three classes:
+## 2.6 Isolation and Privacy
 
-- **Structural (stored):** `parent` (A=parent, B=child) and `spouse` (UUID-ordered for symmetry) —
-  the minimal backbone of the family tree.
-- **Derived (computed, not stored):** sibling, grandparent, aunt/uncle, cousin, etc., obtained by
-  graph traversal over the structural backbone (DB helper functions
-  `get_participants_with_relationships`, `get_participants_related_to_subject`).
-- **Extended (stored):** narrative relationships — `guardian`, `godparent`, `mentor`, `friend`,
-  `caregiver`.
+Family isolation is enforced in two layers:
 
-Each row carries `category` (`biological|legal|functional|honorary|social`), `status`
-(`active|ended|deceased`), and an optional `qualifier` (`half|step|adoptive|maternal|paternal|estranged`).
+- Application repositories require `familyId` on family-scoped operations and filter by `family_id`.
+- Database RLS policies and helper functions mediate client access.
 
-## 2.4 Ingestion & conversation tables
+`identities` and `users` are global. Per-family membership and permissions live in `family_access`.
+Raw `conversation_events` are service-role only; browser access goes through backend endpoints and
+derived summaries.
 
-| Table                           | Purpose                                                                                                                                |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------- | ----- | ---- | ----- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `conversation_events`           | **Immutable** raw events from a chat provider: `source`, `conversationId`, `externalEventId`, `actorExternalId`, `eventType` (`message | photo | document | video | join | leave | edit`), `contentOriginal`, `languageOriginal`, `contentHmac`, `occurredAt`, sequence number. Update/delete blocked by triggers. |
-| `conversation_event_processing` | **Mutable** preprocessing artifacts for an event: `detectedLanguage`, `imageReferences`, `processingMetadata`. Re-runnable.            |
-| `conversation_redactions`       | Non-destructive redaction records (event stays intact); auto-logs to `event_log`; reversible.                                          |
-| `ingestion_batches`             | Groups of ingested events.                                                                                                             |
-| `sequence_counters`             | Atomic per-scope sequence assignment (deterministic event ordering).                                                                   |
+Redaction is non-destructive:
 
-## 2.5 Entity merges (`entity_merges`, `merge-handler` service)
+- Entity redaction marks rows as redacted.
+- Conversation redaction creates `conversation_redactions` records while preserving the raw event.
 
-Records that one entity was merged into another:
-`sourceEntityId/Type → targetEntityId/Type`, `mergeStrategy`
-(`fuzzy_match|identity_claim|manual|llm_resolved`), `confidence`, `mergedBy`
-(`registrar|curator|admin|llm_resolver`), `mergeReason`.
+## 2.7 Table Catalogue
 
-- Merges are **deletable to undo** (the underlying claims preserve original provenance).
-- Denormalised `supersededBy` columns on entity tables speed up "is this entity still current?".
-- `get_entity_merge_chain()` (DB function) walks the merge history, so
-  `findClaimsForEntityIncludingMerged()` returns claims about an entity _and_ all its merged
-  predecessors.
-- Circularity and dangling references are blocked by triggers (`prevent_circular_merges`,
-  `validate_entity_merge_references`).
+The current migration defines 41 tables:
 
-## 2.6 Queues
-
-| Queue table            | Repo                              | Role                                                                                                           |
-| ---------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `processing_queue`     | `processing-queue-repository`     | Ordered, retryable message pipeline. Fields: `processAfter` (debounce), `lockedAt/lockedBy`, `status` (`queued | processing   | done                                                                                                                                                                                      | error`), `attempts`, `priority`(1=critical…7=low). Dequeue uses pessimistic locking + 5-min stale-lock recovery, ordered by priority then`queuedAt`. |
-| `llm_evaluation_queue` | `llm-evaluation-queue-repository` | Async LLM review of uncertain claims. Fields: `evaluationType` (`claim_strength                                | entity_match | conflict_resolution`), `entityType/entityId`, lease-based locking via `lockedUntil`, `result`JSONB. Batch-acquired with`acquireBatch()`. Claims are enqueued; no worker drains the queue. |
-
-## 2.7 Media, questions, audit, integrity
-
-- **`images`** — media catalog: file metadata plus Curator analysis fields (`description`,
-  `peopleCount`, `estimatedEra`, `visibleText[]`, …).
-- **`questions`** — follow-up question lifecycle (`proposed → asked → answered → retired`), priority,
-  external message id (for reply detection). See [`message-lifecycle.md`](./message-lifecycle.md).
-- **`event_log`** — complete audit trail. `eventType` covers ingestion, filtering, redaction, the
-  question lifecycle, conflict detection, and errors; each entry has `eventCategory`, `actor`,
-  `actorType`, `severity`, and optional `conversationEventId`/`identityId`.
-- **`integrity_checkpoints`** — tamper-evident checkpoint hashes (Merkle/HMAC roots) with optional
-  on-chain anchoring columns (`chain`, `tx_hash`). No application code writes checkpoint rows.
-
-## 2.8 Coaching tables
-
-`facilitator_rules`, `real_time_levers`, and `facilitator_performance` exist in the schema, but no
-repository or application code references them. The Facilitator throttle is a simple time interval (see
-`agent-pipeline`/`message-lifecycle`), not a dynamic lever system.
-
-## 2.9 Multi-family isolation & Row-Level Security
-
-Two layers enforce isolation:
-
-1. **Application layer** — `BaseRepository` (`base-repository.ts`) puts `.eq('family_id', familyId)`
-   on every read/write; all 30 repositories inherit it. `findById`, `findAll`, `insert`, `update`, and
-   `softDelete` all require a `familyId`.
-2. **Database layer** — Row-Level Security is enabled on the sensitive tables with ~105 policies, plus
-   SQL helper functions (`get_identity_id`, `is_super_admin`, `get_user_family_ids`,
-   `get_family_role`, `is_family_admin`, `has_family_access`, `is_family_member`). Views use
-   `security_invoker=true` to respect RLS. `conversation_events` is intentionally **service-role only**
-   (no client SELECT policy) so raw message content is never exposed to the browser.
-
-`identities` and `users` are **global** (no `family_id`); per-family access is mediated by
-`family_access` (see [`identity-auth-and-interfaces.md`](./identity-auth-and-interfaces.md)).
-
-## 2.10 Redaction (privacy)
-
-- **Entity-level:** `BaseRepository.softDelete()` sets `redacted`, `redactedAt`, `redactedBy`,
-  `redactionReason` — entities stay for audit.
-- **Conversation-level:** the raw event is immutable, so redaction is a separate
-  `conversation_redactions` row with reason + actor, auto-logged to `event_log` and reversible via
-  `unredact()`.
-
-## 2.11 Table catalogue (38 tables, by domain)
-
-- **Tenancy/config:** `families`, `family_config`, `sequence_counters`
-- **Ingestion:** `ingestion_batches`, `conversation_events`, `conversation_event_processing`, `conversation_redactions`, `processing_queue`
-- **Identity/access:** `users`, `identities`, `family_access`, `access_passes`, `chat_admins`, `allowed_chats`
-- **Entities:** `people`, `places`, `events`, `stories`
-- **Entity joins:** `event_people`, `event_places`, `story_people`, `story_places`, `story_events`, `story_conversation_events`
-- **Relationships:** `relationships`
-- **Claims:** `claims`, `claim_analysis`, `claim_conflicts`, `claim_entities`, `claim_relationships`, `entity_merges`
-- **Async eval:** `llm_evaluation_queue`
-- **Media:** `images`
-- **Questions:** `questions`
-- **Coaching [schema-only]:** `facilitator_rules`, `real_time_levers`, `facilitator_performance`
-- **Audit/integrity:** `event_log`, `integrity_checkpoints`
+- Tenancy/config: `families`, `family_config`, `sequence_counters`
+- Ingestion/queue: `ingestion_batches`, `conversation_events`, `conversation_event_processing`,
+  `conversation_redactions`, `processing_queue`
+- Identity/access: `users`, `identities`, `family_access`, `access_passes`, `chat_admins`,
+  `allowed_chats`
+- Imports: `import_jobs`, `intern_decisions`
+- Entities/joins: `people`, `places`, `events`, `stories`, event/story join tables
+- Relationships: `relationships`
+- Claims: `claims`, `claim_analysis`, `claim_conflicts`, `claim_entities`, `claim_relationships`,
+  `entity_merges`
+- Async/media/questions/coaching/audit: `llm_evaluation_queue`, `images`, `questions`,
+  `facilitator_rules`, `real_time_levers`, `facilitator_performance`, `event_log`,
+  `integrity_checkpoints`

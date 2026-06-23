@@ -49,12 +49,6 @@
       }
     },
     {
-      "plugin": "@nx/vitest",
-      "options": {
-        "testTargetName": "test"
-      }
-    },
-    {
       "plugin": "@nx/js/typescript",
       "include": ["libs/prompts/*"],
       "options": {

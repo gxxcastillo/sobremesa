@@ -1,132 +1,78 @@
 # Identity, Auth & Interfaces
 
-Covers the identity model, the auth flows, the HTTP API (`apps/api`), and the Studio web app
-(`apps/studio`). The data tables are in [`data-model.md`](./data-model.md).
+This file defines the identity model, auth flows, API surface, and Studio routes at a behavioral level.
+Tables are described in [`data-model.md`](./data-model.md).
 
-## 6.1 Four distinct concepts: identity vs user vs person vs participant
+## 6.1 Identity Model
 
-These are routinely conflated; the code keeps them separate:
+Sobremesa keeps four concepts separate:
 
-| Concept         | Table                       | Scope      | Meaning                                                                                                                                                                                    |
-| --------------- | --------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Identity**    | `identities`                | **global** | One per chat-provider account, keyed by `(provider, providerUserId)` (e.g. Telegram user 12345). Optionally links to a `user`.                                                             |
-| **User**        | `users`                     | **global** | A cross-provider account; multiple identities can point at one user. Global role `user` or `super_admin` (role changes blocked by a trigger).                                              |
-| **Person**      | `people`                    | **family** | A node in a family tree (name, aliases, birth/death). May be an unresolved `isPlaceholder`.                                                                                                |
-| **Participant** | derived via `family_access` | family     | A _Person_ who has actually sent ≥1 message in the conversation. Verified by the DB function `is_person_participant()`. Used to decide whether the Facilitator addresses someone directly. |
+| Concept     | Scope  | Meaning                                                 |
+| ----------- | ------ | ------------------------------------------------------- |
+| Identity    | global | One chat-provider account, e.g. Telegram user id.       |
+| User        | global | Web/session account; may have multiple identities.      |
+| Person      | family | Genealogical person in a family tree.                   |
+| Participant | family | A person who has actually appeared in the conversation. |
 
-The link chain: a Telegram message → **Identity** → **`family_access`** (identity ↔ family, with a
-claimed `personId` and a role) → **Person** → **Relationships**.
+The link chain is:
 
-`family_access` carries the per-family `role` (`admin | member | viewer`), `status`
-(`pending | active | revoked | suspended`), the claimed `personId`, and how access was `grantedBy`
-(`system | admin | telegram_login | access_pass | chat_join | studio_link`).
+```
+Telegram message → identity → family_access → person → relationships
+```
 
-## 6.2 Auth flows (`libs/auth`)
+`family_access` is the per-family authorization record. It carries role (`viewer|member|admin`),
+status, optional claimed `personId`, and grant source.
 
-### Telegram Login Widget
+## 6.2 Auth
 
-`verifyTelegramLogin(data, botToken)` validates the widget callback: rejects payloads older than 24 h,
-and verifies the HMAC-SHA256 (secret = `SHA-256(botToken)`) over the sorted fields. On success the api
-creates/updates the user + identity and issues a JWT session.
+Supported flows:
 
-### Access passes (`access-pass.ts`)
+- **Telegram Login Widget:** verifies Telegram HMAC and payload age, then creates/updates user and
+  identity and issues a JWT.
+- **Access pass:** `/sobremesa studio-link` creates a short-lived single-use token whose hash is stored
+  in `access_passes`. Redeeming it grants `family_access` and issues a JWT.
+- **Admin/dev login:** `/api/auth/login` logs in by Telegram user id; production requires
+  `ADMIN_LOGIN_SECRET`.
 
-A short-lived, single-use token to bring a chat member into the Studio web app:
+Sessions are stateless JWTs signed with `ACCESS_PASS_SECRET` and stored by Studio in localStorage.
+Identity timezone is editable from Studio and used for date interpretation.
 
-1. **Create** (`createAccessPass`) — triggered by `/sobremesa studio-link` in chat. A 32-byte random
-   token is generated; only its **SHA-256 hash** is stored (`access_passes`), with `familyId`, `role`
-   (derived from the user's chat-admin status), `provider/providerUserId`, `chatId`, expiry (default
-   24 h), `status='pending'`. Existing pending passes for that user+family are expired first. The
-   unhashed token is delivered to the user via DM as a link to the Studio.
-2. **Validate / Claim / Redeem** — redeeming hashes the token, atomically flips
-   `pending → processing` (single-use), links/creates the identity, grants `family_access`, marks
-   `redeemed`, and returns a session JWT.
+Authorization is enforced by Elysia guards plus database RLS. Family role order is
+`viewer < member < admin`; `super_admin` is global.
 
-### Session
+## 6.3 API Surface
 
-A JWT (`SessionPayload`: `userId`, `identityId`, `provider`, `providerUserId`, `displayName`, global
-`role`, `iat`, `exp`) signed with `ACCESS_PASS_SECRET`. The Studio stores it in `localStorage`
-(`sobremesa_auth_token`).
+The API app (`apps/api`) is Elysia + Bun with Swagger and CORS. It uses the Supabase service-role
+client behind authenticated routes.
 
-### Guards (Elysia middleware, `middleware/guards.ts`)
+Endpoint groups:
 
-`requireAuth` (401 if no session), `requireSuperAdmin` (403 if not super-admin), and
-`createFamilyMemberGuard(param, minimumRole?)` which checks family access and the role hierarchy
-`viewer < member < admin`. These complement the database-level RLS described in
-[`data-model.md` §2.9](./data-model.md#29-multi-family-isolation--row-level-security).
+- **Public:** health and aggregate public stats.
+- **Auth:** Telegram login, access-pass redemption, current user/families, timezone update, logout,
+  admin/dev login.
+- **Family:** family summaries, placeholder narrative/book generation, queue stats, admin reprocess.
+- **Identity:** view/claim/unclaim current person; list/create/update people for self-identification.
+- **Admin:** allowed-chat management and super-admin family deletion.
+- **Import:** duplicate check, start/poll/cancel/resume WhatsApp import, run Intern review, override
+  decisions, submit selected messages to Scribe.
 
-## 6.3 HTTP API (`apps/api`, Elysia, Bun)
+## 6.4 Studio
 
-Startup (`apps/api/src/main.ts`) validates env, creates the Supabase service-role client, installs the
-JWT auth plugin, CORS, Swagger (`/swagger`), and mounts the route groups. Deployed to Fly.io
-(`sobremesa-api`, :8080, force-HTTPS, scale-to-zero).
+Studio (`apps/studio`) is a Solid.js SPA backed by `StudioApiClient`. Auth state lives in
+`AuthContext`; the JWT is kept in `localStorage`.
 
-### Public
+Main routes:
 
-| Method | Path                | Purpose                                             |
-| ------ | ------------------- | --------------------------------------------------- |
-| GET    | `/health`           | health check                                        |
-| GET    | `/api/public/stats` | aggregate counts: families, people, stories, events |
+- `/login`: Telegram login and public stats.
+- `/pass/:token`: access-pass redemption.
+- `/select-family`: choose an accessible family.
+- `/family/:familyId`: dashboard and super-admin allowed-chat tools.
+- `/family/:familyId/identity`: claim/create/edit the current user's person record.
+- `/settings`: account settings, currently timezone.
+- `/import/whatsapp`: super-admin WhatsApp import wizard.
 
-### Auth (`routes/auth.ts`)
+## 6.5 Chat Admins
 
-| Method | Path                    | Auth | Purpose                                            |
-| ------ | ----------------------- | ---- | -------------------------------------------------- |
-| POST   | `/api/auth/telegram`    | no   | Telegram-login callback → session token + families |
-| GET    | `/api/auth/pass/:token` | no   | redeem an access pass → session token              |
-| GET    | `/api/auth/me`          | yes  | current user + family memberships                  |
-| POST   | `/api/auth/logout`      | no   | clear session (client-side)                        |
-
-### Family
-
-| Method | Path                            | Auth | Purpose                                                             |
-| ------ | ------------------------------- | ---- | ------------------------------------------------------------------- |
-| GET    | `/api/family/summary`           | yes  | summary of the active family (first with a chat)                    |
-| GET    | `/api/family/:familyId/summary` | yes  | people, relationships, places, events, stories, and question counts |
-| POST   | `/api/narrative/generate`       | yes  | returns a placeholder response                                      |
-| POST   | `/api/book/generate`            | yes  | returns a placeholder response                                      |
-
-### Identity (`routes/identity.ts`)
-
-| Method | Path                                     | Auth | Purpose                                      |
-| ------ | ---------------------------------------- | ---- | -------------------------------------------- |
-| GET    | `/api/family/:familyId/identity`         | yes  | current claim + auto-suggestion + top people |
-| POST   | `/api/family/:familyId/identity/claim`   | yes  | claim a person as yourself (`{personId}`)    |
-| DELETE | `/api/family/:familyId/identity/claim`   | yes  | unclaim                                      |
-| GET    | `/api/family/:familyId/people`           | yes  | list/search people (≤50)                     |
-| POST   | `/api/family/:familyId/people`           | yes  | self-register a new person                   |
-| PATCH  | `/api/family/:familyId/people/:personId` | yes  | edit your claimed person                     |
-
-### Admin (super-admin only)
-
-| Method | Path                       | Purpose                              |
-| ------ | -------------------------- | ------------------------------------ |
-| GET    | `/api/admin/chats`         | list allow-listed chat ids           |
-| POST   | `/api/admin/chats`         | authorise a chat (`{chatId, note?}`) |
-| DELETE | `/api/admin/chats/:chatId` | remove from the allow-list           |
-
-## 6.4 Studio web app (`apps/studio`, Solid.js + Vite)
-
-A Solid.js SPA (`@solidjs/router`); auth state lives in `AuthContext` (`login`, `logout`,
-`selectFamily`, `refreshUser`, JWT in `localStorage`). Deployed on Vercel; `/api/*` is rewritten to the
-Fly api app, and dev runs over self-signed HTTPS at `sobremesa.x:3000` proxying to the api at `:3001`.
-
-| Route                        | Page             | Auth | Purpose                                                                        |
-| ---------------------------- | ---------------- | ---- | ------------------------------------------------------------------------------ |
-| `/login`                     | Login            | no   | Telegram login button + public stats; links to the bot, instructs `/sobremesa` |
-| `/pass/:token`               | AccessPass       | no   | redeem a pass, then a Welcome modal (confirm/deny/skip identity)               |
-| `/select-family`             | SelectFamily     | yes  | choose among families (with role badges)                                       |
-| `/family/:familyId`          | App              | yes  | dashboard: family summary + (super-admin) chat allow-list controls             |
-| `/family/:familyId/identity` | IdentitySettings | yes  | search/claim/create/edit your person record                                    |
-
-The browser talks to the api through `StudioApiClient` (`libs/api-client`), whose methods mirror the
-endpoints above (`loginWithTelegram`, `redeemAccessPass`, `getMe`, `getFamilySummaryById`,
-`getIdentity`, `claimIdentity`/`unclaimIdentity`, `listPeople`/`createPerson`/`updatePerson`,
-`getAllowedChats`/`authorizeChat`/`removeChat`, `getPublicStats`, `generateNarrative`/`generateBook`).
-
-## 6.5 Chat admin access control
-
-Chat-level authority comes from Telegram itself. `AdminSyncHandler` caches `getChatAdministrators`
-results in `chat_admins` (5-min TTL) and is the source of truth for: who may register a family, who may
-run `/sobremesa` admin subcommands, and what `role` an access pass grants. Family registration also
-requires the chat to be on the super-admin-managed `allowed_chats` allow-list.
+Telegram admin status is cached in `chat_admins` by `AdminSyncHandler`. It gates family registration,
+chat admin commands, and access-pass role assignment. Registration also requires the chat to be in
+`allowed_chats`.

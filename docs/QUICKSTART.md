@@ -6,8 +6,7 @@ Get Sobremesa running locally.
 
 ## Prerequisites
 
-- **Node.js** 22 LTS ([Download](https://nodejs.org/))
-- **bun** - `curl -fsSL https://bun.com/install | bash`
+- **Bun** 1.3+ - `curl -fsSL https://bun.com/install | bash`
 - **Supabase CLI** - `brew install supabase/tap/supabase` (for local dev)
 - **Claude API Key** - [console.anthropic.com](https://console.anthropic.com/)
 - **Telegram Bot** - Create via [@BotFather](https://t.me/botfather)
@@ -108,6 +107,8 @@ See `.env.example` for optional settings (local LLM, per-agent provider override
 1. Create a new Telegram group
 2. Add the bot to the group
 3. Make sure the bot has permission to read messages (Privacy Mode disabled in Step 2)
+4. Authorize the chat id as a super-admin, then register the family with `/sobremesa` from a Telegram
+   admin account in the group
 
 ---
 
@@ -117,7 +118,7 @@ See `.env.example` for optional settings (local LLM, per-agent provider override
 bun nx dev chatbots
 ```
 
-The bot will auto-create a family record when it receives its first message in a group.
+The bot registers a family when `/sobremesa` is run by a Telegram admin in an allow-listed chat.
 
 ---
 
@@ -143,7 +144,7 @@ Check Supabase tables (via Studio at `http://127.0.0.1:54323` for local):
 - `conversation_events` - Should have your message
 - `people` - Should have "Rosa"
 - `places` - Should have "America" and "Poland"
-- `timeline_events` - Should have immigration event
+- `events` - Should have immigration event
 - `claims` - Should have claims with provenance
 
 ### Run Summary
@@ -264,4 +265,4 @@ Once basic flow is working:
 1. Check logs: `bun nx dev chatbots`
 2. Check `event_log` table in Supabase
 3. Run debug scripts in `scripts/`
-4. Review [ARCHITECTURE.md](ARCHITECTURE.md) for system design
+4. Review [../spec/README.md](../spec/README.md) for current system behavior

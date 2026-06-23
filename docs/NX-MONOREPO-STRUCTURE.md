@@ -12,9 +12,13 @@ sobremesa/
 │   ├── CONFIGURATION.md
 │   └── settings.local.json
 │
-├── docs/                             ← Human documentation
-│   ├── ARCHITECTURE.md
-│   ├── AGENTS.md
+├── spec/                             ← Canonical technical specification
+│   ├── README.md
+│   ├── overview.md
+│   └── ...
+│
+├── docs/                             ← Product guidance, onboarding, ADRs
+│   ├── PRODUCT.md
 │   ├── WARMTH.md
 │   ├── CULTURE.md
 │   └── adr/                          ← Architecture Decision Records
@@ -212,11 +216,9 @@ nx graph                          # Visualize dependencies
 **Nx plugins:**
 
 - `@nx/js` - TypeScript libraries
-- `@nx/node` - Node.js applications
 - `@nx/vite` - Build tooling (Studio)
 - `@nx/esbuild` - Build tooling (chatbots, API)
 - `@nx/eslint` - Linting
-- `@nx/vitest` - Testing
 
 **TypeScript:** 5.9.x with strict mode, path mapping via `tsconfig.base.json`
 
@@ -248,4 +250,4 @@ LOCAL_LLM_MODEL=llama3.2:latest
 
 - [QUICKSTART.md](QUICKSTART.md) - Getting started guide
 - [TECH-STACK.md](TECH-STACK.md) - Technology stack details
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
+- [../spec/README.md](../spec/README.md) - Canonical technical specification

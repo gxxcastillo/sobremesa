@@ -1,6 +1,7 @@
 # Technology Stack
 
-Technical specification for Sobremesa's implementation.
+Developer reference for Sobremesa's tooling. The canonical behavior spec lives in
+[`../spec/`](../spec/).
 
 ---
 
@@ -9,19 +10,17 @@ Technical specification for Sobremesa's implementation.
 ### Language & Runtime
 
 - **TypeScript** 5.9.x (strict mode)
-- **Node.js** 22 LTS
-- **Package Manager:** bun
+- **Runtime:** Bun (Node-compatible TypeScript)
+- **Package Manager:** Bun
 
 ### Monorepo Framework
 
 - **Nx** 22.x
 - **Nx Plugins:**
   - `@nx/js` - TypeScript libraries
-  - `@nx/node` - Node.js applications
   - `@nx/vite` - Build tooling (Studio)
   - `@nx/esbuild` - Build tooling (chatbots, API)
   - `@nx/eslint` - Linting
-  - `@nx/vitest` - Testing
 
 ### Database
 
@@ -38,8 +37,9 @@ Technical specification for Sobremesa's implementation.
   - `anthropic` - Anthropic Claude (production default)
   - `openai-compatible` - Ollama, LM Studio, etc. (local development)
   - `mock` - Mock provider for testing
-- **Primary model:** Claude Sonnet 4 (Scribe, Historian, Facilitator, Admin, Curator)
-- **Lightweight model:** Claude Haiku (Intern)
+- **Standard model tier:** Claude Sonnet (Scribe, Historian)
+- **Fast model tier:** Claude Haiku (Intern, Facilitator)
+- **Curator:** vision-capable provider path; not attached to the live pipeline
 - **SDK:** `@anthropic-ai/sdk`
 
 ### Message Queue
@@ -52,7 +52,7 @@ Technical specification for Sobremesa's implementation.
 
 - **Telegram** via `telegraf` SDK
 - Single bot handles ingestion, facilitation, and responses
-- Webhook-based in production, polling in development
+- Long-polling in the running app
 
 ### Web UI
 
@@ -184,7 +184,7 @@ psql postgresql://postgres:postgres@127.0.0.1:54322/postgres \
 
 1. Create Supabase project at https://supabase.com
 2. Apply schema migration via SQL Editor or `supabase db push`
-3. Enable Row Level Security (RLS) policies (see [DATA-ISOLATION.md](DATA-ISOLATION.md))
+3. Enable Row Level Security (RLS) policies (see [spec/data-model.md](../spec/data-model.md))
 
 ---
 
@@ -322,4 +322,4 @@ dotenv                 - Environment variable loading
 
 - [QUICKSTART.md](QUICKSTART.md) - Getting started guide
 - [NX-MONOREPO-STRUCTURE.md](NX-MONOREPO-STRUCTURE.md) - Detailed workspace layout
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
+- [spec/README.md](../spec/README.md) - Canonical technical specification

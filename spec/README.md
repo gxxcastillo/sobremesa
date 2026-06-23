@@ -29,6 +29,8 @@ Telegram group chat ──► chatbots app ──► conversation_events ──�
                                             Facilitator asks the next warm question
 
 Studio (Solid.js) ──► api app (Elysia) ──► same Postgres  (view family, claim identity, admin)
+        │
+        └── super-admin WhatsApp import ──► import_jobs ──► conversation_events ──► processing_queue
 ```
 
 Everything is **family-scoped** (`family_id` is the isolation boundary), every fact is a **sourced,

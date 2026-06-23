@@ -14,7 +14,9 @@ An AI-powered family history collection system that preserves your family's stor
 
 ## How It Works
 
-A pipeline of specialized AI agents processes incoming chat messages: extracting claims, resolving entities, detecting conflicts, and building a structured knowledge graph — all while maintaining complete provenance.
+A pipeline of specialized agents processes incoming chat messages: routing, extracting claims,
+resolving entities, detecting conflicts, and building a structured knowledge graph while maintaining
+complete provenance. The same ledger and queue also support super-admin WhatsApp history imports.
 
 ## Quick Start
 
@@ -30,41 +32,50 @@ cp .env.example .env
 bun nx serve chatbots
 ```
 
-See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** for full setup guide.
+See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** for the full setup guide.
 
 ## Documentation
 
-All documentation lives in [`docs/`](docs/):
+Current system behavior is specified in [`spec/`](spec/). Treat it as canonical when implementation
+and older docs disagree.
 
-| Document                                | Purpose                       |
-| --------------------------------------- | ----------------------------- |
-| [QUICKSTART.md](docs/QUICKSTART.md)     | Get running locally           |
-| [PRODUCT.md](docs/PRODUCT.md)           | Product vision and principles |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and data flow   |
-| [AGENTS.md](docs/AGENTS.md)             | AI agent specifications       |
-| [WARMTH.md](docs/WARMTH.md)             | Core philosophy               |
+| Document                                 | Purpose                                   |
+| ---------------------------------------- | ----------------------------------------- |
+| [spec/README.md](spec/README.md)         | Canonical technical specification         |
+| [docs/QUICKSTART.md](docs/QUICKSTART.md) | Local setup and common commands           |
+| [docs/PRODUCT.md](docs/PRODUCT.md)       | Product vision and principles             |
+| [docs/WARMTH.md](docs/WARMTH.md)         | Product voice and warmth guidelines       |
+| [docs/CULTURE.md](docs/CULTURE.md)       | Cultural and language adaptation guidance |
+| [docs/adr/README.md](docs/adr/README.md) | Historical architecture decision records  |
+| [AGENTS.md](AGENTS.md)                   | Contributor/agent working instructions    |
 
 ## Tech Stack
 
-- **Runtime:** Node.js + TypeScript
-- **Monorepo:** Nx
+- **Runtime:** Bun + TypeScript
+- **Monorepo:** Nx + Bun workspaces
 - **Database:** PostgreSQL (Supabase)
-- **AI:** Anthropic Claude API
-- **Chat:** Telegram (pluggable)
+- **AI:** Anthropic Claude, OpenAI-compatible local providers, mock provider
+- **Chat:** Telegram
+- **Web:** Solid.js Studio + Elysia API
 
 ## Project Structure
 
 ```
 apps/
-  chatbots/           # Main application
-  db/                 # Database migrations
+  api/                # Elysia REST API for Studio
+  chatbots/           # Telegram bot and live pipeline
+  db/                 # Supabase migrations
+  studio/             # Solid.js web app
 
 libs/
-  agents/             # AI agents (facilitator, scribe, historian, etc.)
+  agents/             # Intern, Scribe, Registrar, Historian, Facilitator, Admin, Curator
+  import/             # WhatsApp import jobs and Intern review
+  import-utils/       # WhatsApp parser and import cost estimation
   database/           # Supabase repositories
   prompts/            # System prompts
   queue/              # Message processing
   shared/             # Shared types and utilities
 
-docs/                 # All documentation
+spec/                 # Canonical technical specification
+docs/                 # Product guidance, onboarding, ADRs, and redirects
 ```

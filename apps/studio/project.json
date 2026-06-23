@@ -25,6 +25,12 @@
         "command": "bun vite preview",
         "cwd": "apps/studio"
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun vitest run --config apps/studio/vite.config.mts"
+      }
     }
   }
 }
