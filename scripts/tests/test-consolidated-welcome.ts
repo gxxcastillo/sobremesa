@@ -1,10 +1,10 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Test the consolidated welcome message feature.
  * Simulates multiple members joining within the debounce window
  * and verifies they're consolidated into a single welcome message.
  *
- * Run with: npx tsx scripts/tests/test-consolidated-welcome.ts
+ * Run with: bun scripts/tests/test-consolidated-welcome.ts
  */
 import 'dotenv/config';
 import { createDatabaseClient } from '../../libs/database/src/lib/client.js';

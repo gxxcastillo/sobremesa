@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';
 

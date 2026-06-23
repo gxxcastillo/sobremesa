@@ -5,13 +5,13 @@
     "types": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsc --noEmit -p libs/telegram/tsconfig.lib.json"
+        "command": "bun tsc --noEmit -p libs/telegram/tsconfig.lib.json"
       }
     },
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "eslint libs/telegram"
+        "command": "bun eslint libs/telegram"
       }
     }
   }

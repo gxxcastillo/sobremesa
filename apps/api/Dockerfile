@@ -1,5 +1,5 @@
 # Build stage
-FROM oven/bun:1.3.6 AS builder
+FROM oven/bun:1.3.14 AS builder
 
 WORKDIR /app
 
@@ -15,14 +15,14 @@ COPY package.json bun.lock ./
 COPY nx.json tsconfig.base.json ./
 
 # Install dependencies
-RUN bun install
+RUN bun install --frozen-lockfile
 
 # Build the API
 WORKDIR /app/apps/api
 RUN bun build src/main.ts --outdir dist --target bun --loader:.txt=text
 
 # Production stage
-FROM oven/bun:1.3.6-slim AS production
+FROM oven/bun:1.3.14-slim AS production
 
 WORKDIR /app
 

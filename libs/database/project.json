@@ -5,25 +5,25 @@
     "types": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsc --noEmit -p libs/database/tsconfig.lib.json"
+        "command": "bun tsc --noEmit -p libs/database/tsconfig.lib.json"
       }
     },
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "eslint libs/database"
+        "command": "bun eslint libs/database"
       }
     },
     "check-db": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "npx tsx scripts/check-db.ts"
+        "command": "bun scripts/check-db.ts"
       }
     },
     "test": {
-      "executor": "@nx/vitest:test",
+      "executor": "nx:run-commands",
       "options": {
-        "config": "libs/database/vite.config.ts"
+        "command": "bun vitest run --config libs/database/vite.config.ts"
       }
     }
   }

@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 import 'dotenv/config';
 import { createDatabaseClient } from '../libs/database/src/lib/client.js';
 

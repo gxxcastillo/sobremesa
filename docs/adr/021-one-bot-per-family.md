@@ -28,10 +28,10 @@ Deploy one bot instance per family:
 
 ```bash
 # Family A
-FAMILY_ID=family-a-uuid npm start
+FAMILY_ID=family-a-uuid bun nx serve chatbots
 
 # Family B (separate process)
-FAMILY_ID=family-b-uuid npm start
+FAMILY_ID=family-b-uuid bun nx serve chatbots
 ```
 
 ## Consequences

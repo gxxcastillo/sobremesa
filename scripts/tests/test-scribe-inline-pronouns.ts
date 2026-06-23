@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Test if Scribe (Sonnet) can handle pronoun resolution inline
  */

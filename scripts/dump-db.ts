@@ -1,11 +1,11 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Dump current database state to a timestamped JSON snapshot.
  *
  * Usage:
- *   npx tsx scripts/dump-db.ts              # dump most recent family
- *   npx tsx scripts/dump-db.ts <family-id>  # dump specific family
- *   npx tsx scripts/dump-db.ts --all        # dump all families
+ *   bun scripts/dump-db.ts              # dump most recent family
+ *   bun scripts/dump-db.ts <family-id>  # dump specific family
+ *   bun scripts/dump-db.ts --all        # dump all families
  *
  * Output: snapshots/<timestamp>-<family-name>.json
  */

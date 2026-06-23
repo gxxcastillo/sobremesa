@@ -1,7 +1,7 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Test sending a question via the REAL Facilitator bot.
- * Run with: npx tsx scripts/test-send-question.ts
+ * Run with: bun scripts/test-send-question.ts
  */
 import 'dotenv/config';
 import { Telegraf } from 'telegraf';

@@ -67,7 +67,7 @@
   "release": {
     "projects": ["libs/*"],
     "version": {
-      "preVersionCommand": "npx nx run-many -t build"
+      "preVersionCommand": "bun nx run-many -t build"
     }
   },
   "targetDefaults": {

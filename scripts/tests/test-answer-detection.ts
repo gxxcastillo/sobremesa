@@ -1,7 +1,7 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Test the answer detection flow.
- * Run with: npx tsx scripts/tests/test-answer-detection.ts
+ * Run with: bun scripts/tests/test-answer-detection.ts
  */
 import 'dotenv/config';
 import { createDatabaseClient } from '../../libs/database/src/lib/client.js';

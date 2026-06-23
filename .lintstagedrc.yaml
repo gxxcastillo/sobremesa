@@ -1,2 +1,2 @@
-'*.{ts,tsx,js,jsx,json,yaml,yml,md,html,css}': prettier --write
-'*.{ts,tsx,js,jsx}': eslint --fix
+'*.{ts,tsx,js,jsx,json,yaml,yml,md,html,css}': bun prettier --write
+'*.{ts,tsx,js,jsx}': bun eslint --fix

@@ -8,21 +8,21 @@
     "dev": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "vite",
+        "command": "bun vite",
         "cwd": "apps/studio"
       }
     },
     "build": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "vite build",
+        "command": "bun vite build",
         "cwd": "apps/studio"
       }
     },
     "preview": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "vite preview",
+        "command": "bun vite preview",
         "cwd": "apps/studio"
       }
     }

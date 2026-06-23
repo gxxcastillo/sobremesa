@@ -5,13 +5,13 @@
     "types": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsc --noEmit -p libs/agents/curator/tsconfig.lib.json"
+        "command": "bun tsc --noEmit -p libs/agents/curator/tsconfig.lib.json"
       }
     },
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "eslint libs/agents/curator"
+        "command": "bun eslint libs/agents/curator"
       }
     }
   }

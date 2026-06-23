@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Mock chat provider — feeds scenario messages into the running chatbot.
  *
@@ -7,11 +7,11 @@
  * needed — the chatbot handles everything.
  *
  * Usage:
- *   npx tsx scripts/simulate-messages.ts                          # list scenarios
- *   npx tsx scripts/simulate-messages.ts ralphy-shoes             # run scenario (new family)
- *   npx tsx scripts/simulate-messages.ts ralphy-shoes --family ID # run on existing family
- *   npx tsx scripts/simulate-messages.ts ralphy-shoes --reset     # clear DB first
- *   npx tsx scripts/simulate-messages.ts ralphy-shoes --dump      # save snapshot to snapshots/
+ *   bun scripts/simulate-messages.ts                          # list scenarios
+ *   bun scripts/simulate-messages.ts ralphy-shoes             # run scenario (new family)
+ *   bun scripts/simulate-messages.ts ralphy-shoes --family ID # run on existing family
+ *   bun scripts/simulate-messages.ts ralphy-shoes --reset     # clear DB first
+ *   bun scripts/simulate-messages.ts ralphy-shoes --dump      # save snapshot to snapshots/
  */
 import 'dotenv/config';
 import { execSync, spawn } from 'child_process';
@@ -196,7 +196,7 @@ async function main() {
       console.log(`    ${scenario.messages.length} messages\n`);
     }
     console.log(
-      'Usage: npx tsx scripts/simulate-messages.ts <scenario> [--family <id>] [--reset] [--dump]',
+      'Usage: bun scripts/simulate-messages.ts <scenario> [--family <id>] [--reset] [--dump]',
     );
     process.exit(0);
   }
@@ -416,7 +416,7 @@ async function main() {
     console.log(
       `\n  Timed out — ${stillPending.length} messages still pending.`,
     );
-    console.log('  Is the chatbot running? (npx nx dev chatbots)');
+    console.log('  Is the chatbot running? (bun nx dev chatbots)');
     process.exit(1);
   }
 
@@ -428,7 +428,7 @@ async function main() {
   // Kick off dump-db in the background if --dump was requested
   const dumpPromise = dumpFlag
     ? new Promise<void>((resolve, reject) => {
-        const child = spawn('npx', ['tsx', 'scripts/dump-db.ts', familyId], {
+        const child = spawn('bun', ['scripts/dump-db.ts', familyId], {
           stdio: 'inherit',
         });
         child.on('close', (code) =>

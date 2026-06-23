@@ -1,6 +1,6 @@
 /**
  * Test script for mention detection in InternAgent.
- * Run with: npx tsx scripts/test-mention-detection.ts
+ * Run with: bun scripts/test-mention-detection.ts
  */
 
 // Test the isBotMentioned regex logic directly

@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Debug why Facilitator isn't asking questions
  */

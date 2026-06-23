@@ -183,16 +183,16 @@ libs/queue
 
 ```bash
 # Development
-nx dev chatbots                   # Start chatbot with watch mode
-nx dev api                        # Start API server
-nx dev studio                     # Start Studio web app
+bun nx dev chatbots                   # Start chatbot with watch mode
+bun nx dev api                        # Start API server
+bun nx dev studio                     # Start Studio web app
 
 # Building
-nx build chatbots                 # Build chatbot
-nx build api                      # Build API
+bun nx build chatbots                 # Build chatbot
+bun nx build api                      # Build API
 
 # Testing
-nx test agents-scribe             # Test single library
+bun nx test agents-scribe         # Test single library
 bun test:all                      # Run all tests
 bun types:all                     # Type-check all projects
 bun check:all                     # Lint + types + test

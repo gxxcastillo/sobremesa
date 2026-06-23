@@ -227,21 +227,21 @@ const botManager = new BotManager({
 bun install
 
 # Start chatbot locally
-nx dev chatbots
+bun nx dev chatbots
 
 # Start Studio web app
-nx dev studio
+bun nx dev studio
 
 # Run all checks
 bun check:all           # lint + types + test
 
 # Run specific tests
-nx test agents-scribe
-nx test agents-registrar
+bun nx test agents-scribe
+bun nx test agents-registrar
 
 # Build for production
-nx build chatbots
-nx build api
+bun nx build chatbots
+bun nx build api
 ```
 
 ---

@@ -4,4 +4,4 @@ This library was generated with [Nx](https://nx.dev).
 
 ## Building
 
-Run `nx build facilitator` to build the library.
+Run `bun nx build facilitator` to build the library.

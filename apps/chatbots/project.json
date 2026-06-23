@@ -5,13 +5,13 @@
     "types": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsc --noEmit -p apps/chatbots/tsconfig.app.json"
+        "command": "bun tsc --noEmit -p apps/chatbots/tsconfig.app.json"
       }
     },
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "eslint apps/chatbots"
+        "command": "bun eslint apps/chatbots"
       }
     },
     "dev": {

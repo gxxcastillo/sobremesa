@@ -1,5 +1,5 @@
 # Build stage
-FROM oven/bun:1.3.6 AS builder
+FROM oven/bun:1.3.14 AS builder
 
 WORKDIR /app
 
@@ -11,14 +11,14 @@ COPY apps/chatbots ./apps/chatbots
 COPY libs ./libs
 
 # Install dependencies
-RUN bun install
+RUN bun install --frozen-lockfile
 
 # Build with sourcemaps
 WORKDIR /app/apps/chatbots
 RUN bun run build.ts
 
 # Production stage
-FROM oven/bun:1.3.6-slim AS production
+FROM oven/bun:1.3.14-slim AS production
 
 WORKDIR /app
 

@@ -1,1 +1,1 @@
-npx nx affected -t types
+bun nx affected -t types

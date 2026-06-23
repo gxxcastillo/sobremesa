@@ -29,7 +29,7 @@ bun run src/main.ts
 Or with Nx:
 
 ```bash
-nx serve api
+bun nx serve api
 ```
 
 ### Build

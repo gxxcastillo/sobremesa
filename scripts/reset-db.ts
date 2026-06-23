@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Reset database — truncates all data while preserving schema.
  *
@@ -6,8 +6,8 @@
  * and is near-instant regardless of data volume.
  *
  * Usage:
- *   npx tsx scripts/reset-db.ts                    # local supabase (default)
- *   DATABASE_URL=... npx tsx scripts/reset-db.ts   # custom connection
+ *   bun scripts/reset-db.ts                    # local supabase (default)
+ *   DATABASE_URL=... bun scripts/reset-db.ts   # custom connection
  */
 import 'dotenv/config';
 import { execSync } from 'child_process';

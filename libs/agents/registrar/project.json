@@ -5,24 +5,27 @@
     "bump": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsx scripts/bump-version.ts {projectRoot} {args.type}",
+        "command": "bun scripts/bump-version.ts {projectRoot} {args.type}",
         "cwd": "{workspaceRoot}"
       }
     },
     "types": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsc --noEmit -p {projectRoot}/tsconfig.lib.json"
+        "command": "bun tsc --noEmit -p {projectRoot}/tsconfig.lib.json"
       }
     },
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "eslint {projectRoot}"
+        "command": "bun eslint {projectRoot}"
       }
     },
     "test": {
-      "executor": "@nx/vitest:test"
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun vitest run --config libs/agents/registrar/vite.config.ts"
+      }
     }
   }
 }

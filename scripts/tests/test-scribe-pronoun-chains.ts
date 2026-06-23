@@ -1,8 +1,8 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Test Scribe's pronoun resolution with various possessive chains.
  * Standalone - doesn't rely on build system.
- * Run with: npx tsx scripts/tests/test-scribe-pronoun-chains.ts
+ * Run with: bun scripts/tests/test-scribe-pronoun-chains.ts
  */
 import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';

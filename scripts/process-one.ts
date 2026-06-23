@@ -1,7 +1,7 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Manually process one queued message to test the full pipeline.
- * Run with: npx tsx scripts/process-one.ts
+ * Run with: bun scripts/process-one.ts
  */
 import 'dotenv/config';
 import { createDatabaseClient } from '../libs/database/src/lib/client.js';

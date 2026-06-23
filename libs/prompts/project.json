@@ -4,18 +4,18 @@
   "sourceRoot": "libs/prompts/src",
   "projectType": "library",
   "tags": [],
-  "// targets": "to see all targets run: nx show project prompts --web",
+  "// targets": "to see all targets run: bun nx show project prompts --web",
   "targets": {
     "types": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsc --noEmit -p libs/queue/tsconfig.lib.json"
+        "command": "bun tsc --noEmit -p libs/queue/tsconfig.lib.json"
       }
     },
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "eslint libs/queue"
+        "command": "bun eslint libs/queue"
       }
     }
   }

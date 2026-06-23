@@ -797,9 +797,7 @@ export class StudioApiClient {
    * @param jobId The import job ID
    * @returns Stats on how many messages will be processed/skipped
    */
-  async runIntern(
-    jobId: string,
-  ): Promise<{
+  async runIntern(jobId: string): Promise<{
     success: boolean;
     stats: { toProcess: number; toSkip: number; overridden: number };
   }> {

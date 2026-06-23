@@ -1,6 +1,6 @@
 /**
  * Test script for the Historian agent's question parsing and detection.
- * Run with: npx tsx scripts/test-historian.ts
+ * Run with: bun scripts/test-historian.ts
  */
 
 import {

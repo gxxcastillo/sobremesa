@@ -1,7 +1,7 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Check database state for debugging.
- * Run with: npx tsx scripts/check-db.ts
+ * Run with: bun scripts/check-db.ts
  */
 import 'dotenv/config';
 import { createDatabaseClient } from '../libs/database/src/lib/client.js';

@@ -1,7 +1,7 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Generate a summary of what we know about a family.
- * Run with: npx tsx scripts/summary.ts
+ * Run with: bun scripts/summary.ts
  */
 import 'dotenv/config';
 import { createDatabaseClient } from '../libs/database/src/lib/client.js';

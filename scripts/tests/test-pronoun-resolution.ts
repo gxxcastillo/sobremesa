@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 /**
  * Standalone test for pronoun resolution - doesn't rely on build system
  */

@@ -25,14 +25,14 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.8
+          bun-version: 1.3.14
 
       - run: bun install --frozen-lockfile
 
       - uses: nrwl/nx-set-shas@v4
 
       - name: Run CI for Chatbots
-        run: npx nx run-many -t lint test build types --projects=chatbots
+        run: bun nx run-many -t lint test build types --projects=chatbots
 
   deploy:
     needs: [ci]

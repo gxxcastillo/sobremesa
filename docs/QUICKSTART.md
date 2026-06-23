@@ -114,7 +114,7 @@ See `.env.example` for optional settings (local LLM, per-agent provider override
 ## Step 6: Start the Chatbot
 
 ```bash
-nx dev chatbots
+bun nx dev chatbots
 ```
 
 The bot will auto-create a family record when it receives its first message in a group.
@@ -149,7 +149,7 @@ Check Supabase tables (via Studio at `http://127.0.0.1:54323` for local):
 ### Run Summary
 
 ```bash
-npx tsx scripts/summary.ts
+bun scripts/summary.ts
 ```
 
 ---
@@ -158,22 +158,22 @@ npx tsx scripts/summary.ts
 
 ```bash
 # Start the chatbot
-nx dev chatbots
+bun nx dev chatbots
 
 # Build everything
-nx build chatbots
+bun nx build chatbots
 
 # Run summary for a family
-npx tsx scripts/summary.ts
+bun scripts/summary.ts
 
 # Simulate test messages (without a real Telegram group)
-npx tsx scripts/simulate-messages.ts                    # list scenarios
-npx tsx scripts/simulate-messages.ts trip-story --reset  # run scenario
+bun scripts/simulate-messages.ts                    # list scenarios
+bun scripts/simulate-messages.ts trip-story --reset  # run scenario
 
 # Debug tools
-npx tsx scripts/debug-facilitator.ts
-npx tsx scripts/show-queue.ts
-npx tsx scripts/dump-db.ts <family-id>
+bun scripts/debug-facilitator.ts
+bun scripts/show-queue.ts
+bun scripts/dump-db.ts <family-id>
 
 # Run tests
 bun check:all
@@ -188,7 +188,7 @@ bun check:all
 1. Check bot is added to group
 2. Check Privacy Mode is **disabled** (BotFather → Bot Settings → Group Privacy → Turn off)
 3. Verify `TELEGRAM_BOT_TOKEN` in `.env`
-4. Check logs: `nx dev chatbots`
+4. Check logs: `bun nx dev chatbots`
 
 ### Database connection failed
 
@@ -206,7 +206,7 @@ bun check:all
 
 1. Check `ANTHROPIC_API_KEY` is valid
 2. Check logs for Scribe errors
-3. Test extraction with simulation: `npx tsx scripts/simulate-messages.ts ralphy-shoes --reset`
+3. Test extraction with simulation: `bun scripts/simulate-messages.ts ralphy-shoes --reset`
 
 ---
 
@@ -254,14 +254,14 @@ scripts/
 Once basic flow is working:
 
 1. **Send family messages** - The more context, the better extraction
-2. **Check summary** - Run `npx tsx scripts/summary.ts` periodically
-3. **Try simulation** - Run `npx tsx scripts/simulate-messages.ts family-history --reset --dump` for a rich test scenario
+2. **Check summary** - Run `bun scripts/summary.ts` periodically
+3. **Try simulation** - Run `bun scripts/simulate-messages.ts family-history --reset --dump` for a rich test scenario
 
 ---
 
 ## Getting Help
 
-1. Check logs: `nx dev chatbots`
+1. Check logs: `bun nx dev chatbots`
 2. Check `event_log` table in Supabase
 3. Run debug scripts in `scripts/`
 4. Review [ARCHITECTURE.md](ARCHITECTURE.md) for system design

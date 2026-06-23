@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bun
 import * as fs from 'fs';
 import * as path from 'path';
 import semver from 'semver';
@@ -10,7 +10,7 @@ function main() {
 
   if (args.length < 2) {
     console.error(
-      'Usage: tsx scripts/bump-version.ts <package-path> <major|minor|patch>',
+      'Usage: bun scripts/bump-version.ts <package-path> <major|minor|patch>',
     );
     process.exit(1);
   }

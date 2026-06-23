@@ -27,7 +27,7 @@ cp .env.example .env
 # Edit .env with your credentials (see docs/QUICKSTART.md)
 
 # Run
-nx serve chatbots
+bun nx serve chatbots
 ```
 
 See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** for full setup guide.

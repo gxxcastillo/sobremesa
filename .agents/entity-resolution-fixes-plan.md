@@ -20,7 +20,7 @@ Source: verified code review of commit `967fece` ("improved entity resolution").
 - **Spec edits — DONE** (this session): `overview.md` inv. 6, `agent-pipeline.md` §3.3 & §3.4 step 5,
   `data-model.md` §2.2.
 - **P0 — DONE** (silent data loss + graph corruption): #6 ✓, #4 ✓, #1/#2 ✓. All typecheck, lint, and
-  unit-tested; full `nx run-many -t types test` green across 19 projects.
+  unit-tested; full `bun nx run-many -t types test` green across 19 projects.
 - **P1 — DONE** (same-root over-merge + enrichment + vocab): #5 ✓, #3 ✓, #7 ✓, #8 ✓.
 - **P2 — DONE** (correctness/i18n): #9 ✓, #10 ✓.
 
