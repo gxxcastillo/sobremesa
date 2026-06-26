@@ -7,6 +7,9 @@ import type {
 import { QueuePriority } from '@sobremesa/shared-types';
 import { mapRowToCamelCase } from '../base-repository.js';
 
+export const REQUEUE_NOT_FOUND_ERROR =
+  'Queue item not found or not in error state';
+
 /**
  * Repository for the processing queue.
  * Manages ordered, retryable message processing.
@@ -257,14 +260,15 @@ export class ProcessingQueueRepository {
   }
 
   /**
-   * Mark an item as failed.
+   * Mark an item as failed. Returns the resulting status so callers can detect
+   * when an item transitions to the dead-letter state ('error').
    */
   async fail(
     familyId: string,
     id: string,
     errorMessage: string,
     maxRetries = 3,
-  ): Promise<void> {
+  ): Promise<QueueItemStatus> {
     // First get current attempts
     const { data: current, error: fetchError } = await this.client
       .from(this.tableName)
@@ -280,7 +284,7 @@ export class ProcessingQueueRepository {
     const attempts = (current?.attempts || 0) + 1;
     const status: QueueItemStatus = attempts >= maxRetries ? 'error' : 'queued';
 
-    const { error } = await this.client
+    const { data, error } = await this.client
       .from(this.tableName)
       .update({
         status,
@@ -290,10 +294,64 @@ export class ProcessingQueueRepository {
         locked_by: null,
       })
       .eq('family_id', familyId)
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) {
       throw new Error(`Failed to mark queue item as failed: ${error.message}`);
+    }
+
+    if (!data?.length) {
+      throw new Error(`Queue item not found: ${id}`);
+    }
+
+    return status;
+  }
+
+  /**
+   * Return all dead-lettered items for a family (status='error').
+   */
+  async getErrors(familyId: string): Promise<QueueItem[]> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('status', 'error')
+      .order('queued_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to fetch error queue items: ${error.message}`);
+    }
+
+    return (data || []).map((row) => mapRowToCamelCase<QueueItem>(row));
+  }
+
+  /**
+   * Reset a dead-lettered item back to 'queued' so it will be retried.
+   * Only operates on items currently in 'error' status.
+   */
+  async requeue(familyId: string, id: string): Promise<void> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .update({
+        status: 'queued',
+        attempts: 0,
+        last_error: null,
+        locked_at: null,
+        locked_by: null,
+        queued_at: new Date().toISOString(),
+      })
+      .eq('family_id', familyId)
+      .eq('id', id)
+      .eq('status', 'error')
+      .select('id');
+
+    if (error) {
+      throw new Error(`Failed to requeue item: ${error.message}`);
+    }
+
+    if (!data?.length) {
+      throw new Error(`${REQUEUE_NOT_FOUND_ERROR}: ${id}`);
     }
   }
 

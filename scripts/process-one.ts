@@ -69,17 +69,32 @@ async function main() {
       await queueRepo.complete(item.familyId, item.id);
       console.log('\nMessage processed and completed successfully!');
     } else {
-      await queueRepo.fail(
+      const newStatus = await queueRepo.fail(
         item.familyId,
         item.id,
         result.error || 'Unknown error',
         3,
       );
-      console.log('\nMessage processing failed:', result.error);
+      if (newStatus === 'error') {
+        console.error(
+          '\nMessage dead-lettered after max retries:',
+          result.error,
+        );
+      } else {
+        console.log('\nMessage processing failed (will retry):', result.error);
+      }
     }
   } catch (error) {
     console.error('Error processing:', error);
-    await queueRepo.fail(item.familyId, item.id, String(error), 3);
+    const newStatus = await queueRepo.fail(
+      item.familyId,
+      item.id,
+      String(error),
+      3,
+    );
+    if (newStatus === 'error') {
+      console.error('Item dead-lettered after max retries');
+    }
   }
 
   // Check questions table

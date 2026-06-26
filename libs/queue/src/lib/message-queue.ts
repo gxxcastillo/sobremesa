@@ -140,32 +140,56 @@ export class MessageQueue {
           'Message processed successfully',
         );
       } else {
-        await this.repository.fail(
+        const newStatus = await this.repository.fail(
           familyId,
           item.id,
           result.error || 'Unknown error',
           this.options.maxRetries,
         );
-        this.logger.warn(
-          { itemId: item.id, error: result.error },
-          'Message processing failed',
-        );
+        if (newStatus === 'error') {
+          this.logger.error(
+            {
+              itemId: item.id,
+              eventId: item.conversationEventId,
+              familyId,
+              error: result.error,
+            },
+            'Queue item dead-lettered after max retries',
+          );
+        } else {
+          this.logger.warn(
+            { itemId: item.id, error: result.error },
+            'Message processing failed',
+          );
+        }
       }
 
       return true;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      await this.repository.fail(
+      const newStatus = await this.repository.fail(
         familyId,
         item.id,
         errorMessage,
         this.options.maxRetries,
       );
-      this.logger.error(
-        { itemId: item.id, error: errorMessage },
-        'Message processing threw exception',
-      );
+      if (newStatus === 'error') {
+        this.logger.error(
+          {
+            itemId: item.id,
+            eventId: item.conversationEventId,
+            familyId,
+            error: errorMessage,
+          },
+          'Queue item dead-lettered after max retries',
+        );
+      } else {
+        this.logger.error(
+          { itemId: item.id, error: errorMessage },
+          'Message processing threw exception',
+        );
+      }
       return true;
     }
   }

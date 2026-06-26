@@ -11,7 +11,10 @@ export {
   type SubjectType,
 } from './family-access-repository';
 export { EventLogRepository } from './event-log-repository';
-export { ProcessingQueueRepository } from './processing-queue-repository';
+export {
+  ProcessingQueueRepository,
+  REQUEUE_NOT_FOUND_ERROR,
+} from './processing-queue-repository';
 export { PersonRepository, type PersonMatchResult } from './person-repository';
 export { IdentityRepository } from './identity-repository';
 export { PlaceRepository } from './place-repository';

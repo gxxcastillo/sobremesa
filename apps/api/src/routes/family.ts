@@ -1,11 +1,35 @@
 import { Elysia, t } from 'elysia';
 import type { DatabaseClient } from '@sobremesa/database';
-import { ProcessingQueueRepository } from '@sobremesa/database';
+import {
+  ProcessingQueueRepository,
+  REQUEUE_NOT_FOUND_ERROR,
+} from '@sobremesa/database';
 import { hasAccessToFamily, type AuthContext } from '@sobremesa/auth';
 import { QueuePriority } from '@sobremesa/shared-types';
 
 function getAuth(ctx: Record<string, unknown>): AuthContext {
   return ctx.auth as AuthContext;
+}
+
+function requireFamilyAdmin(
+  auth: AuthContext,
+  familyId: string,
+  set: { status?: number | string },
+): { error: string } | null {
+  if (!hasAccessToFamily(auth, familyId)) {
+    set.status = 403;
+    return { error: 'Access denied to this family' };
+  }
+  const familyAccess = auth.familyAccess?.find(
+    (fa) => fa.familyId === familyId,
+  );
+  if (!familyAccess || familyAccess.role !== 'admin') {
+    if (!auth.isSuperAdmin) {
+      set.status = 403;
+      return { error: 'Admin access required' };
+    }
+  }
+  return null;
 }
 
 /**
@@ -224,6 +248,99 @@ export function familyRoutes(dbClient: DatabaseClient) {
           detail: {
             tags: ['Family'],
             description: 'Get processing queue statistics for a family',
+          },
+        },
+      )
+      /**
+       * GET /api/family/:familyId/queue/errors
+       * List dead-lettered queue items (status='error') for a family.
+       * Requires admin access.
+       */
+      .get(
+        '/api/family/:familyId/queue/errors',
+        async (ctx) => {
+          const {
+            params: { familyId },
+            set,
+          } = ctx;
+          const auth = getAuth(ctx);
+          if (!auth.isAuthenticated || !auth.identity) {
+            set.status = 401;
+            return { error: 'Authentication required' };
+          }
+
+          const denied = requireFamilyAdmin(auth, familyId, set);
+          if (denied) return denied;
+
+          try {
+            const items = await queueRepo.getErrors(familyId);
+            return {
+              count: items.length,
+              items: items.map((item) => ({
+                id: item.id,
+                conversationEventId: item.conversationEventId,
+                attempts: item.attempts,
+                lastError: item.lastError,
+                queuedAt: item.queuedAt,
+              })),
+            };
+          } catch (err) {
+            console.error('[QueueErrors] Error:', err);
+            set.status = 500;
+            return { error: 'Failed to fetch dead-letter items' };
+          }
+        },
+        {
+          params: t.Object({ familyId: t.String() }),
+          detail: {
+            tags: ['Family'],
+            description: 'List dead-lettered queue items (admin only)',
+          },
+        },
+      )
+      /**
+       * POST /api/family/:familyId/queue/:itemId/requeue
+       * Reset a dead-lettered item back to 'queued' for retry.
+       * Requires admin access.
+       */
+      .post(
+        '/api/family/:familyId/queue/:itemId/requeue',
+        async (ctx) => {
+          const {
+            params: { familyId, itemId },
+            set,
+          } = ctx;
+          const auth = getAuth(ctx);
+          if (!auth.isAuthenticated || !auth.identity) {
+            set.status = 401;
+            return { error: 'Authentication required' };
+          }
+
+          const denied = requireFamilyAdmin(auth, familyId, set);
+          if (denied) return denied;
+
+          try {
+            await queueRepo.requeue(familyId, itemId);
+            return { success: true };
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (message.startsWith(REQUEUE_NOT_FOUND_ERROR)) {
+              set.status = 404;
+              return {
+                error: 'Queue item not found or not eligible for requeue',
+              };
+            }
+            console.error('[QueueRequeue] Error:', err);
+            set.status = 500;
+            return { error: 'Failed to requeue item' };
+          }
+        },
+        {
+          params: t.Object({ familyId: t.String(), itemId: t.String() }),
+          detail: {
+            tags: ['Family'],
+            description:
+              'Reset a dead-lettered queue item back to queued (admin only)',
           },
         },
       )
