@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Superseded
+
+**2026-07-02:** Superseded by [ADR-029](029-multi-tenant-single-bot-process.md). The running
+system deploys one multi-tenant bot process (single `TELEGRAM_BOT_TOKEN`, single `BotManager`,
+many rows in `families`), not one process per family. Evidence:
+`libs/telegram/src/lib/bot-manager.ts`, `apps/chatbots/src/main.ts`, `families` table schema.
 
 ## Date
 

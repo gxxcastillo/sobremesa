@@ -9,7 +9,8 @@ question. Every stored fact is modelled as a sourced **claim**, so provenance is
 conflicting memories are kept side-by-side rather than auto-resolved.
 
 The product intent is warmth over efficiency, preservation over resolution, and conflicts honoured
-rather than erased.
+rather than erased — see [`spec/product/product.md`](./product/product.md) for the normative
+product definition.
 
 ## 1.2 Top-level behaviour
 

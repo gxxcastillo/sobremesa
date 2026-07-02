@@ -213,40 +213,7 @@ bun check:all
 
 ## Project Structure
 
-```
-apps/
-  chatbots/               # Main application entry point
-  studio/                 # Web UI (SolidJS)
-  api/                    # REST API (Elysia)
-  db/                     # Database migrations
-
-libs/
-  agents/
-    scribe/               # Entity/claim extraction (Sonnet)
-    registrar/            # Database persistence (no LLM)
-    facilitator/          # Question asking & response formatting
-    historian/            # Question answering from database
-    intern/               # Message filtering & routing (Haiku)
-    curator/              # Image analysis
-    admin/                # Celebrations, mediation, coaching
-  ai-provider/            # Multi-provider AI abstraction
-  database/               # Supabase client + repositories
-  queue/                  # Message processing queue
-  telegram/               # Telegram bot management
-  ingester/               # Message ingestion
-  api-client/             # Shared API client
-  auth/                   # Authentication (JWT, access passes)
-  prompts/                # Agent prompt templates
-  shared/
-    types/                # TypeScript types
-    utils/                # Shared utilities
-
-scripts/
-  simulate-messages.ts    # Test scenarios without Telegram
-  summary.ts              # Show family knowledge
-  dump-db.ts              # Export family data as JSON
-  debug-facilitator.ts    # Debug facilitator decisions
-```
+See the [root README](../README.md#project-structure) for the directory layout.
 
 ---
 

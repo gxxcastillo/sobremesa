@@ -3,6 +3,14 @@
 A specification of the Sobremesa system: an AI-powered family-history collection platform built as a
 Bun + Nx monorepo. This spec is the canonical description of current system behavior.
 
+## Two kinds of spec
+
+- **Root files** (this list below) are **descriptive**: what the system does today. They are
+  updated in the same change as code, per [`AGENTS.md`](../AGENTS.md).
+- **[`spec/product/`](./product/)** is **normative**: what must be true regardless of
+  implementation. It changes only by deliberate product decision, and such a change warrants an
+  ADR (see [`docs/adr/`](../docs/adr/)).
+
 ## How to read this spec
 
 Start with the overview, then dive into whichever area you need. Each file is self-contained and
@@ -16,6 +24,9 @@ cross-links the others.
 | [Message Lifecycle](./message-lifecycle.md)                      | Telegram ingestion, queue processing, outbound messages, questions, activation      |
 | [AI Providers & Prompts](./ai-providers-and-prompts.md)          | Provider abstraction, model selection, prompts, structured output, token discipline |
 | [Identity, Auth & Interfaces](./identity-auth-and-interfaces.md) | Identity/user/person/participant, Telegram login, access passes, API, Studio        |
+| [Product Definition](./product/product.md)                       | Product vision, non-negotiable principles, what the product is/is not (normative)   |
+| [Warmth Guidelines](./product/warmth.md)                         | Product voice formula and examples (normative)                                      |
+| [Cultural Adaptation](./product/culture.md)                      | Cultural and language adaptation guidance (normative)                               |
 
 ## The 30-second model
 

@@ -4,6 +4,10 @@
 
 Proposed
 
+**2026-07-02:** Confirmed no traversal service exists in code (no `FamilyTreeService`, no derived
+sibling/grandparent/cousin queries — only primitive `findParents`/`findChildren`/`findSpouses`).
+Parked; revisit with read-side/narrative work.
+
 ## Context
 
 The relationship model stores only **structural relationships**:

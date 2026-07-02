@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Proposed
+
+**2026-07-02:** Reverted from Accepted — described behavior was never implemented; treat as
+proposal. The `questions.origin` column and its `'curator' | 'human'` type support the schema, but
+the pipeline's `GeneratedQuestion` type hardcodes `origin: 'curator'` and nothing captures a
+human-asked question from chat or drives a follow-up.
 
 ## Date
 

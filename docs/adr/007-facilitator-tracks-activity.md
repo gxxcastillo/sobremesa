@@ -4,6 +4,12 @@
 
 Accepted
 
+**Implementation status (2026-07-02):** The described activity stream (timestamps, sender IDs,
+message counts feeding a silence/interruption decision) does not exist. The current throttle is a
+single DB-backed check, `wasQuestionAskedRecently` in `libs/agents/facilitator/src/lib/facilitator.ts`,
+which only looks at when a question was last asked. The core principle this ADR protects — the
+Facilitator never sees message content — still holds.
+
 ## Date
 
 2026-01-10

@@ -4,8 +4,10 @@ This file is for AI coding agents and contributors working in this repository.
 
 ## Source of Truth
 
-- `spec/` is canonical for current system behavior.
-- `docs/` contains product guidance, onboarding material, historical ADRs, and redirect pages.
+- `spec/` is canonical: descriptive system behavior at the root (updated in the same change as
+  code), normative product requirements in `spec/product/` (changed only by deliberate product
+  decision).
+- `docs/` contains onboarding material and historical ADRs. Nothing in `docs/` is canonical.
 - If `docs/` conflicts with `spec/`, update or trust `spec/`.
 - ADRs in `docs/adr/` are historical decisions. Do not rewrite them to match current behavior; add a
   new ADR if a new architectural decision needs to be recorded.
@@ -77,10 +79,16 @@ git diff --check
 ## Documentation Rules
 
 - Put current behavior in `spec/`.
-- Keep `docs/PRODUCT.md`, `docs/WARMTH.md`, and `docs/CULTURE.md` as product guidance.
-- Keep `docs/QUICKSTART.md`, `docs/TECH-STACK.md`, and `docs/NX-MONOREPO-STRUCTURE.md` as onboarding
-  and setup guides.
+- Keep product requirements (`spec/product/product.md`, `warmth.md`, `culture.md`) normative:
+  change them only by deliberate product decision, and record such a change as a new ADR.
+- Keep `docs/QUICKSTART.md` as the onboarding and setup guide.
 - Do not add new parallel technical specs under `docs/`; add to `spec/` or create a redirect.
+- An ADR records a decision that was made and acted on. Desired behavior belongs in `spec/` (if
+  built) or an `.agents/` plan (if pending). When implementation departs from an ADR, mark it
+  Superseded with a dated note and, if a real decision replaced it, record the new decision as a
+  new ADR.
+- ADRs never link to `.agents/` (ephemeral, gitignored, reorganized freely) — describe or name the
+  pending work in prose instead. `.agents/` plans may link to ADRs.
 
 ## Style Notes
 

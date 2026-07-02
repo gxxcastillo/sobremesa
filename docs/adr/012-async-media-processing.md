@@ -4,6 +4,11 @@
 
 Accepted
 
+**Implementation status (2026-07-02):** Image records are created asynchronously as designed, but
+no consumer currently runs Curator analysis on them in the live `chatbots` app — the
+`onImageCreated` hook exists but is never registered. Wiring a Curator consumer onto that hook is
+open work.
+
 ## Date
 
 2026-01-10

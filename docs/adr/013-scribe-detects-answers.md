@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Superseded
+
+**2026-07-02:** Superseded. Answer detection is implemented as deterministic reply-matching in the
+queue processor (`detectAndMarkAnswer` in `libs/queue/src/lib/processor.ts`, triggered by
+`externalReplyToId`), not inside the Scribe agent. See
+[`spec/message-lifecycle.md`](../../spec/message-lifecycle.md) §4.4 for current behavior.
 
 ## Date
 

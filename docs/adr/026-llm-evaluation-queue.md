@@ -4,6 +4,11 @@
 
 Accepted
 
+**Implementation status (2026-07-02):** The queue is producer-only. The Registrar enqueues rows
+into `llm_evaluation_queue`, but no worker acquires/drains them (`acquireBatch` has no call sites;
+no `LlmEvaluationService` exists). Whether to build a drain worker or retire the queue is open
+work.
+
 ## Date
 
 2026-01-26

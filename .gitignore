@@ -47,5 +47,8 @@ Thumbs.db
 .claude/plans
 snapshots
 
+# agent working docs (plans, editorial state) — not tracked
+.agents/
+
 vite.config.*.timestamp*
 vitest.config.*.timestamp*
