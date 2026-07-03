@@ -29,7 +29,11 @@ import {
   findBestSubjectMatch,
   subjectsMatch,
 } from './conflict-detector';
-import { textMentionsName } from './name-match';
+import {
+  MEANINGLESS_TOKENS,
+  nameMentionedInTokens,
+  wordTokens,
+} from './name-match';
 import {
   EntityMatcherService,
   ConflictDetectorService,
@@ -42,54 +46,27 @@ import registrarPkg from '../../package.json' with { type: 'json' };
 
 const REGISTRAR_VERSION = registrarPkg.version;
 
-const ENTITY_MENTION_STOPWORDS = new Set([
-  'the',
-  'a',
-  'an',
-  'of',
-  'in',
-  'at',
-  'to',
-  'for',
-  'on',
-  'and',
-  'or',
-  's',
-  'el',
-  'la',
-  'los',
-  'las',
-  'de',
-  'del',
-  'da',
-  'do',
-  'dos',
-  'das',
-  'du',
-  'des',
-  'le',
-  'les',
-]);
+// Memoizes normalizeLookup() output, which is a pure function of its input, so
+// repeated getEntityIdByName() fallback scans over the same entity names don't
+// re-run Unicode normalization on every call.
+const normalizeLookupCache = new Map<string, string>();
 
 function normalizeLookup(value: string): string {
-  return value
+  const cached = normalizeLookupCache.get(value);
+  if (cached !== undefined) return cached;
+  const normalized = value
     .toLowerCase()
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .normalize('NFC')
     .trim();
-}
-
-function normalizedTokens(value: string): string[] {
-  return normalizeLookup(value)
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((token) => token.length > 0);
+  normalizeLookupCache.set(value, normalized);
+  return normalized;
 }
 
 function meaningfulTokens(value: string, minTokenLength = 2): string[] {
-  return normalizedTokens(value).filter(
-    (token) =>
-      token.length >= minTokenLength && !ENTITY_MENTION_STOPWORDS.has(token),
+  return wordTokens(value, { foldDiacritics: true }).filter(
+    (token) => token.length >= minTokenLength && !MEANINGLESS_TOKENS.has(token),
   );
 }
 
@@ -98,10 +75,11 @@ function textMentionsNameNormalized(
   name: string,
   minTokenLength = 2,
 ): boolean {
-  const nameTokens = meaningfulTokens(name, minTokenLength);
-  if (nameTokens.length === 0) return false;
-  const textTokens = new Set(normalizedTokens(text));
-  return nameTokens.every((token) => textTokens.has(token));
+  return nameMentionedInTokens(
+    name,
+    new Set(wordTokens(text, { foldDiacritics: true })),
+    { minTokenLength, foldDiacritics: true, stopwords: MEANINGLESS_TOKENS },
+  );
 }
 
 function getEntityIdByName(
@@ -1415,11 +1393,15 @@ export class RegistrarAgent {
           linkedPersonIds.add(entityId);
         }
 
+        // claimText is invariant across this loop, so tokenize it once instead
+        // of once per candidate name.
+        const claimTextTokens = new Set(wordTokens(claimText));
+
         for (const [personName, personId] of personIdMap) {
           if (linkedPersonIds.has(personId)) continue;
           // Word-boundary match (not raw substring): 'Ann' must not match inside
           // 'Anna'/'banana'. See name-match.ts and invariant 6.
-          if (textMentionsName(claimText, personName)) {
+          if (nameMentionedInTokens(personName, claimTextTokens)) {
             await this.claimEntityRepo.link(
               familyId,
               newClaim.id,

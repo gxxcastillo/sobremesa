@@ -1,27 +1,13 @@
-import { wordTokens } from './name-match';
+import { MEANINGLESS_TOKENS, wordTokens } from './name-match';
 
 /**
  * Conflict detection utilities for the Registrar agent.
  */
-const SUBJECT_STOPWORDS = new Set([
-  'the',
-  'a',
-  'an',
-  'of',
-  'in',
-  'at',
-  'to',
-  'for',
-  'on',
-  'and',
-  'or',
-  's',
-]);
 
 function subjectTokens(subject: string): Set<string> {
   return new Set(
     wordTokens(subject).filter(
-      (word) => word.length > 1 && !SUBJECT_STOPWORDS.has(word),
+      (word) => word.length > 1 && !MEANINGLESS_TOKENS.has(word),
     ),
   );
 }

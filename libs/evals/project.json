@@ -1,0 +1,24 @@
+{
+  "name": "evals",
+  "tags": ["scope:service"],
+  "targets": {
+    "types": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun tsc --noEmit -p {projectRoot}/tsconfig.lib.json"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun eslint {projectRoot}"
+      }
+    },
+    "run": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun {projectRoot}/src/runners/scribe-evals.ts"
+      }
+    }
+  }
+}

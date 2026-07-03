@@ -1,5 +1,9 @@
 # Warmth Guidelines
 
+**Note:** This file currently keeps normative requirements and the example/rubric bank together.
+It may need to split later if the examples become eval fixtures or grow enough to obscure the
+requirements.
+
 ## Core Principle
 
 **This is NOT optional. This IS the product.**

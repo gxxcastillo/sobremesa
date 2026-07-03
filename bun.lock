@@ -230,6 +230,20 @@
         "vitest": "4.0.9",
       },
     },
+    "libs/evals": {
+      "name": "@sobremesa/evals",
+      "version": "0.0.1",
+      "dependencies": {
+        "@sobremesa/agents-registrar": "workspace:*",
+        "@sobremesa/agents-scribe": "workspace:*",
+        "@sobremesa/ai-provider": "workspace:*",
+        "@sobremesa/database": "workspace:*",
+        "@sobremesa/queue": "workspace:*",
+        "@sobremesa/shared-types": "workspace:*",
+        "@sobremesa/shared-utils": "workspace:*",
+        "tslib": "^2.3.0",
+      },
+    },
     "libs/import": {
       "name": "@sobremesa/import",
       "version": "0.0.1",
@@ -776,6 +790,8 @@
     "@sobremesa/database": ["@sobremesa/database@workspace:libs/database"],
 
     "@sobremesa/db": ["@sobremesa/db@workspace:apps/db"],
+
+    "@sobremesa/evals": ["@sobremesa/evals@workspace:libs/evals"],
 
     "@sobremesa/import": ["@sobremesa/import@workspace:libs/import"],
 

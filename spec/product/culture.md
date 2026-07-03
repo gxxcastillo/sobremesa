@@ -1,5 +1,9 @@
 # Cultural Adaptation Guide
 
+**Note:** This file currently keeps normative requirements and the example/rubric bank together.
+It may need to split later if the examples become eval fixtures or grow enough to obscure the
+requirements.
+
 How to adapt Sobremesa for different families, cultures, and languages.
 
 **Note:** This is a living document. Add cultural insights as you work with different families.
