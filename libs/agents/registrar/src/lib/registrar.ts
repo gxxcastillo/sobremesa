@@ -1335,14 +1335,23 @@ export class RegistrarAgent {
           }
         }
 
+        // Track every person/place already linked to this claim so the later
+        // passes (text-mention scan, referencedPlaces) cannot re-insert the
+        // same (claim, entity, role) row and hit the unique constraint.
+        const linkedPersonIds = new Set<string>();
+        if (entityType === 'person' && entityId) {
+          linkedPersonIds.add(entityId);
+        }
+        const linkedPlaceIds = new Set<string>();
+        if (entityType === 'place' && entityId) {
+          linkedPlaceIds.add(entityId);
+        }
+
         // Link referenced people and places
         if (claim.referencedPeople) {
           for (const personName of claim.referencedPeople) {
             const personId = getEntityIdByName(personIdMap, personName);
-            if (
-              personId &&
-              !(entityType === 'person' && entityId === personId)
-            ) {
+            if (personId && !linkedPersonIds.has(personId)) {
               await this.claimEntityRepo.link(
                 familyId,
                 newClaim.id,
@@ -1352,6 +1361,7 @@ export class RegistrarAgent {
                   role: 'related',
                 },
               );
+              linkedPersonIds.add(personId);
             }
           }
         }
@@ -1359,7 +1369,7 @@ export class RegistrarAgent {
         if (claim.referencedPlaces) {
           for (const placeName of claim.referencedPlaces) {
             const placeId = getEntityIdByName(placeIdMap, placeName);
-            if (placeId && !(entityType === 'place' && entityId === placeId)) {
+            if (placeId && !linkedPlaceIds.has(placeId)) {
               await this.claimEntityRepo.link(
                 familyId,
                 newClaim.id,
@@ -1369,6 +1379,7 @@ export class RegistrarAgent {
                   role: 'location',
                 },
               );
+              linkedPlaceIds.add(placeId);
             }
           }
         }
@@ -1393,11 +1404,6 @@ export class RegistrarAgent {
         ]
           .join(' ')
           .toLowerCase();
-
-        const linkedPersonIds = new Set<string>();
-        if (entityType === 'person' && entityId) {
-          linkedPersonIds.add(entityId);
-        }
 
         // claimText is invariant across this loop, so tokenize it once instead
         // of once per candidate name.

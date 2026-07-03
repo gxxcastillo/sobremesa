@@ -194,9 +194,18 @@ async function runScenario(
         message,
         index,
       );
-      await queueRepo.enqueue(family.id, eventId);
+      const queueItem = await queueRepo.enqueue(family.id, eventId);
       const result = await processor.process(eventId, family.id);
-      if (!result.success) {
+      // processor.process() only reports success/failure; the caller owns
+      // completing/failing the queue item (see libs/queue MessageQueue).
+      if (result.success) {
+        await queueRepo.complete(family.id, queueItem.id);
+      } else {
+        await queueRepo.fail(
+          family.id,
+          queueItem.id,
+          result.error ?? 'unknown error',
+        );
         throw new Error(
           `Message ${index + 1} failed processing: ${result.error ?? 'unknown error'}`,
         );

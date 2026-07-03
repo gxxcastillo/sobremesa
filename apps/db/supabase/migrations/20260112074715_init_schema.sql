@@ -3727,5 +3727,41 @@ CREATE POLICY intern_decisions_delete_super_admin ON intern_decisions
   USING (is_super_admin());
 
 -- ============================================================================
+-- TABLE PRIVILEGES
+-- ============================================================================
+-- Postgres checks table-level GRANTs independently of RLS policies, including
+-- for roles with BYPASSRLS (service_role). Client roles receive table
+-- privileges only for tables where RLS is enabled; backend-only tables such as
+-- allowed_chats must remain inaccessible through the Supabase anon key.
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON ALL TABLES IN SCHEMA public
+  TO service_role;
+
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT format('%I.%I', n.nspname, c.relname) AS table_name
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('r', 'p')
+      AND c.relrowsecurity
+  LOOP
+    EXECUTE format(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %s TO anon, authenticated',
+      r.table_name
+    );
+  END LOOP;
+END;
+$$;
+
+REVOKE ALL ON TABLE public.allowed_chats FROM anon, authenticated;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO service_role;
+
+-- ============================================================================
 -- END OF SCHEMA
 -- ============================================================================

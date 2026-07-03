@@ -35,8 +35,9 @@ per-family text order.
 3. Creates image records for media.
 4. Routes to ignore, admin, historian, or Scribe.
 5. Runs the Scribe path when appropriate: filter → Scribe → image-link fallback → Registrar.
-6. Completes the queue item. Failures requeue for retry up to a max attempt count, then dead-letter
-   (`status = 'error'`).
+6. Returns a success/failure result. `MessageProcessor` never marks the queue row itself; the queue
+   loop is the sole owner of completing or failing it. Failures requeue for retry up to a max
+   attempt count, then dead-letter (`status = 'error'`).
 
 Historian-routed messages also fall through to Scribe so user questions can contribute facts.
 

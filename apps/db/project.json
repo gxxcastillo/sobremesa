@@ -55,6 +55,12 @@
       "options": {
         "command": "supabase migration list"
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun apps/db/scripts/verify-table-privileges.ts"
+      }
     }
   }
 }

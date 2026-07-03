@@ -104,6 +104,15 @@ Family isolation is enforced in two layers:
 Raw `conversation_events` are service-role only; browser access goes through backend endpoints and
 derived summaries.
 
+Postgres checks table-level GRANTs independently of and before RLS policies. Every table must land in
+one of two states: RLS enabled with SELECT/INSERT/UPDATE/DELETE granted to `anon`/`authenticated`, or
+explicitly `REVOKE`d from those roles as backend-only (e.g. `allowed_chats`). A table with RLS enabled
+but no matching GRANT fails every client query with "permission denied" regardless of policy
+correctness; a table with a GRANT but no RLS is fully exposed. A migration that adds a table must also
+grant or revoke it explicitly — the bootstrap privilege sweep in the init migration only covers tables
+that existed when it ran. `bun nx test db` (`apps/db/scripts/verify-table-privileges.ts`) checks this
+invariant across all migration files.
+
 Redaction is non-destructive:
 
 - Entity redaction marks rows as redacted.

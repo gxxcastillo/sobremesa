@@ -36,6 +36,7 @@ export class MessageQueue {
     queueOptions?: Partial<QueueOptions>;
     pollIntervalMs?: number;
     loggerOptions?: LoggerOptions;
+    logger?: pino.Logger;
   }) {
     this.repository = options.repository;
     this.workerId =
@@ -48,7 +49,9 @@ export class MessageQueue {
       ...options?.queueOptions,
     };
     this.pollIntervalMs = options?.pollIntervalMs || 1000;
-    this.logger = createLogger(options?.loggerOptions || { name: 'queue' });
+    this.logger =
+      options.logger ||
+      createLogger(options?.loggerOptions || { name: 'queue' });
   }
 
   /**

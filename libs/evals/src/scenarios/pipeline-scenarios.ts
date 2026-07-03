@@ -266,7 +266,10 @@ export const pipelineSnapshotScenarios: PipelineSnapshotScenario[] = [
       ],
       relationships: [],
       linkCounts: {
-        claimEntities: 5,
+        // 2nd claim's referencedPeople is ['Carlos', 'Sofia']: subject (event) +
+        // Carlos + Sofia = 3 links, plus the 1st claim's subject (event) + Sofia +
+        // Puerto Vallarta = 3 links = 6 total.
+        claimEntities: 6,
         claimRelationships: 0,
         storyPeople: 0,
         storyPlaces: 0,

@@ -251,6 +251,7 @@ export class MessageProcessor {
     questionRepo?: QuestionRepository;
     imageRepo?: ImageRepository;
     queueRepo?: ProcessingQueueRepository;
+    logger?: pino.Logger;
   }) {
     const { dbClient } = options;
 
@@ -303,7 +304,7 @@ export class MessageProcessor {
       );
     }
 
-    this.logger = createLogger({ name: 'processor' });
+    this.logger = options.logger || createLogger({ name: 'processor' });
   }
 
   /**
@@ -567,9 +568,8 @@ export class MessageProcessor {
 
       // Handle based on routing action
       if (routingAction === 'ignore') {
-        // Message should be ignored - mark as processed and return
+        // Message should be ignored - report success; the queue loop completes the item
         this.logger.info({ eventId }, 'Message ignored by router');
-        await this.queueRepo.complete(familyId, queueItem.id);
         return {
           success: true,
           duration: Date.now() - startTime,
@@ -596,8 +596,7 @@ export class MessageProcessor {
             'Admin action routed but no admin processor configured',
           );
         }
-        // Mark as processed after admin handling
-        await this.queueRepo.complete(familyId, queueItem.id);
+        // Report success after admin handling; the queue loop completes the item
         return {
           success: true,
           duration: Date.now() - startTime,
@@ -628,9 +627,6 @@ export class MessageProcessor {
       if (event.contentOriginal || event.eventType === 'message') {
         await this.processTextContent(eventId, familyId, context);
       }
-
-      // Mark event as processed
-      await this.queueRepo.complete(familyId, queueItem.id);
 
       // Log processing complete
       await this.eventLog.log({

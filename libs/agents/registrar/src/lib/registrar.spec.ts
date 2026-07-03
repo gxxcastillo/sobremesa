@@ -893,6 +893,51 @@ describe('RegistrarAgent - Claim Subject Resolution', () => {
     );
   });
 
+  it('does not double-link a referencedPeople entity also mentioned in the claim text (regression)', async () => {
+    // Carlos is linked via referencedPeople AND his name also appears in
+    // claimValue, so the later "mentioned in claim text" scan must not
+    // re-link him — that duplicate insert violates the claim_entities unique
+    // constraint and used to fail the whole persist.
+    const domainModel: ScribeDomainModel = {
+      conversationEventId: 'event-123',
+      familyId: 'family-abc',
+      processedAt: new Date(),
+      people: [{ name: 'Carlos', aliases: [], confidence: 'high' }],
+      places: [],
+      events: [],
+      relationships: [],
+      claims: [
+        {
+          claimType: 'detail',
+          subject: 'The wedding',
+          claimValue: 'Carlos walked her down the aisle and cried',
+          confidence: 'high',
+          claimedBy: 'Test User',
+          claimedBySource: 'direct',
+          referencedPeople: ['Carlos'],
+        },
+      ],
+      imageReferences: [],
+      detectedLanguage: 'en',
+    };
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    const carlosRelatedLinks = mockClaimEntityRepo.link.mock.calls.filter(
+      ([, , entityId, entityType, opts]: [
+        string,
+        string,
+        string,
+        string,
+        { role: string },
+      ]) =>
+        entityId === 'person-carlos' &&
+        entityType === 'person' &&
+        opts.role === 'related',
+    );
+    expect(carlosRelatedLinks).toHaveLength(1);
+  });
+
   it('uses a multilingual event title as the event subject (#10)', async () => {
     const domainModel: ScribeDomainModel = {
       conversationEventId: 'event-123',
