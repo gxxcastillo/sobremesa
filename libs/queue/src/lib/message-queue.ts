@@ -1,5 +1,6 @@
 import type {
   QueueItem,
+  QueueItemStatus,
   QueueOptions,
   ProcessingResult,
   EnqueueOptions,
@@ -143,28 +144,17 @@ export class MessageQueue {
           'Message processed successfully',
         );
       } else {
+        const errorMessage = result.error || 'Unknown error';
         const newStatus = await this.repository.fail(
           familyId,
           item.id,
-          result.error || 'Unknown error',
+          errorMessage,
           this.options.maxRetries,
         );
-        if (newStatus === 'error') {
-          this.logger.error(
-            {
-              itemId: item.id,
-              eventId: item.conversationEventId,
-              familyId,
-              error: result.error,
-            },
-            'Queue item dead-lettered after max retries',
-          );
-        } else {
-          this.logger.warn(
-            { itemId: item.id, error: result.error },
-            'Message processing failed',
-          );
-        }
+        this.logFailureOutcome(item, familyId, newStatus, errorMessage, {
+          level: 'warn',
+          message: 'Message processing failed',
+        });
       }
 
       return true;
@@ -177,23 +167,41 @@ export class MessageQueue {
         errorMessage,
         this.options.maxRetries,
       );
-      if (newStatus === 'error') {
-        this.logger.error(
-          {
-            itemId: item.id,
-            eventId: item.conversationEventId,
-            familyId,
-            error: errorMessage,
-          },
-          'Queue item dead-lettered after max retries',
-        );
-      } else {
-        this.logger.error(
-          { itemId: item.id, error: errorMessage },
-          'Message processing threw exception',
-        );
-      }
+      this.logFailureOutcome(item, familyId, newStatus, errorMessage, {
+        level: 'error',
+        message: 'Message processing threw exception',
+      });
       return true;
+    }
+  }
+
+  /**
+   * Logs a failed processing attempt: ERROR with the dead-letter message once
+   * `fail()` reports the item exhausted its retries, otherwise the caller's
+   * own fallback level/message for an ordinary retry.
+   */
+  private logFailureOutcome(
+    item: QueueItem,
+    familyId: string,
+    newStatus: QueueItemStatus,
+    errorMessage: string,
+    fallback: { level: 'warn' | 'error'; message: string },
+  ): void {
+    if (newStatus === 'error') {
+      this.logger.error(
+        {
+          itemId: item.id,
+          eventId: item.conversationEventId,
+          familyId,
+          error: errorMessage,
+        },
+        'Queue item dead-lettered after max retries',
+      );
+    } else {
+      this.logger[fallback.level](
+        { itemId: item.id, error: errorMessage },
+        fallback.message,
+      );
     }
   }
 

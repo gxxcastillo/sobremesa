@@ -45,4 +45,5 @@ export {
   hasAccessToFamily,
   getFamilyRole,
   checkFamilyAccess,
+  getAuth,
 } from './lib/middleware';

@@ -11,9 +11,25 @@ import type {
   AICompletionResponse,
   AIMessageContent,
   ProviderConfig,
+  ResponseFormat,
 } from '../types';
 
 const logger = createLogger({ name: 'anthropic', level: 'debug' });
+
+/**
+ * Narrows `ResponseFormat` to the schema-constrained variant. A real type
+ * predicate (rather than a derived boolean) so every call site gets
+ * `.json_schema` narrowing from TypeScript, instead of re-checking
+ * `typeof responseFormat === 'object' && responseFormat.type === 'json_schema'`
+ * by hand at each use.
+ */
+function isJsonSchemaFormat(
+  responseFormat: ResponseFormat | undefined,
+): responseFormat is Extract<ResponseFormat, { type: 'json_schema' }> {
+  return (
+    typeof responseFormat === 'object' && responseFormat.type === 'json_schema'
+  );
+}
 
 /**
  * Anthropic SDK client type.
@@ -129,23 +145,19 @@ export class AnthropicProvider implements AIProvider {
 
   async complete(request: AICompletionRequest): Promise<AICompletionResponse> {
     const model = request.model || this.defaultModel;
+    const responseFormat = request.responseFormat;
 
     // Convert messages to Anthropic format
     const messages = this.convertMessages(request.messages);
 
     // Check if using JSON schema output format
-    const hasJsonSchemaFormat =
-      request.responseFormat &&
-      typeof request.responseFormat === 'object' &&
-      request.responseFormat.type === 'json_schema';
+    const hasJsonSchemaFormat = isJsonSchemaFormat(responseFormat);
 
     // Only use native structured outputs if the model supports it
     const useNativeStructuredOutputs =
-      hasJsonSchemaFormat &&
+      isJsonSchemaFormat(responseFormat) &&
       this.supportsStructuredOutputs(model) &&
-      request.responseFormat &&
-      typeof request.responseFormat === 'object' &&
-      request.responseFormat.json_schema.strict !== false;
+      responseFormat.json_schema.strict !== false;
 
     // Log structured output mode for debugging
     if (hasJsonSchemaFormat) {
@@ -157,15 +169,10 @@ export class AnthropicProvider implements AIProvider {
 
     // Build system prompt, potentially with JSON schema for unsupported models
     let systemPrompt = request.system || '';
-    if (
-      hasJsonSchemaFormat &&
-      !useNativeStructuredOutputs &&
-      request.responseFormat &&
-      typeof request.responseFormat === 'object'
-    ) {
+    if (isJsonSchemaFormat(responseFormat) && !useNativeStructuredOutputs) {
       // Model doesn't support native structured outputs - include schema in prompt
       const schemaJson = JSON.stringify(
-        request.responseFormat.json_schema.schema,
+        responseFormat.json_schema.schema,
         null,
         2,
       );
@@ -204,14 +211,10 @@ export class AnthropicProvider implements AIProvider {
     }
 
     // Add output_format for native structured outputs (supported models only)
-    if (
-      useNativeStructuredOutputs &&
-      request.responseFormat &&
-      typeof request.responseFormat === 'object'
-    ) {
+    if (useNativeStructuredOutputs && isJsonSchemaFormat(responseFormat)) {
       anthropicRequest['output_format'] = {
         type: 'json_schema',
-        schema: request.responseFormat.json_schema.schema,
+        schema: responseFormat.json_schema.schema,
       };
     }
 

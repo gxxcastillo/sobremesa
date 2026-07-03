@@ -7,9 +7,10 @@ import {
   ProcessingQueueRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
-import { createLogger } from '@sobremesa/shared-utils';
+import { createLogger, logBestEffort } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 import {
+  type ConversationEvent,
   type Family,
   type FamilyConfig,
   type MessageSender,
@@ -238,15 +239,24 @@ export class AdminAgent {
       { priority: Priorities.USER_RESPONSE },
     );
 
-    // Log the action
-    await this.eventLog.log({
-      familyId,
-      eventType: 'event_processed',
-      eventCategory: 'bot_action',
-      actor: 'admin',
-      actorType: 'system',
-      eventData: { eventId, stats, action: 'status_shown' },
-    });
+    // Log the action. Best-effort: the reply above already reached the
+    // family, so a logging failure here must not turn into a reported
+    // failure — `handle()`'s caller retries on failure, which would resend
+    // the status message.
+    await logBestEffort(
+      this.logger,
+      () =>
+        this.eventLog.log({
+          familyId,
+          eventType: 'event_processed',
+          eventCategory: 'bot_action',
+          actor: 'admin',
+          actorType: 'system',
+          eventData: { eventId, stats, action: 'status_shown' },
+        }),
+      { eventId, familyId },
+      'Failed to log status command event (message already sent)',
+    );
 
     return { success: true, action: 'status', messageSent: true };
   }
@@ -307,6 +317,7 @@ export class AdminAgent {
     // Handle join events with consolidation
     if (event.eventType === 'join') {
       return this.handleConsolidatedJoin(
+        event,
         familyId,
         event.conversationId,
         familyName,
@@ -337,19 +348,28 @@ export class AdminAgent {
         'Leave notification sent',
       );
 
-      await this.eventLog.log({
-        familyId,
-        eventType: 'event_processed',
-        eventCategory: 'bot_action',
-        actor: 'admin',
-        actorType: 'system',
-        eventData: {
-          eventId,
-          originalEventType: 'leave',
-          action: 'member_notification_sent',
-          memberName,
-        },
-      });
+      // Best-effort: the notification above already reached the family, so
+      // a logging failure here must not turn into a reported failure —
+      // `handle()`'s caller retries on failure, which would resend it.
+      await logBestEffort(
+        this.logger,
+        () =>
+          this.eventLog.log({
+            familyId,
+            eventType: 'event_processed',
+            eventCategory: 'bot_action',
+            actor: 'admin',
+            actorType: 'system',
+            eventData: {
+              eventId,
+              originalEventType: 'leave',
+              action: 'member_notification_sent',
+              memberName,
+            },
+          }),
+        { eventId, familyId },
+        'Failed to log leave notification event (message already sent)',
+      );
 
       return { success: true, action: 'member_event', messageSent: true };
     }
@@ -363,26 +383,33 @@ export class AdminAgent {
   }
 
   /**
-   * Handle consolidated join events - finds all pending join events
-   * for the conversation and sends a single welcome message.
+   * Handle consolidated join events - finds all *other* pending join events
+   * for the conversation and sends one welcome message covering all of them
+   * plus the event that triggered this call.
    */
   private async handleConsolidatedJoin(
+    currentEvent: ConversationEvent,
     familyId: string,
     conversationId: string,
     familyName: string,
     language: SupportedLanguage,
   ): Promise<AdminHandleResult> {
-    // Find all unprocessed join events for this conversation
-    const joinEvents = await this.eventRepo.findUnprocessedByType(
+    // `dequeueAny` already flipped the triggering queue item to 'processing'
+    // before this handler ran, so `findUnprocessedByType` (which only
+    // matches 'queued'/null queue status) never returns `currentEvent` —
+    // only *other*, still-queued join events for the same conversation.
+    // Explicitly include `currentEvent` below; otherwise a solo join never
+    // sends a welcome message at all (0 other pending joins -> early
+    // return), and a burst of joins always omits whichever member's event
+    // happened to be the one dequeued and routed here.
+    const otherJoinEvents = await this.eventRepo.findUnprocessedByType(
       familyId,
       conversationId,
       'join',
     );
-
-    if (joinEvents.length === 0) {
-      // Event was already processed (possibly by another worker)
-      return { success: true, action: 'member_event', messageSent: false };
-    }
+    const joinEvents = otherJoinEvents.some((e) => e.id === currentEvent.id)
+      ? otherJoinEvents
+      : [currentEvent, ...otherJoinEvents];
 
     // Extract member names (deduplicate by external ID)
     const seenIds = new Set<string>();
@@ -412,19 +439,6 @@ export class AdminAgent {
       { priority: Priorities.MEMBER_NOTIFICATION },
     );
 
-    // Mark queue items as done
-    const eventIds = joinEvents.map((e) => e.id);
-    const queueItems = await this.queueRepo.findPendingByEventIds(
-      familyId,
-      eventIds,
-    );
-    if (queueItems.length > 0) {
-      await this.queueRepo.completeMany(
-        familyId,
-        queueItems.map((q) => q.id),
-      );
-    }
-
     this.logger.info(
       {
         familyId,
@@ -435,31 +449,82 @@ export class AdminAgent {
       'Consolidated join notification sent',
     );
 
-    await this.eventLog.log({
-      familyId,
-      eventType: 'event_processed',
-      eventCategory: 'bot_action',
-      actor: 'admin',
-      actorType: 'system',
-      eventData: {
-        eventIds,
-        originalEventType: 'join',
-        action: 'consolidated_join_notification_sent',
-        memberCount: memberNames.length,
-        memberNames,
-      },
-    });
+    // Everything below is best-effort bookkeeping: the notification above
+    // already reached the family, so a failure here must not turn into a
+    // reported failure — `handle()`'s caller retries on failure, which would
+    // resend the (already-delivered) join notification. The three steps
+    // below are independent of each other (no ordering dependency), so they
+    // run concurrently and each is wrapped separately: one step's failure
+    // must not skip the others (a bundled try/catch would mean a
+    // completeMany failure silently skips onboarding for this batch forever,
+    // since nothing retries once success is reported).
+    const eventIds = joinEvents.map((e) => e.id);
 
-    // Trigger onboarding for new members
-    if (this.onboardingHandler) {
-      await this.triggerOnboardingForJoinedMembers(
-        familyId,
-        conversationId,
-        familyName,
-        language,
-        joinEvents,
-      );
-    }
+    await Promise.all([
+      logBestEffort(
+        this.logger,
+        async () => {
+          const queueItems = await this.queueRepo.findPendingByEventIds(
+            familyId,
+            eventIds,
+          );
+          if (queueItems.length > 0) {
+            await this.queueRepo.completeMany(
+              familyId,
+              queueItems.map((q) => q.id),
+            );
+          }
+        },
+        { familyId, conversationId },
+        'Failed to mark consolidated join queue items complete (message already sent, sibling queue items may resurface and re-notify)',
+        // ERROR, not warn: a failed `completeMany` leaves the sibling join
+        // queue items un-completed and still 'queued' — they will resurface
+        // on a later independent dequeue and can trigger a second, duplicate
+        // consolidated notification. That's a pre-existing gap in this
+        // feature's non-atomic multi-item completion (predates this
+        // try/catch), not fixed here; this is only about making it loud
+        // enough for an operator to notice instead of silently swallowed.
+        'error',
+      ),
+
+      logBestEffort(
+        this.logger,
+        () =>
+          this.eventLog.log({
+            familyId,
+            eventType: 'event_processed',
+            eventCategory: 'bot_action',
+            actor: 'admin',
+            actorType: 'system',
+            eventData: {
+              eventIds,
+              originalEventType: 'join',
+              action: 'consolidated_join_notification_sent',
+              memberCount: memberNames.length,
+              memberNames,
+            },
+          }),
+        { familyId, conversationId },
+        'Failed to log consolidated join event (message already sent)',
+      ),
+
+      this.onboardingHandler
+        ? logBestEffort(
+            this.logger,
+            () =>
+              this.triggerOnboardingForJoinedMembers(
+                familyId,
+                conversationId,
+                familyName,
+                language,
+                joinEvents,
+              ),
+            { familyId, conversationId },
+            'Failed to trigger onboarding for joined members (message already sent)',
+            'error',
+          )
+        : Promise.resolve(),
+    ]);
 
     return { success: true, action: 'member_event', messageSent: true };
   }
@@ -565,18 +630,27 @@ export class AdminAgent {
       { priority: Priorities.USER_RESPONSE },
     );
 
-    await this.eventLog.log({
-      familyId,
-      eventType: 'event_processed',
-      eventCategory: 'bot_action',
-      actor: 'admin',
-      actorType: 'system',
-      eventData: {
-        eventId,
-        action: 'mention_responded',
-        messageContent: event.contentOriginal?.slice(0, 100),
-      },
-    });
+    // Best-effort: the reply above already reached the family, so a logging
+    // failure here must not turn into a reported failure — `handle()`'s
+    // caller retries on failure, which would resend the reply.
+    await logBestEffort(
+      this.logger,
+      () =>
+        this.eventLog.log({
+          familyId,
+          eventType: 'event_processed',
+          eventCategory: 'bot_action',
+          actor: 'admin',
+          actorType: 'system',
+          eventData: {
+            eventId,
+            action: 'mention_responded',
+            messageContent: event.contentOriginal?.slice(0, 100),
+          },
+        }),
+      { eventId, familyId },
+      'Failed to log mention-response event (message already sent)',
+    );
 
     return { success: true, action: 'mention', messageSent: true };
   }

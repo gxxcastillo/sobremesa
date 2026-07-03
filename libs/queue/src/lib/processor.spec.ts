@@ -160,6 +160,27 @@ describe('MessageProcessor', () => {
     expect(mockQueueRepo.complete).not.toHaveBeenCalled();
   });
 
+  it('reports failure when the admin processor fails, so the queue retries instead of completing', async () => {
+    const processor = createProcessor();
+    processor.setRouter(async () => ({
+      action: 'admin',
+      adminSubtype: 'command',
+      reason: 'admin command',
+    }));
+    const adminProcessor = vi
+      .fn()
+      .mockResolvedValue({ success: false, error: 'db unavailable' });
+    processor.setAdminProcessor(adminProcessor);
+    const scribe = vi.fn();
+    processor.setScribe(scribe);
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('db unavailable');
+    expect(mockQueueRepo.complete).not.toHaveBeenCalled();
+  });
+
   it('falls through to the scribe pipeline after routing to historian', async () => {
     const callOrder: string[] = [];
     const processor = createProcessor();
@@ -188,6 +209,27 @@ describe('MessageProcessor', () => {
     expect(scribe).toHaveBeenCalled();
     expect(callOrder).toEqual(['historian', 'scribe']);
     expect(registrar).toHaveBeenCalledWith(domainModel, FAMILY_ID, undefined);
+    expect(mockQueueRepo.complete).not.toHaveBeenCalled();
+  });
+
+  it('reports failure without running scribe when the historian processor fails, so the queue retries instead of completing', async () => {
+    const processor = createProcessor();
+    processor.setRouter(async () => ({
+      action: 'historian',
+      reason: 'question asked',
+    }));
+    const historianProcessor = vi
+      .fn()
+      .mockResolvedValue({ success: false, error: 'facilitator send failed' });
+    processor.setHistorianProcessor(historianProcessor);
+    const scribe = vi.fn();
+    processor.setScribe(scribe);
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('facilitator send failed');
+    expect(scribe).not.toHaveBeenCalled();
     expect(mockQueueRepo.complete).not.toHaveBeenCalled();
   });
 

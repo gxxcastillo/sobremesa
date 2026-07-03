@@ -34,15 +34,22 @@ interface ParsedEvent {
   table?: string;
 }
 
-const CREATE_TABLE_RE = /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+(\w+)/gi;
+const CREATE_TABLE_RE =
+  /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+(?:public\.)?(\w+)/gi;
 const ENABLE_RLS_RE =
-  /ALTER TABLE\s+(?:ONLY\s+)?(\w+)\s+ENABLE ROW LEVEL SECURITY/gi;
+  /ALTER TABLE\s+(?:ONLY\s+)?(?:public\.)?(\w+)\s+ENABLE ROW LEVEL SECURITY/gi;
+// The gap between the leading keyword and "ON TABLE"/"ON ALL TABLES" is
+// `[^;]*?` (anything but a semicolon), not `[\s\S]*?` (anything at all) —
+// `[\s\S]*?` can cross a statement terminator and lazily latch onto a much
+// later, unrelated "ON TABLE ... TO/FROM ...;" clause, misreporting this
+// statement's position as an earlier, unrelated one and scrambling the
+// chronological grant/revoke ordering `parseEvents` depends on.
 const GRANT_ON_TABLE_RE =
-  /GRANT\s+[\s\S]*?\s+ON TABLE\s+(?:public\.)?(\w+)\s+TO\s+([^;]+);/gi;
+  /GRANT\s+[^;]*?\s+ON TABLE\s+(?:public\.)?(\w+)\s+TO\s+([^;]+);/gi;
 const REVOKE_ON_TABLE_RE =
-  /REVOKE\s+[\s\S]*?\s+ON TABLE\s+(?:public\.)?(\w+)\s+FROM\s+([^;]+);/gi;
+  /REVOKE\s+[^;]*?\s+ON TABLE\s+(?:public\.)?(\w+)\s+FROM\s+([^;]+);/gi;
 const GRANT_ALL_TABLES_RE =
-  /GRANT\s+[\s\S]*?\s+ON ALL TABLES IN SCHEMA\s+public\s+TO\s+([^;]+);/gi;
+  /GRANT\s+[^;]*?\s+ON ALL TABLES IN SCHEMA\s+public\s+TO\s+([^;]+);/gi;
 // The dynamic bootstrap sweep grants every already-RLS-enabled table to
 // anon/authenticated by executing this exact template string per table.
 const SWEEP_MARKER =
@@ -100,8 +107,12 @@ function main(): void {
 
   const allTables = new Set<string>();
   const rlsEnabledTables = new Set<string>();
-  const grantedTables = new Set<string>();
-  const revokedTables = new Set<string>();
+  // Tracks each table's *current* client-role privilege state as of the
+  // latest processed event. GRANT/REVOKE are last-write-wins in Postgres,
+  // not monotonic — a table REVOKEd early and re-GRANTed later must be
+  // judged on its final (granted) state, not flagged "ever revoked" and
+  // skipped forever.
+  const tableState = new Map<string, 'granted' | 'revoked'>();
 
   for (const file of files) {
     const sql = stripLineComments(
@@ -118,22 +129,19 @@ function main(): void {
           if (table) rlsEnabledTables.add(table);
           break;
         case 'grant':
-          if (table) grantedTables.add(table);
+          if (table) tableState.set(table, 'granted');
           break;
         case 'revoke':
-          if (table) {
-            revokedTables.add(table);
-            grantedTables.delete(table);
-          }
+          if (table) tableState.set(table, 'revoked');
           break;
         case 'grant_all':
-          for (const t of allTables) grantedTables.add(t);
+          for (const t of allTables) tableState.set(t, 'granted');
           break;
         case 'sweep':
           // Grants every table that is both created and RLS-enabled as of
           // this point in migration history.
           for (const table of allTables) {
-            if (rlsEnabledTables.has(table)) grantedTables.add(table);
+            if (rlsEnabledTables.has(table)) tableState.set(table, 'granted');
           }
           break;
       }
@@ -142,10 +150,10 @@ function main(): void {
 
   const errors: string[] = [];
   for (const table of allTables) {
-    if (revokedTables.has(table)) continue;
+    if (tableState.get(table) === 'revoked') continue;
 
     const hasRls = rlsEnabledTables.has(table);
-    const isGranted = grantedTables.has(table);
+    const isGranted = tableState.get(table) === 'granted';
 
     if (!hasRls) {
       errors.push(

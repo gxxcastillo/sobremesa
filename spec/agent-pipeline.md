@@ -18,7 +18,9 @@ Scribe path: optional filter → Scribe → ImageLink fallback → Registrar →
 Invariants:
 
 - Text events are processed sequentially per family.
-- Historian-routed messages still run through Scribe when they contain extractable facts.
+- Historian-routed messages still run through Scribe when they contain extractable facts, but only
+  once Historian's own answer succeeds — a Historian failure fails the message immediately (before
+  Scribe runs) so it retries answering rather than re-running Scribe's persist path on every attempt.
 - Curator image analysis is not attached in the live app.
 - If the default AI provider resolves to `mock`, only Admin and plain-text Facilitator behavior are
   wired; routing/extraction/Q&A agents are not attached.

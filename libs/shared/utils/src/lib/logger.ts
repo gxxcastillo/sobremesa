@@ -79,3 +79,25 @@ export function childLogger(
 ): pino.Logger {
   return parent.child(context);
 }
+
+/**
+ * Run `fn` for a side effect that follows a primary action that has already
+ * taken effect (e.g. a message already sent to a chat). Failures are logged,
+ * never rethrown: a caller that retries on failure would redo the primary
+ * action too, so a secondary bookkeeping failure (an audit log write, a
+ * queue-completion update) must not be indistinguishable from "nothing
+ * happened yet."
+ */
+export async function logBestEffort(
+  logger: pino.Logger,
+  fn: () => Promise<unknown>,
+  context: Record<string, unknown>,
+  message: string,
+  level: 'warn' | 'error' = 'warn',
+): Promise<void> {
+  try {
+    await fn();
+  } catch (error) {
+    logger[level]({ ...context, error }, message);
+  }
+}

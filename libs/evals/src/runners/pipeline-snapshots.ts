@@ -10,7 +10,7 @@ import {
 } from '@sobremesa/database';
 import { MessageProcessor } from '@sobremesa/queue';
 import { createLogger } from '@sobremesa/shared-utils';
-import type { EvalSender } from '../lib/scenario';
+import { selectScenarios, type EvalSender } from '../lib/scenario';
 import {
   compareStableSnapshots,
   readStablePipelineSnapshot,
@@ -93,22 +93,6 @@ Options:
   --json              Print the report as JSON.
   --keep-family       Keep the eval family in the database for inspection.
   --allow-remote-db   Permit running against a non-local SUPABASE_URL.`);
-}
-
-function selectScenarios(options: CliOptions): PipelineSnapshotScenario[] {
-  if (options.scenarioIds.length === 0) {
-    return pipelineSnapshotScenarios;
-  }
-
-  const selected = pipelineSnapshotScenarios.filter((scenario) =>
-    options.scenarioIds.includes(scenario.id),
-  );
-  const selectedIds = new Set(selected.map((scenario) => scenario.id));
-  const missing = options.scenarioIds.filter((id) => !selectedIds.has(id));
-  if (missing.length > 0) {
-    throw new Error(`Unknown scenario(s): ${missing.join(', ')}`);
-  }
-  return selected;
 }
 
 function createDbClient(options: CliOptions): DatabaseClient {
@@ -378,7 +362,10 @@ async function main(): Promise<void> {
   }
 
   const client = createDbClient(options);
-  const scenarios = selectScenarios(options);
+  const scenarios = selectScenarios(
+    pipelineSnapshotScenarios,
+    options.scenarioIds,
+  );
   const results: ScenarioResult[] = [];
   for (const scenario of scenarios) {
     console.log(`Running ${scenario.id}...`);

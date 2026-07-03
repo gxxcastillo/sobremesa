@@ -37,8 +37,20 @@ Supported flows:
 Sessions are stateless JWTs signed with `ACCESS_PASS_SECRET` and stored by Studio in localStorage.
 Identity timezone is editable from Studio and used for date interpretation.
 
-Authorization is enforced by Elysia guards plus database RLS. Family role order is
-`viewer < member < admin`; `super_admin` is global.
+Authorization is enforced by the shared Elysia guard layer (`libs/auth/src/lib/middleware/guards.ts`:
+`requireAuth`, `requireSuperAdmin`, `requireFamilyMember`, `requireFamilyAdmin`). Each `apps/api` route
+file applies the guard(s) its routes need — e.g. `.use(requireFamilyMember)` for any-role family routes,
+`.use(requireFamilyAdmin)` for family-admin routes, `.use(requireSuperAdmin)` for super-admin-only route
+files. One route, `GET /api/family/summary`, resolves which family is being accessed only after a
+lookup inside the handler, so it can't use a param-based guard; it uses `requireAuth` for the 401 leg
+and an inline `hasAccessToFamily` check for the 403 leg. Family role order is `viewer < member < admin`;
+`super_admin` is global.
+
+`apps/api` uses the Supabase **service-role** key (see [`data-model.md`](./data-model.md)), so
+database RLS never evaluates for API traffic — the guard layer above is the actual enforcement
+boundary, not RLS. RLS policies still exist on these tables as defense-in-depth for any future
+non-service-role access path (e.g. a client using the anon key directly), but no such path exists
+today.
 
 ## 6.3 API Surface
 

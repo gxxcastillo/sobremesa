@@ -7,9 +7,6 @@ import type {
 import { QueuePriority } from '@sobremesa/shared-types';
 import { mapRowToCamelCase } from '../base-repository.js';
 
-export const REQUEUE_NOT_FOUND_ERROR =
-  'Queue item not found or not in error state';
-
 /**
  * Repository for the processing queue.
  * Manages ordered, retryable message processing.
@@ -304,15 +301,32 @@ export class ProcessingQueueRepository {
   }
 
   /**
-   * Return all dead-lettered items for a family (status='error').
+   * Return dead-lettered items for a family (status='error'), newest first.
+   * Paginate with `offset` once a family has more than fits in one `limit`
+   * page — use `getErrorCount(familyId)` for the true total count (cheaper
+   * than `getStats`, which counts every status).
    */
-  async getErrors(familyId: string): Promise<QueueItem[]> {
+  async getErrors(
+    familyId: string,
+    options?: { limit?: number; offset?: number },
+  ): Promise<QueueItem[]> {
+    const limit = Math.max(0, options?.limit ?? 100);
+    const offset = Math.max(0, options?.offset ?? 0);
+
+    // A zero-length page has no valid `.range()` — `.range(offset, offset - 1)`
+    // is an inverted range Postgres/PostgREST doesn't accept. Short-circuit
+    // rather than let it reach the DB as an error.
+    if (limit === 0) {
+      return [];
+    }
+
     const { data, error } = await this.client
       .from(this.tableName)
       .select('*')
       .eq('family_id', familyId)
       .eq('status', 'error')
-      .order('queued_at', { ascending: false });
+      .order('queued_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
       throw new Error(`Failed to fetch error queue items: ${error.message}`);
@@ -322,10 +336,35 @@ export class ProcessingQueueRepository {
   }
 
   /**
+   * Count dead-lettered items for a family (status='error') — a single
+   * `count: 'exact'` query, cheaper than `getStats` when only this one
+   * status is needed (e.g. reporting the true total behind `getErrors`'s
+   * paginated page).
+   */
+  async getErrorCount(familyId: string): Promise<number> {
+    const { count, error } = await this.client
+      .from(this.tableName)
+      .select('*', { count: 'exact', head: true })
+      .eq('family_id', familyId)
+      .eq('status', 'error');
+
+    if (error) {
+      throw new Error(`Failed to count error queue items: ${error.message}`);
+    }
+
+    return count || 0;
+  }
+
+  /**
    * Reset a dead-lettered item back to 'queued' so it will be retried.
    * Only operates on items currently in 'error' status.
+   *
+   * Returns `true` if a matching error-status item was found and reset,
+   * `false` if there was no such item (not found, or not in 'error' status —
+   * the caller can't tell which, matching the 404 the API route reports
+   * either way). Throws only on a genuine database error.
    */
-  async requeue(familyId: string, id: string): Promise<void> {
+  async requeue(familyId: string, id: string): Promise<boolean> {
     const { data, error } = await this.client
       .from(this.tableName)
       .update({
@@ -345,9 +384,7 @@ export class ProcessingQueueRepository {
       throw new Error(`Failed to requeue item: ${error.message}`);
     }
 
-    if (!data?.length) {
-      throw new Error(`${REQUEUE_NOT_FOUND_ERROR}: ${id}`);
-    }
+    return Boolean(data?.length);
   }
 
   /**
@@ -365,23 +402,24 @@ export class ProcessingQueueRepository {
       'done',
       'error',
     ];
-    const stats: Record<string, number> = {};
 
-    for (const status of statuses) {
-      const { count, error } = await this.client
-        .from(this.tableName)
-        .select('*', { count: 'exact', head: true })
-        .eq('family_id', familyId)
-        .eq('status', status);
+    const counts = await Promise.all(
+      statuses.map(async (status) => {
+        const { count, error } = await this.client
+          .from(this.tableName)
+          .select('*', { count: 'exact', head: true })
+          .eq('family_id', familyId)
+          .eq('status', status);
 
-      if (error) {
-        throw new Error(`Failed to get queue stats: ${error.message}`);
-      }
+        if (error) {
+          throw new Error(`Failed to get queue stats: ${error.message}`);
+        }
 
-      stats[status] = count || 0;
-    }
+        return [status, count || 0] as const;
+      }),
+    );
 
-    return stats as {
+    return Object.fromEntries(counts) as {
       queued: number;
       processing: number;
       done: number;

@@ -6,7 +6,7 @@ import {
   PersonRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
-import { createLogger } from '@sobremesa/shared-utils';
+import { createLogger, logBestEffort } from '@sobremesa/shared-utils';
 import type { AIProvider } from '@sobremesa/ai-provider';
 import type pino from 'pino';
 import {
@@ -500,19 +500,28 @@ export class FacilitatorAgent {
         { priority: Priorities.BOT_QUESTION },
       );
 
-      // 4. Log the event
-      await this.eventLog.log({
-        familyId,
-        eventType: 'question_responded',
-        eventCategory: 'bot_action',
-        actor: 'facilitator',
-        actorType: 'system',
-        eventData: {
-          questionLength: originalQuestion.length,
-          responseLength: formattedResponse.length,
-          hasReplyTo: !!replyToMessageId,
-        },
-      });
+      // 4. Log the event. Best-effort: the response above already reached
+      // the family, so a logging failure here must not turn into a reported
+      // failure — the processor retries a failed historian result, which
+      // would resend the (already-delivered) answer.
+      await logBestEffort(
+        this.logger,
+        () =>
+          this.eventLog.log({
+            familyId,
+            eventType: 'question_responded',
+            eventCategory: 'bot_action',
+            actor: 'facilitator',
+            actorType: 'system',
+            eventData: {
+              questionLength: originalQuestion.length,
+              responseLength: formattedResponse.length,
+              hasReplyTo: !!replyToMessageId,
+            },
+          }),
+        { familyId },
+        'Failed to log question-responded event (response already sent)',
+      );
 
       this.logger.info({ familyId }, 'Response sent successfully');
 

@@ -21,6 +21,7 @@ const createChainableMock = (finalResult: { data: any; error: any }) => {
   chain.in = vi.fn().mockReturnValue(chain);
   chain.order = vi.fn().mockReturnValue(chain);
   chain.limit = vi.fn().mockReturnValue(chain);
+  chain.range = vi.fn().mockReturnValue(chain);
   chain.single = vi.fn().mockResolvedValue(finalResult);
   // For operations that don't call single()
   chain.then = (resolve: (value: { data: unknown; error: unknown }) => void) =>
@@ -408,6 +409,181 @@ describe('ProcessingQueueRepository - completeMany', () => {
     await queueRepo.completeMany('fam1', []);
 
     expect(mockSupabaseClient.from).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProcessingQueueRepository - getStats', () => {
+  let queueRepo: ProcessingQueueRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queueRepo = new ProcessingQueueRepository(mockSupabaseClient as any);
+  });
+
+  it('should query every status and aggregate counts, concurrently', async () => {
+    const countsByStatus: Record<string, number> = {
+      queued: 3,
+      processing: 1,
+      done: 42,
+      error: 2,
+    };
+
+    mockSupabaseClient.from.mockImplementation(() => {
+      const chain = createChainableMock({ data: null, error: null });
+      chain.eq = vi.fn().mockImplementation((column: string, value: string) => {
+        if (column === 'status') {
+          chain.then = (resolve: (v: { count: number; error: null }) => void) =>
+            resolve({ count: countsByStatus[value], error: null });
+        }
+        return chain;
+      });
+      return chain;
+    });
+
+    const stats = await queueRepo.getStats('fam1');
+
+    expect(stats).toEqual(countsByStatus);
+    expect(mockSupabaseClient.from).toHaveBeenCalledTimes(4);
+  });
+
+  it('should throw if any status query errors', async () => {
+    const chain = createChainableMock({
+      data: null,
+      error: { message: 'db unavailable' },
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await expect(queueRepo.getStats('fam1')).rejects.toThrow(
+      'Failed to get queue stats: db unavailable',
+    );
+  });
+});
+
+describe('ProcessingQueueRepository - getErrors', () => {
+  let queueRepo: ProcessingQueueRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queueRepo = new ProcessingQueueRepository(mockSupabaseClient as any);
+  });
+
+  it('should cap results with a default limit starting at offset 0', async () => {
+    const chain = createChainableMock({ data: [], error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await queueRepo.getErrors('fam1');
+
+    expect(chain.eq).toHaveBeenCalledWith('status', 'error');
+    expect(chain.range).toHaveBeenCalledWith(0, 99);
+  });
+
+  it('should respect a custom limit and offset for pagination', async () => {
+    const chain = createChainableMock({ data: [], error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await queueRepo.getErrors('fam1', { limit: 10, offset: 20 });
+
+    expect(chain.range).toHaveBeenCalledWith(20, 29);
+  });
+
+  it('should return an empty page for a zero (or negative, clamped-to-zero) limit without querying', async () => {
+    const chain = createChainableMock({ data: [], error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const resultForZero = await queueRepo.getErrors('fam1', { limit: 0 });
+    const resultForNegative = await queueRepo.getErrors('fam1', {
+      limit: -5,
+      offset: -1,
+    });
+
+    expect(resultForZero).toEqual([]);
+    expect(resultForNegative).toEqual([]);
+    // A limit of 0 has no valid `.range()` (it would be inverted) — short
+    // circuits before ever touching the DB.
+    expect(mockSupabaseClient.from).not.toHaveBeenCalled();
+  });
+
+  it('should clamp a negative offset to zero when limit is positive', async () => {
+    const chain = createChainableMock({ data: [], error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await queueRepo.getErrors('fam1', { limit: 10, offset: -1 });
+
+    expect(chain.range).toHaveBeenCalledWith(0, 9);
+  });
+});
+
+describe('ProcessingQueueRepository - getErrorCount', () => {
+  let queueRepo: ProcessingQueueRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queueRepo = new ProcessingQueueRepository(mockSupabaseClient as any);
+  });
+
+  it('should return the exact count of error-status items', async () => {
+    const chain = createChainableMock({ data: null, error: null, count: 137 });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const count = await queueRepo.getErrorCount('fam1');
+
+    expect(count).toBe(137);
+    expect(chain.eq).toHaveBeenCalledWith('status', 'error');
+  });
+
+  it('should throw on a database error', async () => {
+    const chain = createChainableMock({
+      data: null,
+      error: { message: 'connection lost' },
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await expect(queueRepo.getErrorCount('fam1')).rejects.toThrow(
+      'Failed to count error queue items: connection lost',
+    );
+  });
+});
+
+describe('ProcessingQueueRepository - requeue', () => {
+  let queueRepo: ProcessingQueueRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queueRepo = new ProcessingQueueRepository(mockSupabaseClient as any);
+  });
+
+  it('should return true when a matching error-status item is reset', async () => {
+    const chain = createChainableMock({ data: [{ id: 'q1' }], error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await queueRepo.requeue('fam1', 'q1');
+
+    expect(result).toBe(true);
+    expect(chain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'queued', attempts: 0 }),
+    );
+    expect(chain.eq).toHaveBeenCalledWith('status', 'error');
+  });
+
+  it('should return false when no matching error-status item exists', async () => {
+    const chain = createChainableMock({ data: [], error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await queueRepo.requeue('fam1', 'missing');
+
+    expect(result).toBe(false);
+  });
+
+  it('should throw on a genuine database error', async () => {
+    const chain = createChainableMock({
+      data: null,
+      error: { message: 'connection lost' },
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await expect(queueRepo.requeue('fam1', 'q1')).rejects.toThrow(
+      'Failed to requeue item: connection lost',
+    );
   });
 });
 

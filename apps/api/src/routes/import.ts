@@ -31,23 +31,13 @@ import type {
   MessageFingerprint,
   DuplicateCheckResult,
 } from '@sobremesa/shared-types';
-
-/**
- * Auth context shape provided by the auth plugin.
- * Typed here to avoid `(ctx as any).auth` throughout the route handlers.
- */
-interface AuthContext {
-  isAuthenticated: boolean;
-  isSuperAdmin: boolean;
-  identity: { id: string; displayName?: string } | null;
-}
-
-function getAuth(ctx: Record<string, unknown>): AuthContext {
-  return ctx.auth as AuthContext;
-}
+import { requireSuperAdmin, getAuth } from '@sobremesa/auth';
 
 /**
  * Import routes factory
+ *
+ * Every route in this file requires super admin access, so the guard is
+ * applied once, to the whole file's Elysia instance.
  */
 export function importRoutes(dbClient: DatabaseClient) {
   const jobRepo = new ImportJobRepository(dbClient);
@@ -63,21 +53,14 @@ export function importRoutes(dbClient: DatabaseClient) {
 
   return (
     new Elysia()
+      .use(requireSuperAdmin)
       /**
        * POST /api/imports/check-duplicates
        * Check how many messages already exist in the database
        */
       .post(
         '/api/imports/check-duplicates',
-        async (ctx) => {
-          const { body, set } = ctx;
-          const auth = getAuth(ctx);
-
-          if (!auth.isAuthenticated || !auth.isSuperAdmin) {
-            set.status = 403;
-            return { error: 'Super admin access required' };
-          }
-
+        async ({ body, set }) => {
           const { source, messages } = body as {
             source: 'whatsapp' | 'telegram' | 'other';
             messages: MessageFingerprint[];
@@ -233,10 +216,11 @@ export function importRoutes(dbClient: DatabaseClient) {
         async (ctx) => {
           const { body, set } = ctx;
           const auth = getAuth(ctx);
-          // Require super admin
-          if (!auth.isAuthenticated || !auth.isSuperAdmin || !auth.identity) {
-            set.status = 403;
-            return { error: 'Super admin access required' };
+          // requireSuperAdmin already guarantees this at runtime; narrow the
+          // type here since Elysia doesn't carry that across the guard.
+          if (!auth.identity) {
+            set.status = 401;
+            return { error: 'Authentication required' };
           }
 
           const file = body.file;
@@ -315,19 +299,7 @@ export function importRoutes(dbClient: DatabaseClient) {
        */
       .get(
         '/api/import/:jobId',
-        async (ctx) => {
-          const {
-            params: { jobId },
-            set,
-          } = ctx;
-          const auth = getAuth(ctx);
-
-          // Require super admin
-          if (!auth.isAuthenticated || !auth.isSuperAdmin) {
-            set.status = 403;
-            return { error: 'Super admin access required' };
-          }
-
+        async ({ params: { jobId }, set }) => {
           const job = await jobRepo.findById(jobId);
           if (!job) {
             set.status = 404;
@@ -377,12 +349,6 @@ export function importRoutes(dbClient: DatabaseClient) {
             set,
           } = ctx;
           const auth = getAuth(ctx);
-
-          // Require super admin
-          if (!auth.isAuthenticated || !auth.isSuperAdmin) {
-            set.status = 403;
-            return { error: 'Super admin access required' };
-          }
 
           const job = await jobRepo.findById(jobId);
           if (!job) {
@@ -436,19 +402,7 @@ export function importRoutes(dbClient: DatabaseClient) {
        */
       .post(
         '/api/import/:jobId/resume',
-        async (ctx) => {
-          const {
-            params: { jobId },
-            set,
-          } = ctx;
-          const auth = getAuth(ctx);
-
-          // Require super admin
-          if (!auth.isAuthenticated || !auth.isSuperAdmin) {
-            set.status = 403;
-            return { error: 'Super admin access required' };
-          }
-
+        async ({ params: { jobId }, set }) => {
           const job = await jobRepo.findById(jobId);
           if (!job) {
             set.status = 404;
@@ -488,18 +442,7 @@ export function importRoutes(dbClient: DatabaseClient) {
        */
       .post(
         '/api/import/:jobId/run-intern',
-        async (ctx) => {
-          const {
-            params: { jobId },
-            set,
-          } = ctx;
-          const auth = getAuth(ctx);
-
-          if (!auth.isAuthenticated || !auth.isSuperAdmin) {
-            set.status = 403;
-            return { error: 'Super admin access required' };
-          }
-
+        async ({ params: { jobId }, set }) => {
           // Atomically transition to running_intern — prevents two concurrent
           // calls from both proceeding past this point.
           const job = await jobRepo.transitionStatus(
@@ -657,19 +600,7 @@ export function importRoutes(dbClient: DatabaseClient) {
        */
       .get(
         '/api/import/:jobId/decisions',
-        async (ctx) => {
-          const {
-            params: { jobId },
-            query,
-            set,
-          } = ctx;
-          const auth = getAuth(ctx);
-
-          if (!auth.isAuthenticated || !auth.isSuperAdmin) {
-            set.status = 403;
-            return { error: 'Super admin access required' };
-          }
-
+        async ({ params: { jobId }, query, set }) => {
           const job = await jobRepo.findById(jobId);
           if (!job) {
             set.status = 404;
@@ -767,19 +698,7 @@ export function importRoutes(dbClient: DatabaseClient) {
        */
       .patch(
         '/api/import/:jobId/decisions/:eventId',
-        async (ctx) => {
-          const {
-            params: { jobId, eventId },
-            body,
-            set,
-          } = ctx;
-          const auth = getAuth(ctx);
-
-          if (!auth.isAuthenticated || !auth.isSuperAdmin) {
-            set.status = 403;
-            return { error: 'Super admin access required' };
-          }
-
+        async ({ params: { jobId, eventId }, body, set }) => {
           const job = await jobRepo.findById(jobId);
           if (!job) {
             set.status = 404;
@@ -836,18 +755,7 @@ export function importRoutes(dbClient: DatabaseClient) {
        */
       .post(
         '/api/import/:jobId/submit-scribe',
-        async (ctx) => {
-          const {
-            params: { jobId },
-            set,
-          } = ctx;
-          const auth = getAuth(ctx);
-
-          if (!auth.isAuthenticated || !auth.isSuperAdmin) {
-            set.status = 403;
-            return { error: 'Super admin access required' };
-          }
-
+        async ({ params: { jobId }, set }) => {
           const job = await jobRepo.findById(jobId);
           if (!job) {
             set.status = 404;

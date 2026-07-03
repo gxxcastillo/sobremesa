@@ -24,13 +24,14 @@ import type {
   ScribeDomainModel,
 } from '@sobremesa/shared-types';
 import { buildReport, buildSuiteReport } from '../lib/scorer';
-import type {
-  EvalMessage,
-  EvalSender,
-  EvalReport,
-  EvalSuiteReport,
-  ScenarioRunResult,
-  ScribeEvalScenario,
+import {
+  selectScenarios,
+  type EvalMessage,
+  type EvalSender,
+  type EvalReport,
+  type EvalSuiteReport,
+  type ScenarioRunResult,
+  type ScribeEvalScenario,
 } from '../lib/scenario';
 import { scribeEvalScenarios } from '../scenarios/scribe-scenarios';
 
@@ -156,22 +157,6 @@ Options:
   --provider <name>   Live provider to run: anthropic or local. Repeat to run both.
   --threshold <n>     Aggregate pass threshold. Default: ${DEFAULT_THRESHOLD}.
   --json              Print the report as JSON.`);
-}
-
-function selectScenarios(options: CliOptions): ScribeEvalScenario[] {
-  if (options.scenarioIds.length === 0) {
-    return scribeEvalScenarios;
-  }
-
-  const selected = scribeEvalScenarios.filter((scenario) =>
-    options.scenarioIds.includes(scenario.id),
-  );
-  const selectedIds = new Set(selected.map((scenario) => scenario.id));
-  const missing = options.scenarioIds.filter((id) => !selectedIds.has(id));
-  if (missing.length > 0) {
-    throw new Error(`Unknown scenario(s): ${missing.join(', ')}`);
-  }
-  return selected;
 }
 
 function createProviders(options: CliOptions): ProviderSetup[] {
@@ -571,7 +556,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const scenarios = selectScenarios(options);
+  const scenarios = selectScenarios(scribeEvalScenarios, options.scenarioIds);
   const providers = createProviders(options);
   const reports: EvalReport[] = [];
 

@@ -112,6 +112,13 @@ export function subjectMatchScore(subject1: string, subject2: string): number {
   const words1 = subjectTokens(s1);
   const words2 = subjectTokens(s2);
   if (words1.size === 0 || words2.size === 0) return 0;
+  // A single shared, generic content word is weak evidence of subject
+  // identity — especially once multilingual articles/prepositions are
+  // stripped, a short subject can collapse to one bare noun (e.g. "la
+  // fiesta" -> {fiesta}). Require at least two meaningful tokens on each
+  // side before trusting Jaccard overlap; below that, favor precision
+  // (AGENTS.md invariant 6) over a possible false merge or duplicate-drop.
+  if (words1.size < 2 || words2.size < 2) return 0;
 
   let intersection = 0;
   for (const word of words1) {

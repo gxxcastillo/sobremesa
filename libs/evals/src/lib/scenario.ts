@@ -164,3 +164,27 @@ export interface EvalSuiteReport {
   aggregateCapabilityGap?: number;
   passed: boolean;
 }
+
+/**
+ * Filter `all` down to the requested `ids` (returned in `all`'s original
+ * order, not `ids`' order), or return everything when no ids are requested.
+ * Throws if any requested id doesn't match a scenario. Shared by both eval
+ * runners so `--scenario` selection/error behavior stays identical across
+ * `scribe-evals` and `pipeline-snapshots`.
+ */
+export function selectScenarios<T extends { id: string }>(
+  all: T[],
+  ids: string[],
+): T[] {
+  if (ids.length === 0) {
+    return all;
+  }
+
+  const selected = all.filter((scenario) => ids.includes(scenario.id));
+  const selectedIds = new Set(selected.map((scenario) => scenario.id));
+  const missing = ids.filter((id) => !selectedIds.has(id));
+  if (missing.length > 0) {
+    throw new Error(`Unknown scenario(s): ${missing.join(', ')}`);
+  }
+  return selected;
+}

@@ -39,7 +39,13 @@ per-family text order.
    loop is the sole owner of completing or failing it. Failures requeue for retry up to a max
    attempt count, then dead-letter (`status = 'error'`).
 
-Historian-routed messages also fall through to Scribe so user questions can contribute facts.
+Historian-routed messages fall through to Scribe once Historian's own answer succeeds, so user
+questions can contribute facts. A Historian failure is reported as a processing failure immediately,
+before Scribe runs, so the queue retries answering the question rather than re-running Scribe's
+persist path on every failed attempt: Registrar's story-append is not yet idempotent on retry (a
+retried Scribe pass can duplicate story content), so a message is only ever run through Scribe once
+per Historian success; the message still reaches Scribe once Historian succeeds, including on a
+later retry.
 
 Dead-lettered items are visible and recoverable per family via the API (§6.3 of
 [`identity-auth-and-interfaces.md`](./identity-auth-and-interfaces.md)): list errored items, or requeue

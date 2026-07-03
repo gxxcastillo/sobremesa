@@ -49,14 +49,22 @@ const REGISTRAR_VERSION = registrarPkg.version;
 // Memoizes normalizeLookup() output, which is a pure function of its input, so
 // repeated getEntityIdByName() fallback scans over the same entity names don't
 // re-run Unicode normalization on every call. Bounded because this process runs
-// long-lived across many families (ADR-029); once full, drop the cache rather
-// than grow it forever.
+// long-lived across many families (ADR-029); LRU-evicts one entry per overflow
+// (a `Map` preserves insertion order, so re-inserting on access moves an entry
+// to the end and the first key is always the least-recently-used) rather than
+// dropping every entry, so hot names (e.g. a large family's roster, looked up
+// on every message) survive an overflow instead of all being re-normalized
+// from scratch together.
 const NORMALIZE_LOOKUP_CACHE_MAX_SIZE = 10_000;
 const normalizeLookupCache = new Map<string, string>();
 
 function normalizeLookup(value: string): string {
   const cached = normalizeLookupCache.get(value);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    normalizeLookupCache.delete(value);
+    normalizeLookupCache.set(value, cached);
+    return cached;
+  }
   const normalized = value
     .toLowerCase()
     .normalize('NFD')
@@ -64,7 +72,10 @@ function normalizeLookup(value: string): string {
     .normalize('NFC')
     .trim();
   if (normalizeLookupCache.size >= NORMALIZE_LOOKUP_CACHE_MAX_SIZE) {
-    normalizeLookupCache.clear();
+    const oldestKey = normalizeLookupCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      normalizeLookupCache.delete(oldestKey);
+    }
   }
   normalizeLookupCache.set(value, normalized);
   return normalized;

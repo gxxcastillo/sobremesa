@@ -590,13 +590,21 @@ export class MessageProcessor {
               'Admin processor failed',
             );
           }
-        } else {
-          this.logger.warn(
-            { eventId, adminSubtype },
-            'Admin action routed but no admin processor configured',
-          );
+          // Propagate the admin processor's own result: a real failure must
+          // retry/dead-letter through the normal queue lifecycle rather than
+          // being marked done.
+          return {
+            success: result.success,
+            error: result.error,
+            duration: Date.now() - startTime,
+          };
         }
-        // Report success after admin handling; the queue loop completes the item
+        this.logger.warn(
+          { eventId, adminSubtype },
+          'Admin action routed but no admin processor configured',
+        );
+        // No processor is registered — retrying cannot fix a missing
+        // registration, so report success and let the item complete.
         return {
           success: true,
           duration: Date.now() - startTime,
@@ -612,6 +620,22 @@ export class MessageProcessor {
               { eventId, error: result.error },
               'Historian processor failed',
             );
+            // Report failure now, before Scribe runs, so a Historian failure
+            // specifically doesn't also re-run the full
+            // (non-idempotent-on-retry) Scribe/persist path on every failed
+            // attempt. Scribe only runs once Historian has actually
+            // succeeded. This does NOT make retries answer-exactly-once in
+            // general: if Historian succeeds but a later step in the same
+            // pass (Scribe/persist, or this function's own event-log write)
+            // throws, the whole event still retries from scratch and
+            // Historian runs again — Facilitator has no "already answered"
+            // guard, so that path can still resend a second answer. Only the
+            // Historian-fails-directly case is covered here.
+            return {
+              success: false,
+              error: result.error,
+              duration: Date.now() - startTime,
+            };
           }
         } else {
           this.logger.warn(

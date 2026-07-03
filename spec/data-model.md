@@ -95,10 +95,16 @@ schema but are not used by the live app.
 
 ## 2.6 Isolation and Privacy
 
-Family isolation is enforced in two layers:
-
-- Application repositories require `familyId` on family-scoped operations and filter by `family_id`.
-- Database RLS policies and helper functions mediate client access.
+Family isolation is enforced by application repositories, which require `familyId` on family-scoped
+operations and filter by `family_id`. Database RLS policies and helper functions exist on these
+tables too, but `apps/api` and `apps/chatbots` both construct their `DatabaseClient` with the
+Supabase **service-role** key (`createDatabaseClient`, `libs/database/src/lib/client.ts`), which
+bypasses RLS entirely — RLS never evaluates for any current caller. RLS is defense-in-depth for a
+future non-service-role access path (e.g. a client using the anon key directly), not a second active
+layer today; see [`identity-auth-and-interfaces.md`](./identity-auth-and-interfaces.md) §6.2. The
+privilege-verification invariant below still matters regardless: it keeps every table's RLS/GRANT
+configuration correct for the day a non-service-role path exists, and GRANTs alone (independent of
+RLS) already gate what the anon/authenticated keys can touch if ever used directly.
 
 `identities` and `users` are global. Per-family membership and permissions live in `family_access`.
 Raw `conversation_events` are service-role only; browser access goes through backend endpoints and

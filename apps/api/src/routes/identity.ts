@@ -11,7 +11,11 @@
 
 import { Elysia, t } from 'elysia';
 import { PersonRepository, type DatabaseClient } from '@sobremesa/database';
-import { FamilyAccessRepository, hasAccessToFamily } from '@sobremesa/auth';
+import {
+  FamilyAccessRepository,
+  requireFamilyMember,
+  getAuth,
+} from '@sobremesa/auth';
 
 /**
  * Person suggestion with match info
@@ -32,6 +36,7 @@ interface PersonSuggestion {
 export function identityRoutes(dbClient: DatabaseClient) {
   return (
     new Elysia({ prefix: '/api/family' })
+      .use(requireFamilyMember)
       /**
        * GET /api/family/:familyId/identity
        * Get current identity claim and suggestions
@@ -43,15 +48,12 @@ export function identityRoutes(dbClient: DatabaseClient) {
             params: { familyId },
             set,
           } = ctx;
-          const auth = (ctx as any).auth;
-          if (!auth.isAuthenticated || !auth.identity) {
+          const auth = getAuth(ctx);
+          // requireFamilyMember already guarantees this at runtime; narrow
+          // the type here since Elysia doesn't carry that across the guard.
+          if (!auth.identity) {
             set.status = 401;
             return { error: 'Authentication required' };
-          }
-
-          if (!hasAccessToFamily(auth, familyId)) {
-            set.status = 403;
-            return { error: 'Access denied to this family' };
           }
 
           const accessRepo = new FamilyAccessRepository(dbClient);
@@ -163,15 +165,12 @@ export function identityRoutes(dbClient: DatabaseClient) {
             body,
             set,
           } = ctx;
-          const auth = (ctx as any).auth;
-          if (!auth.isAuthenticated || !auth.identity) {
+          const auth = getAuth(ctx);
+          // requireFamilyMember already guarantees this at runtime; narrow
+          // the type here since Elysia doesn't carry that across the guard.
+          if (!auth.identity) {
             set.status = 401;
             return { error: 'Authentication required' };
-          }
-
-          if (!hasAccessToFamily(auth, familyId)) {
-            set.status = 403;
-            return { error: 'Access denied to this family' };
           }
 
           const { personId } = body;
@@ -238,15 +237,12 @@ export function identityRoutes(dbClient: DatabaseClient) {
             params: { familyId },
             set,
           } = ctx;
-          const auth = (ctx as any).auth;
-          if (!auth.isAuthenticated || !auth.identity) {
+          const auth = getAuth(ctx);
+          // requireFamilyMember already guarantees this at runtime; narrow
+          // the type here since Elysia doesn't carry that across the guard.
+          if (!auth.identity) {
             set.status = 401;
             return { error: 'Authentication required' };
-          }
-
-          if (!hasAccessToFamily(auth, familyId)) {
-            set.status = 403;
-            return { error: 'Access denied to this family' };
           }
 
           const accessRepo = new FamilyAccessRepository(dbClient);
@@ -268,23 +264,7 @@ export function identityRoutes(dbClient: DatabaseClient) {
        */
       .get(
         '/:familyId/people',
-        async (ctx) => {
-          const {
-            params: { familyId },
-            query,
-            set,
-          } = ctx;
-          const auth = (ctx as any).auth;
-          if (!auth.isAuthenticated || !auth.identity) {
-            set.status = 401;
-            return { error: 'Authentication required' };
-          }
-
-          if (!hasAccessToFamily(auth, familyId)) {
-            set.status = 403;
-            return { error: 'Access denied to this family' };
-          }
-
+        async ({ params: { familyId }, query, set }) => {
           const client = dbClient;
           const { search } = query;
 
@@ -332,23 +312,7 @@ export function identityRoutes(dbClient: DatabaseClient) {
        */
       .post(
         '/:familyId/people',
-        async (ctx) => {
-          const {
-            params: { familyId },
-            body,
-            set,
-          } = ctx;
-          const auth = (ctx as any).auth;
-          if (!auth.isAuthenticated || !auth.identity) {
-            set.status = 401;
-            return { error: 'Authentication required' };
-          }
-
-          if (!hasAccessToFamily(auth, familyId)) {
-            set.status = 403;
-            return { error: 'Access denied to this family' };
-          }
-
+        async ({ params: { familyId }, body, set }) => {
           const { name, aliases, birthYear, notes } = body;
           const client = dbClient;
 
@@ -433,15 +397,12 @@ export function identityRoutes(dbClient: DatabaseClient) {
             body,
             set,
           } = ctx;
-          const auth = (ctx as any).auth;
-          if (!auth.isAuthenticated || !auth.identity) {
+          const auth = getAuth(ctx);
+          // requireFamilyMember already guarantees this at runtime; narrow
+          // the type here since Elysia doesn't carry that across the guard.
+          if (!auth.identity) {
             set.status = 401;
             return { error: 'Authentication required' };
-          }
-
-          if (!hasAccessToFamily(auth, familyId)) {
-            set.status = 403;
-            return { error: 'Access denied to this family' };
           }
 
           const accessRepo = new FamilyAccessRepository(dbClient);

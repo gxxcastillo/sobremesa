@@ -16,3 +16,5 @@ export {
   getFamilyRole,
   checkFamilyAccess,
 } from './guards';
+
+export { getAuth } from './get-auth';
