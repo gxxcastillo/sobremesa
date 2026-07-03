@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { loadAIConfig, validateConfig } from './config';
 import { AIProviderFactory } from './factory';
+import { AnthropicProvider } from './providers/anthropic';
 import { MockProvider } from './providers/mock';
 import type { AIConfig } from './types';
 
@@ -180,5 +181,48 @@ describe('MockProvider', () => {
 
     const noVision = new MockProvider({ supportsVision: false });
     expect(noVision.supportsVision()).toBe(false);
+  });
+});
+
+describe('AnthropicProvider', () => {
+  it('uses prompt-embedded schema fallback when json_schema.strict is false', async () => {
+    const betaCreate = vi.fn();
+    const messagesCreate = vi.fn(async (request: Record<string, unknown>) => ({
+      content: [{ type: 'text', text: '{}' }],
+      model: String(request['model']),
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }));
+    const provider = AnthropicProvider.fromClient({
+      beta: { messages: { create: betaCreate } },
+      messages: { create: messagesCreate },
+    });
+
+    await provider.complete({
+      model: 'claude-sonnet-4-5-20250929',
+      maxTokens: 100,
+      system: 'Extract JSON.',
+      messages: [{ role: 'user', content: 'hello' }],
+      responseFormat: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'test',
+          strict: false,
+          schema: {
+            type: 'object',
+            properties: { value: { type: 'string' } },
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+
+    expect(betaCreate).not.toHaveBeenCalled();
+    expect(messagesCreate).toHaveBeenCalledTimes(1);
+    const request = messagesCreate.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(request['output_format']).toBeUndefined();
+    expect(String(request['system'])).toContain('Required JSON Schema');
   });
 });

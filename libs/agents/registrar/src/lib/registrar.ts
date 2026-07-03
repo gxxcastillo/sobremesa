@@ -48,7 +48,10 @@ const REGISTRAR_VERSION = registrarPkg.version;
 
 // Memoizes normalizeLookup() output, which is a pure function of its input, so
 // repeated getEntityIdByName() fallback scans over the same entity names don't
-// re-run Unicode normalization on every call.
+// re-run Unicode normalization on every call. Bounded because this process runs
+// long-lived across many families (ADR-029); once full, drop the cache rather
+// than grow it forever.
+const NORMALIZE_LOOKUP_CACHE_MAX_SIZE = 10_000;
 const normalizeLookupCache = new Map<string, string>();
 
 function normalizeLookup(value: string): string {
@@ -60,6 +63,9 @@ function normalizeLookup(value: string): string {
     .replace(/\p{M}/gu, '')
     .normalize('NFC')
     .trim();
+  if (normalizeLookupCache.size >= NORMALIZE_LOOKUP_CACHE_MAX_SIZE) {
+    normalizeLookupCache.clear();
+  }
   normalizeLookupCache.set(value, normalized);
   return normalized;
 }

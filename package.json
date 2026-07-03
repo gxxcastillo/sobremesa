@@ -10,6 +10,7 @@
     "prepare": "bun husky",
     "format:all": "bun prettier --write .",
     "evals": "bun nx run evals:run",
+    "evals:pipeline": "bun nx run evals:pipeline",
     "test:all": "bun nx run-many -t test",
     "lint:all": "bun nx run-many -t lint",
     "types:all": "bun nx run-many -t types",

@@ -12,6 +12,7 @@
 export interface JsonSchema {
   name: string;
   schema: Record<string, unknown>;
+  /** Set false to force prompt-embedded schema fallback even when native schema output exists. */
   strict?: boolean;
 }
 

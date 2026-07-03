@@ -66,7 +66,8 @@ Supporting ingestion tables:
 Queues:
 
 - `processing_queue`: ordered retryable event pipeline, with priority, leases, attempts, and
-  stale-lock recovery.
+  stale-lock recovery. Items that exhaust retries dead-letter (`status = 'error'`); admins can list and
+  requeue dead-lettered items per family.
 - `llm_evaluation_queue`: async review queue for uncertain claim strength, entity matches, or
   conflict resolution. Claims can be enqueued today; no live worker drains it.
 

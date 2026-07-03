@@ -79,7 +79,7 @@ function extractYearFromText(dateText?: string): number | undefined {
   if (!dateText) return undefined;
   const fourDigit = dateText.match(/\b(1[89]\d{2}|20[0-2]\d)\b/);
   if (fourDigit) return parseInt(fourDigit[1], 10);
-  const twoDigit = dateText.match(/(?:'|’)(\d{2})\b/);
+  const twoDigit = dateText.match(/\b(?:'|’)?(\d{2})\b/);
   return twoDigit ? normalizeYear(parseInt(twoDigit[1], 10)) : undefined;
 }
 

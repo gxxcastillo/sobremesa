@@ -30,8 +30,15 @@ Run one scenario:
 bun nx run evals:run -- --scenario bot-question-answer
 ```
 
-The runner requires `ANTHROPIC_API_KEY` or `LOCAL_LLM_BASE_URL`. It exits non-zero if the aggregate
-score is below the threshold, which defaults to `0.8`.
+Run configured Anthropic and local providers side by side:
+
+```bash
+bun nx run evals:run -- --provider anthropic --provider local
+```
+
+The runner requires `ANTHROPIC_API_KEY` or `LOCAL_LLM_BASE_URL`. By default it runs every configured
+live provider in Anthropic-then-local order and excludes the mock provider. It exits non-zero if any
+provider's aggregate score is below the threshold, which defaults to `0.8`.
 
 These live-LLM evals are manual only. Do not add them to `bun run test:all` or CI.
 
@@ -41,8 +48,14 @@ The scorer uses the same word-boundary token matching exported by `@sobremesa/ag
 Each actual extraction can satisfy at most one required expectation, so duplicate extractions count
 against precision. Forbidden extractions are hard failures.
 
-The report prints the aggregate score as the initial baseline on the first real run. Keep that
-baseline in PR/release notes when extraction behavior changes.
+The report prints one score column per provider. When Anthropic and local run together it also prints
+the capability gap (`anthropic - local`) per scenario and in aggregate. Anthropic remains the
+acceptance baseline: a pipeline change should hold or improve Anthropic's score and use the local
+gap only as a diagnostic for pipeline ambiguity. The local side is most useful with a competent
+middle-weight model; a model that scores zero everywhere is not informative.
+
+The first real Anthropic run is the initial baseline. Keep that score in PR/release notes when
+extraction behavior changes.
 
 ## Adding A Scenario
 
@@ -59,8 +72,25 @@ Registrar path, and the resulting DB state is compared to golden snapshots while
 timestamps. This is intentionally separate from Tier 1 and must use the mock provider or canned
 responses only.
 
-Until the Tier-2 runner is wired, use `scripts/simulate-messages.ts <scenario> --dump` as the manual
-snapshot source for local investigation. Tier 2 still must not make live LLM calls in CI.
+Run all Tier-2 scenarios:
+
+```bash
+bun run evals:pipeline
+```
+
+Run one scenario:
+
+```bash
+bun nx run evals:pipeline -- --scenario pipeline-family-history
+```
+
+The runner requires Supabase env vars and refuses non-local `SUPABASE_URL` values unless
+`--allow-remote-db` is passed. It creates one disposable eval family per scenario and deletes it
+after comparison unless `--keep-family` is passed. Tier 2 still must not make live LLM calls in CI.
+
+`scripts/simulate-messages.ts <scenario> --dump` remains useful for manual investigation with a
+running chatbot worker. Its scenarios are embedded in the script and depend on live processing, so
+the Tier-2 harness keeps its own canned-response fixtures rather than importing that script.
 
 ## Product Rubrics
 

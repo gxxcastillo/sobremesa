@@ -55,10 +55,12 @@ Extraction quality is evaluated outside normal tests through `libs/evals`.
 - **Tier 1: Scribe unit evals.** Manual live-provider runs call the real `ScribeAgent` with
   in-memory repositories and scored scenario goldens. These scenarios check required people, places,
   events, relationships, stories, claims, attribution fields, and forbidden extractions. The runner
-  starts with a `0.8` aggregate threshold and prints the first real run's score as the baseline.
+  starts with a `0.8` aggregate threshold, prints the first real run's score as the baseline, and can
+  report Anthropic and local provider columns side by side with a diagnostic capability gap.
 - **Tier 2: pipeline golden snapshots.** Deterministic local-DB runs use canned Scribe JSON/mock
   provider responses to drive `MessageProcessor` through Registrar persistence and compare stable DB
-  snapshots while ignoring IDs and timestamps.
+  snapshots while ignoring IDs and timestamps. The local-DB runner must refuse non-local Supabase
+  targets unless explicitly overridden.
 
 Live LLM evals are never part of `bun run test:all` or CI. CI-safe evaluation must use deterministic
 fixtures, mock providers, or recorded/canned responses only.

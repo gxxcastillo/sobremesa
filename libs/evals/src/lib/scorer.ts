@@ -9,7 +9,9 @@ import type {
 } from '@sobremesa/shared-types';
 import type {
   CategoryScore,
+  CapabilityGap,
   EvalReport,
+  EvalSuiteReport,
   ExpectedClaim,
   ExpectedEvent,
   ExpectedPerson,
@@ -430,6 +432,76 @@ export function buildReport(options: {
       scenarioScores.every((score) => !score.hardFailed),
     scenarioScores,
   };
+}
+
+export function buildSuiteReport(options: {
+  reports: EvalReport[];
+  threshold: number;
+  baselineProvider?: string;
+  candidateProvider?: string;
+}): EvalSuiteReport {
+  const baselineProvider = options.baselineProvider ?? 'anthropic';
+  const baselineReport =
+    options.reports.find((report) => report.provider === baselineProvider) ??
+    options.reports[0];
+  const candidateReport =
+    options.candidateProvider !== undefined
+      ? options.reports.find(
+          (report) => report.provider === options.candidateProvider,
+        )
+      : options.reports.find(
+          (report) => report.provider !== baselineReport?.provider,
+        );
+
+  const capabilityGaps =
+    baselineReport && candidateReport
+      ? calculateCapabilityGaps(baselineReport, candidateReport)
+      : [];
+  const aggregateCapabilityGap =
+    baselineReport && candidateReport
+      ? baselineReport.aggregateScore - candidateReport.aggregateScore
+      : undefined;
+
+  return {
+    generatedAt: new Date(),
+    threshold: options.threshold,
+    baselineProvider: baselineReport?.provider ?? baselineProvider,
+    reports: options.reports,
+    providerColumns: options.reports.map((report) => ({
+      provider: report.provider,
+      model: report.model,
+      aggregateScore: report.aggregateScore,
+      aggregatePrecision: report.aggregatePrecision,
+      aggregateRecall: report.aggregateRecall,
+      passed: report.passed,
+    })),
+    capabilityGaps,
+    aggregateCapabilityGap,
+    passed: options.reports.every((report) => report.passed),
+  };
+}
+
+function calculateCapabilityGaps(
+  baselineReport: EvalReport,
+  candidateReport: EvalReport,
+): CapabilityGap[] {
+  const candidateByScenario = new Map(
+    candidateReport.scenarioScores.map((score) => [score.scenarioId, score]),
+  );
+
+  return baselineReport.scenarioScores.flatMap((baselineScore) => {
+    const candidateScore = candidateByScenario.get(baselineScore.scenarioId);
+    if (!candidateScore) return [];
+
+    return {
+      scenarioId: baselineScore.scenarioId,
+      baselineProvider: baselineReport.provider,
+      candidateProvider: candidateReport.provider,
+      baselineScore: baselineScore.score,
+      candidateScore: candidateScore.score,
+      gap: baselineScore.score - candidateScore.score,
+    };
+  });
 }
 
 function average(values: number[]): number {

@@ -35,9 +35,14 @@ per-family text order.
 3. Creates image records for media.
 4. Routes to ignore, admin, historian, or Scribe.
 5. Runs the Scribe path when appropriate: filter → Scribe → image-link fallback → Registrar.
-6. Completes the queue item. Failures return to the queue retry/error path.
+6. Completes the queue item. Failures requeue for retry up to a max attempt count, then dead-letter
+   (`status = 'error'`).
 
 Historian-routed messages also fall through to Scribe so user questions can contribute facts.
+
+Dead-lettered items are visible and recoverable per family via the API (§6.3 of
+[`identity-auth-and-interfaces.md`](./identity-auth-and-interfaces.md)): list errored items, or requeue
+one back to `queued` (resets attempts) for retry.
 
 ## 4.3 Outbound Messages
 

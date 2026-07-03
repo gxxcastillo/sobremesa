@@ -155,14 +155,12 @@ const EventSchema = z.object({
   date: z
     .union([
       z.string(),
-      z
-        .object({
-          year: DateNumberSchema,
-          month: DateNumberSchema,
-          day: DateNumberSchema,
-          text: z.string().optional(),
-        })
-        .passthrough(),
+      z.object({
+        year: DateNumberSchema,
+        month: DateNumberSchema,
+        day: DateNumberSchema,
+        text: z.string().optional(),
+      }),
     ])
     .optional(),
   people_involved: z.array(z.string()).default([]),
@@ -267,4 +265,8 @@ export type RawScribeResponse = z.infer<typeof RawScribeResponseSchema>;
 export const SCRIBE_JSON_SCHEMA: JsonSchema = {
   name: 'scribe_output',
   schema: RawScribeResponseSchema.toJSONSchema() as Record<string, unknown>,
+  // Anthropic's native structured-output grammar currently rejects this schema
+  // as too large. Keep schema-constrained JSON, but use prompt-embedded schema
+  // fallback rather than the beta grammar compiler.
+  strict: false,
 };

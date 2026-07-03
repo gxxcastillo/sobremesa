@@ -60,22 +60,8 @@ export function familyRoutes(dbClient: DatabaseClient) {
           }
 
           // Check access - require admin role for this family
-          if (!hasAccessToFamily(auth, familyId)) {
-            set.status = 403;
-            return { error: 'Access denied to this family' };
-          }
-
-          // Check if user has admin access to this family
-          const familyAccess = auth.familyAccess?.find(
-            (fa) => fa.familyId === familyId,
-          );
-          if (!familyAccess || familyAccess.role !== 'admin') {
-            // Allow super admins to bypass
-            if (!auth.isSuperAdmin) {
-              set.status = 403;
-              return { error: 'Admin access required to reprocess messages' };
-            }
-          }
+          const denied = requireFamilyAdmin(auth, familyId, set);
+          if (denied) return denied;
 
           const { includeAlreadyProcessed = false, skipInQueue = true } =
             body || {};

@@ -14,10 +14,22 @@
         "command": "bun eslint {projectRoot}"
       }
     },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun vitest run --config libs/evals/vite.config.ts"
+      }
+    },
     "run": {
       "executor": "nx:run-commands",
       "options": {
         "command": "bun {projectRoot}/src/runners/scribe-evals.ts"
+      }
+    },
+    "pipeline": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun {projectRoot}/src/runners/pipeline-snapshots.ts"
       }
     }
   }

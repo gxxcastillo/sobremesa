@@ -141,7 +141,11 @@ export class AnthropicProvider implements AIProvider {
 
     // Only use native structured outputs if the model supports it
     const useNativeStructuredOutputs =
-      hasJsonSchemaFormat && this.supportsStructuredOutputs(model);
+      hasJsonSchemaFormat &&
+      this.supportsStructuredOutputs(model) &&
+      request.responseFormat &&
+      typeof request.responseFormat === 'object' &&
+      request.responseFormat.json_schema.strict !== false;
 
     // Log structured output mode for debugging
     if (hasJsonSchemaFormat) {

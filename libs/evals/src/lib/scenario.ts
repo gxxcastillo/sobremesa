@@ -135,3 +135,32 @@ export interface EvalReport {
   passed: boolean;
   scenarioScores: ScenarioScore[];
 }
+
+export interface ProviderScoreColumn {
+  provider: string;
+  model: string;
+  aggregateScore: number;
+  aggregatePrecision: number;
+  aggregateRecall: number;
+  passed: boolean;
+}
+
+export interface CapabilityGap {
+  scenarioId: string;
+  baselineProvider: string;
+  candidateProvider: string;
+  baselineScore: number;
+  candidateScore: number;
+  gap: number;
+}
+
+export interface EvalSuiteReport {
+  generatedAt: Date;
+  threshold: number;
+  baselineProvider: string;
+  reports: EvalReport[];
+  providerColumns: ProviderScoreColumn[];
+  capabilityGaps: CapabilityGap[];
+  aggregateCapabilityGap?: number;
+  passed: boolean;
+}

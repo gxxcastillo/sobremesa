@@ -50,7 +50,8 @@ Endpoint groups:
 - **Public:** health and aggregate public stats.
 - **Auth:** Telegram login, access-pass redemption, current user/families, timezone update, logout,
   admin/dev login.
-- **Family:** family summaries, placeholder narrative/book generation, queue stats, admin reprocess.
+- **Family:** family summaries, placeholder narrative/book generation, queue stats, admin reprocess,
+  dead-letter queue listing and requeue.
 - **Identity:** view/claim/unclaim current person; list/create/update people for self-identification.
 - **Admin:** allowed-chat management and super-admin family deletion.
 - **Import:** duplicate check, start/poll/cancel/resume WhatsApp import, run Intern review, override

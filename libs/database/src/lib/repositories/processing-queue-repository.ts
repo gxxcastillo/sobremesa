@@ -284,7 +284,7 @@ export class ProcessingQueueRepository {
     const attempts = (current?.attempts || 0) + 1;
     const status: QueueItemStatus = attempts >= maxRetries ? 'error' : 'queued';
 
-    const { data, error } = await this.client
+    const { error } = await this.client
       .from(this.tableName)
       .update({
         status,
@@ -294,15 +294,10 @@ export class ProcessingQueueRepository {
         locked_by: null,
       })
       .eq('family_id', familyId)
-      .eq('id', id)
-      .select('id');
+      .eq('id', id);
 
     if (error) {
       throw new Error(`Failed to mark queue item as failed: ${error.message}`);
-    }
-
-    if (!data?.length) {
-      throw new Error(`Queue item not found: ${id}`);
     }
 
     return status;
