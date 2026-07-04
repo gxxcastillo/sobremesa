@@ -222,8 +222,8 @@ function claimMatches(
     return false;
   }
   if (
-    expected.claimedBy &&
-    !matchesText(actual.claimedBy, expected.claimedBy)
+    expected.attributedTo &&
+    !matchesText(actual.attributedTo, expected.attributedTo)
   ) {
     return false;
   }

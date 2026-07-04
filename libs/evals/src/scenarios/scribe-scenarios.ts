@@ -61,7 +61,6 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
             anyOf: ["Ralphy's sister's parents", 'her parents', 'parents'],
           },
           valueIncludes: { anyOf: ['hard on Ralphy', 'hard on him'] },
-          claimedBy: 'Daisy',
           claimedBySource: 'direct',
         },
       ],
@@ -94,7 +93,7 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
         {
           subject: 'Mark',
           valueIncludes: { anyOf: ['firstborn', 'oldest son'] },
-          claimedBy: { anyOf: ['Mom', 'Minnie'] },
+          attributedTo: 'Mom',
           claimedBySource: 'attributed',
         },
       ],
@@ -152,7 +151,6 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
         {
           subject: 'Rosa',
           valueIncludes: { anyOf: ['1965', 'Guadalajara'] },
-          claimedBy: 'Donald',
           claimedBySource: 'direct',
         },
       ],
@@ -187,7 +185,6 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
           valueIncludes: {
             anyOf: ['Carlos walked', 'walked her down the aisle'],
           },
-          claimedBy: 'Mickey',
           claimedBySource: 'direct',
         },
       ],
@@ -283,7 +280,6 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
         {
           subject: { anyOf: ['boda de María', "María's wedding"] },
           valueIncludes: { anyOf: ['Granada', 'iglesia'] },
-          claimedBy: 'Minnie',
           claimedBySource: 'direct',
         },
       ],
@@ -320,7 +316,6 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
         {
           subject: 'Elena',
           valueIncludes: { anyOf: ['bakery', 'opened a bakery'] },
-          claimedBy: 'Daisy',
           claimedBySource: 'direct',
         },
       ],
@@ -366,7 +361,6 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
         {
           subject: { anyOf: ["Elena's cafe", 'cafe'] },
           valueIncludes: '1978',
-          claimedBy: 'Daisy',
           claimedBySource: 'direct',
         },
       ],
@@ -424,7 +418,6 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
           subject: 'Rosa',
           claimType: 'date',
           valueIncludes: '1965',
-          claimedBy: 'Daisy',
           claimedBySource: 'direct',
         },
       ],

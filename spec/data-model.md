@@ -23,6 +23,10 @@ Key rules:
   analysis, redaction, or status fields/tables.
 - Claims preserve who said what, when, from which source message, with confidence and certainty
   language.
+- Attribution is pipeline-stamped, never LLM-inferred: `claimed_by` and `claimed_by_identity_id` are
+  set by the Registrar from the source event's deterministic sender, not from extracted text.
+  `attributed_to` carries secondhand attribution the speaker themselves asserted (e.g. "Mom always
+  said...") as free text — separate from, and never a substitute for, the deterministic sender.
 - Conflicts are represented as links between claims; they are not erased by choosing a single truth.
 - Claim strength is recomputable in `claim_analysis`, so scoring can evolve without rewriting the
   claim.

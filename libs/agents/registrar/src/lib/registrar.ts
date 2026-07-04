@@ -9,6 +9,7 @@ import {
   RelationshipRepository,
   EventLogRepository,
   ConversationEventRepository,
+  IdentityRepository,
   ImageRepository,
   EntityMergeRepository,
   ClaimEntityRepository,
@@ -185,6 +186,8 @@ export interface RegistrarAgentOptions {
   eventLog?: EventLogRepository;
   /** Conversation event repository (for getting claimedBy info) */
   conversationEventRepo?: ConversationEventRepository;
+  /** Identity repository (for resolving the deterministic sender's identity id) */
+  identityRepo?: IdentityRepository;
   /** Image repository (for linking people to images) */
   imageRepo?: ImageRepository;
   /** Entity merge repository (Phase 1c) */
@@ -242,6 +245,7 @@ export class RegistrarAgent {
   private relationshipRepo: RelationshipRepository;
   private eventLog: EventLogRepository;
   private conversationEventRepo: ConversationEventRepository;
+  private identityRepo: IdentityRepository;
   private imageRepo: ImageRepository;
   private entityMergeRepo: EntityMergeRepository;
   private claimEntityRepo: ClaimEntityRepository;
@@ -304,6 +308,10 @@ export class RegistrarAgent {
     this.conversationEventRepo = getRepo(
       options.conversationEventRepo,
       (c) => new ConversationEventRepository(c),
+    );
+    this.identityRepo = getRepo(
+      options.identityRepo,
+      (c) => new IdentityRepository(c),
     );
     this.imageRepo = getRepo(options.imageRepo, (c) => new ImageRepository(c));
     this.entityMergeRepo = getRepo(
@@ -417,6 +425,19 @@ export class RegistrarAgent {
     );
     const claimedBy =
       sourceEvent?.actorDisplayName || sourceEvent?.actorUsername || 'Unknown';
+
+    // Resolve the deterministic sender's identity (global, keyed by provider +
+    // provider user id — never by name, so same-name people never collide).
+    // Null for sources that don't create identities (e.g. WhatsApp import).
+    // Only needed when there are claims to stamp.
+    const claimedByIdentity =
+      sourceEvent && domainModel.claims.length > 0
+        ? await this.identityRepo.findByProviderUserId(
+            sourceEvent.source,
+            sourceEvent.actorExternalId,
+          )
+        : null;
+    const claimedByIdentityId = claimedByIdentity?.id;
 
     // Build maps for name -> ID resolution
     const personIdMap = new Map<string, string>();
@@ -1072,20 +1093,6 @@ export class RegistrarAgent {
           }
         }
 
-        // Log attribution if it differs from sender
-        if (claim.claimedBy !== claimedBy) {
-          this.logger.debug(
-            {
-              familyId,
-              subject: claim.subject,
-              attributedTo: claim.claimedBy,
-              reportedBy: claimedBy,
-              sourceType: claim.claimedBySource,
-            },
-            'Claim attributed to different person than sender',
-          );
-        }
-
         // Check for conflicts using ConflictDetectorService
         // Only check conflicts with claims about the same entity
         const conflicts = await this.conflictDetectorService.detectConflicts(
@@ -1197,12 +1204,15 @@ export class RegistrarAgent {
           }
         }
 
-        // Create the new claim (immutable provenance)
+        // Create the new claim (immutable provenance). claimedBy is always
+        // the deterministic sender — never LLM-derived — so a claim can never
+        // be misattributed regardless of what the extraction contained.
         const newClaim = await this.claimRepo.createFromExtracted(
           familyId,
           claim,
           conversationEventId,
-          claim.claimedBy,
+          claimedBy,
+          claimedByIdentityId,
           extractionVersion,
         );
 

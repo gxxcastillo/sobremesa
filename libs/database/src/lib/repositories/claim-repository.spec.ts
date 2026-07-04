@@ -206,11 +206,11 @@ describe('ClaimRepository - createFromExtracted', () => {
           subject: 'John',
           claimValue: '{"year": 1992, "month": 3, "day": 13}',
           confidence: 'high',
-          claimedBy: 'user-1',
           claimedBySource: 'direct',
         },
         'event-1',
         'user-1',
+        undefined,
       );
 
       expect(chain.insert).toHaveBeenCalledWith(
@@ -245,11 +245,11 @@ describe('ClaimRepository - createFromExtracted', () => {
           subject: 'John',
           claimValue: 'kind',
           confidence: 'medium',
-          claimedBy: 'user-1',
           claimedBySource: 'direct',
         },
         'event-1',
         'user-1',
+        undefined,
       );
 
       expect(chain.insert).toHaveBeenCalledWith(
@@ -286,11 +286,11 @@ describe('ClaimRepository - createFromExtracted', () => {
           subject: 'John',
           claimValue: '42',
           confidence: 'high',
-          claimedBy: 'user-1',
           claimedBySource: 'direct',
         },
         'event-1',
         'user-1',
+        undefined,
       );
 
       expect(chain.insert).toHaveBeenCalledWith(
@@ -333,11 +333,11 @@ describe('ClaimRepository - createFromExtracted', () => {
           subject: 'John',
           claimValue: JSON.stringify(complexValue),
           confidence: 'high',
-          claimedBy: 'user-1',
           claimedBySource: 'direct',
         },
         'event-1',
         'user-1',
+        undefined,
       );
 
       expect(chain.insert).toHaveBeenCalledWith(
@@ -373,11 +373,11 @@ describe('ClaimRepository - createFromExtracted', () => {
           subject: 'John',
           claimValue: '{not valid json',
           confidence: 'low',
-          claimedBy: 'user-1',
           claimedBySource: 'direct',
         },
         'event-1',
         'user-1',
+        undefined,
       );
 
       expect(chain.insert).toHaveBeenCalledWith(
@@ -415,17 +415,139 @@ describe('ClaimRepository - createFromExtracted', () => {
           subject: 'John',
           claimValue: '{"year": 1990}',
           confidence: 'high',
-          claimedBy: 'user-1',
           claimedBySource: 'direct',
         },
         'event-1',
         'user-1',
+        undefined,
         'intern-v0.1.0+scribe-v0.2.0+registrar-v0.1.0',
       );
 
       expect(chain.insert).toHaveBeenCalledWith(
         expect.objectContaining({
           extraction_version: 'intern-v0.1.0+scribe-v0.2.0+registrar-v0.1.0',
+        }),
+      );
+    });
+  });
+
+  describe('deterministic attribution (provenance-integrity-plan.md #2)', () => {
+    it('persists the resolved identity id when provided', async () => {
+      const insertedClaim = {
+        id: 'claim-1',
+        family_id: 'fam1',
+        claim_type: 'detail',
+        subject: 'John',
+        claim_value: { value: 'kind' },
+        conversation_event_id: 'event-1',
+        claimed_by: 'user-1',
+        claimed_by_identity_id: 'identity-1',
+        claimed_at: new Date().toISOString(),
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const chain = createChainableMock({ data: insertedClaim, error: null });
+      mockSupabaseClient.from.mockReturnValue(chain);
+
+      await claimRepo.createFromExtracted(
+        'fam1',
+        {
+          claimType: 'detail',
+          subject: 'John',
+          claimValue: 'kind',
+          confidence: 'medium',
+          claimedBySource: 'direct',
+        },
+        'event-1',
+        'user-1',
+        'identity-1',
+      );
+
+      expect(chain.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          claimed_by: 'user-1',
+          claimed_by_identity_id: 'identity-1',
+        }),
+      );
+    });
+
+    it('omits claimed_by_identity_id when unresolved rather than writing null', async () => {
+      const insertedClaim = {
+        id: 'claim-1',
+        family_id: 'fam1',
+        claim_type: 'detail',
+        subject: 'John',
+        claim_value: { value: 'kind' },
+        conversation_event_id: 'event-1',
+        claimed_by: 'user-1',
+        claimed_at: new Date().toISOString(),
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const chain = createChainableMock({ data: insertedClaim, error: null });
+      mockSupabaseClient.from.mockReturnValue(chain);
+
+      await claimRepo.createFromExtracted(
+        'fam1',
+        {
+          claimType: 'detail',
+          subject: 'John',
+          claimValue: 'kind',
+          confidence: 'medium',
+          claimedBySource: 'direct',
+        },
+        'event-1',
+        'user-1',
+        undefined,
+      );
+
+      const insertedRecord = chain.insert.mock.calls[0][0];
+      expect(insertedRecord).not.toHaveProperty('claimed_by_identity_id');
+    });
+
+    it('persists attributed_to for hearsay claims', async () => {
+      const insertedClaim = {
+        id: 'claim-1',
+        family_id: 'fam1',
+        claim_type: 'date',
+        subject: 'Grandpa Ernesto',
+        claim_value: { value: '1939' },
+        conversation_event_id: 'event-1',
+        claimed_by: 'Minnie',
+        claimed_by_source: 'hearsay',
+        attributed_to: 'Mom',
+        claimed_at: new Date().toISOString(),
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const chain = createChainableMock({ data: insertedClaim, error: null });
+      mockSupabaseClient.from.mockReturnValue(chain);
+
+      await claimRepo.createFromExtracted(
+        'fam1',
+        {
+          claimType: 'date',
+          subject: 'Grandpa Ernesto',
+          claimValue: '1939',
+          confidence: 'medium',
+          claimedBySource: 'hearsay',
+          attributedTo: 'Mom',
+        },
+        'event-1',
+        'Minnie',
+        undefined,
+      );
+
+      expect(chain.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          claimed_by: 'Minnie',
+          attributed_to: 'Mom',
         }),
       );
     });

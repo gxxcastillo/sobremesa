@@ -203,8 +203,8 @@ const ClaimSchema = z.object({
   subject: z.string(),
   claim_value: ClaimValueSchema,
   certainty_language: z.string().optional(),
-  claimed_by: z.string(),
   claimed_by_source: z.enum(['direct', 'attributed', 'hearsay']),
+  attributed_to: z.string().optional(),
   referenced_people: z.array(z.string()).default([]),
   referenced_places: z.array(z.string()).default([]),
 });

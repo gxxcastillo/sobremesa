@@ -126,9 +126,14 @@ export interface Claim extends Omit<BaseEntity, 'redacted'> {
   subject: string;
   claimValue: Record<string, unknown>;
   conversationEventId: string;
+  /** Deterministic sender name, pipeline-stamped from the source event (never LLM-derived) */
   claimedBy: string;
+  /** Identity of the deterministic sender, resolved by provider + provider user id. Null for historical rows and sources without identities (e.g. WhatsApp import). */
+  claimedByIdentityId?: string;
   /** How the claim was attributed: direct (speaker), attributed (citing someone), hearsay (vague) */
   claimedBySource: ClaimSourceType;
+  /** Person the speaker attributes this claim to (set only for attributed/hearsay claims) */
+  attributedTo?: string;
   claimedAt: Date;
   confidence: Confidence;
   certaintyLanguage?: string;

@@ -41,6 +41,7 @@ export interface StableClaim {
   claimValue: Record<string, unknown>;
   claimedBy: string;
   claimedBySource: string;
+  attributedTo?: string;
 }
 
 export interface StableRelationship {
@@ -157,6 +158,7 @@ export async function readStablePipelineSnapshot(
         claimValue: objectValue(claim['claim_value']),
         claimedBy: stringValue(claim['claimed_by']),
         claimedBySource: stringValue(claim['claimed_by_source']),
+        attributedTo: optionalString(claim['attributed_to']),
       })),
     ),
     relationships: sortRecords(

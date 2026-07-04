@@ -52,6 +52,10 @@ Scribe responsibilities:
 - Preserve uncertainty and conflicts; never resolve disputes.
 - Return validated structured output. Non-empty malformed extractions fail loud so the queue can retry
   rather than silently treating the event as empty.
+- Never assert who is speaking. Claims carry `claimed_by_source` (direct/attributed/hearsay) and,
+  only for attributed/hearsay claims, `attributed_to` — the person the speaker attributes the fact
+  to (e.g. "Mom always said..." → `attributed_to: "Mom"`). Scribe does not output a speaker name;
+  the pipeline stamps that deterministically (see §3.4).
 
 ## 3.4 Registrar Contract
 
@@ -65,6 +69,15 @@ Registrar is the single writer for extracted knowledge. It:
 6. Handles identity claims by merging or renaming descriptive placeholder people.
 
 No LLM runs on the hot Registrar path.
+
+Claim attribution is pipeline-stamped, never LLM-derived: `claims.claimed_by` is always the
+deterministic sender name from the source `conversation_events` row, and `claims.claimed_by_identity_id`
+is resolved from that row's `(source, actor_external_id)` via the identity repository — never from
+extracted text, so a claim can never be misattributed regardless of what the extraction contained.
+`claimed_by_identity_id` is `NULL` when no identity exists for the source (e.g. WhatsApp import
+participants, which are `people` records, not `identities`). `attributed_to`, when present on the
+extraction, is persisted verbatim as free text — it is not entity-resolved and carries no
+attribution guarantee beyond what the speaker said.
 
 ## 3.5 Question Answering and Sending
 

@@ -82,7 +82,6 @@ export const pipelineSnapshotScenarios: PipelineSnapshotScenario[] = [
               claim_type: 'location',
               subject: 'Rosa',
               claim_value: 'moved to Guadalajara around 1965',
-              claimed_by: 'Donald',
               claimed_by_source: 'direct',
               referenced_places: ['Guadalajara'],
             },
@@ -185,7 +184,6 @@ export const pipelineSnapshotScenarios: PipelineSnapshotScenario[] = [
               claim_type: 'date',
               subject: "Sofia's wedding",
               claim_value: 'June 2022',
-              claimed_by: 'Minnie',
               claimed_by_source: 'direct',
               referenced_people: ['Sofia'],
               referenced_places: ['Puerto Vallarta'],
@@ -213,7 +211,6 @@ export const pipelineSnapshotScenarios: PipelineSnapshotScenario[] = [
               claim_type: 'detail',
               subject: "Sofia's wedding",
               claim_value: 'Carlos walked Sofia down the aisle',
-              claimed_by: 'Mickey',
               claimed_by_source: 'direct',
               referenced_people: ['Carlos', 'Sofia'],
             },
@@ -276,6 +273,68 @@ export const pipelineSnapshotScenarios: PipelineSnapshotScenario[] = [
         storyEvents: 0,
         storyConversationEvents: 0,
         eventPeople: 2,
+        eventPlaces: 0,
+      },
+    },
+  },
+  {
+    id: 'pipeline-attribution-stamped-deterministically',
+    description:
+      'claimed_by is stamped from the deterministic sender (never from extraction), and attributed_to is persisted verbatim for hearsay (provenance-integrity-plan.md #2).',
+    senders,
+    messages: [
+      {
+        sender: 'minnie',
+        text: 'Mom always said Grandpa Ernesto was born in 1939.',
+        cannedScribe: {
+          detected_language: 'en',
+          people: [{ name: 'Ernesto' }],
+          claims: [
+            {
+              claim_type: 'date',
+              subject: 'Ernesto',
+              claim_value: '1939',
+              claimed_by_source: 'hearsay',
+              attributed_to: 'Mom',
+            },
+          ],
+        },
+      },
+    ],
+    expected: {
+      conversationEvents: [
+        {
+          sequenceNumber: 1,
+          sender: 'Minnie',
+          content: 'Mom always said Grandpa Ernesto was born in 1939.',
+        },
+      ],
+      people: [{ name: 'Ernesto', aliases: [] }],
+      places: [],
+      events: [],
+      stories: [],
+      claims: [
+        {
+          subject: 'Ernesto',
+          claimType: 'date',
+          claimValue: { value: '1939' },
+          // Stamped from the conversation event's sender, not from the
+          // canned extraction (which names no one) — this is the guarantee
+          // that makes context-bleed/misattribution structurally impossible.
+          claimedBy: 'Minnie',
+          claimedBySource: 'hearsay',
+          attributedTo: 'Mom',
+        },
+      ],
+      relationships: [],
+      linkCounts: {
+        claimEntities: 1,
+        claimRelationships: 0,
+        storyPeople: 0,
+        storyPlaces: 0,
+        storyEvents: 0,
+        storyConversationEvents: 0,
+        eventPeople: 0,
         eventPlaces: 0,
       },
     },

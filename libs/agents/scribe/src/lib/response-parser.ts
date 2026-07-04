@@ -268,8 +268,8 @@ export function parseScribeResponse(
     claimValue: c.claim_value,
     confidence: inferConfidence(c.certainty_language),
     certaintyLanguage: c.certainty_language,
-    claimedBy: c.claimed_by,
     claimedBySource: c.claimed_by_source,
+    attributedTo: c.attributed_to,
     referencedPeople: c.referenced_people,
     referencedPlaces: c.referenced_places,
   }));

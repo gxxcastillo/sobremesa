@@ -46,6 +46,10 @@ const mockConversationEventRepo = {
   findById: vi.fn(),
 };
 
+const mockIdentityRepo = {
+  findByProviderUserId: vi.fn(),
+};
+
 const mockImageRepo = {
   addConnectedPeople: vi.fn(),
   addContext: vi.fn(),
@@ -122,8 +126,13 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     // Default mock implementations
     mockConversationEventRepo.findById.mockResolvedValue({
       id: 'event-123',
+      source: 'telegram',
+      actorExternalId: 'ext-test-user',
       actorDisplayName: 'Test User',
       actorUsername: 'testuser',
+    });
+    mockIdentityRepo.findByProviderUserId.mockResolvedValue({
+      id: 'identity-test-user',
     });
 
     mockPersonRepo.findBestMatch.mockResolvedValue(null);
@@ -166,6 +175,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       relationshipRepo: mockRelationshipRepo as any,
       eventLog: mockEventLog as any,
       conversationEventRepo: mockConversationEventRepo as any,
+      identityRepo: mockIdentityRepo as any,
       imageRepo: mockImageRepo as any,
       entityMergeRepo: mockEntityMergeRepo as any,
       claimEntityRepo: mockClaimEntityRepo as any,
@@ -579,8 +589,13 @@ describe('RegistrarAgent - Event Deduplication', () => {
 
     mockConversationEventRepo.findById.mockResolvedValue({
       id: 'event-123',
+      source: 'telegram',
+      actorExternalId: 'ext-test-user',
       actorDisplayName: 'Test User',
       actorUsername: 'testuser',
+    });
+    mockIdentityRepo.findByProviderUserId.mockResolvedValue({
+      id: 'identity-test-user',
     });
 
     mockPersonRepo.findBestMatch.mockResolvedValue(null);
@@ -611,6 +626,7 @@ describe('RegistrarAgent - Event Deduplication', () => {
       relationshipRepo: mockRelationshipRepo as any,
       eventLog: mockEventLog as any,
       conversationEventRepo: mockConversationEventRepo as any,
+      identityRepo: mockIdentityRepo as any,
       imageRepo: mockImageRepo as any,
       entityMergeRepo: mockEntityMergeRepo as any,
       claimEntityRepo: mockClaimEntityRepo as any,
@@ -788,8 +804,13 @@ describe('RegistrarAgent - Claim Subject Resolution', () => {
 
     mockConversationEventRepo.findById.mockResolvedValue({
       id: 'event-123',
+      source: 'telegram',
+      actorExternalId: 'ext-test-user',
       actorDisplayName: 'Test User',
       actorUsername: 'testuser',
+    });
+    mockIdentityRepo.findByProviderUserId.mockResolvedValue({
+      id: 'identity-test-user',
     });
 
     mockPersonRepo.findBestMatch.mockResolvedValue(null);
@@ -836,6 +857,7 @@ describe('RegistrarAgent - Claim Subject Resolution', () => {
       relationshipRepo: mockRelationshipRepo as any,
       eventLog: mockEventLog as any,
       conversationEventRepo: mockConversationEventRepo as any,
+      identityRepo: mockIdentityRepo as any,
       imageRepo: mockImageRepo as any,
       entityMergeRepo: mockEntityMergeRepo as any,
       claimEntityRepo: mockClaimEntityRepo as any,
@@ -866,7 +888,6 @@ describe('RegistrarAgent - Claim Subject Resolution', () => {
           subject: 'la boda de María',
           claimValue: 'fue en Buenos Aires',
           confidence: 'medium',
-          claimedBy: 'Test User',
           claimedBySource: 'direct',
           referencedPeople: ['María'],
         },
@@ -912,7 +933,6 @@ describe('RegistrarAgent - Claim Subject Resolution', () => {
           subject: 'The wedding',
           claimValue: 'Carlos walked her down the aisle and cried',
           confidence: 'high',
-          claimedBy: 'Test User',
           claimedBySource: 'direct',
           referencedPeople: ['Carlos'],
         },
@@ -960,7 +980,6 @@ describe('RegistrarAgent - Claim Subject Resolution', () => {
           subject: 'la boda de María',
           claimValue: 'Buenos Aires',
           confidence: 'medium',
-          claimedBy: 'Test User',
           claimedBySource: 'direct',
         },
       ],
@@ -976,6 +995,179 @@ describe('RegistrarAgent - Claim Subject Resolution', () => {
       'event-boda-de-maría',
       'event',
       { role: 'subject' },
+    );
+  });
+});
+
+describe('RegistrarAgent - Claim Attribution Stamping (provenance-integrity-plan.md #2)', () => {
+  let registrar: RegistrarAgent;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockConversationEventRepo.findById.mockResolvedValue({
+      id: 'event-123',
+      source: 'telegram',
+      actorExternalId: 'ext-minnie',
+      actorDisplayName: 'Minnie',
+      actorUsername: 'minnie',
+    });
+    mockIdentityRepo.findByProviderUserId.mockResolvedValue({
+      id: 'identity-minnie',
+    });
+
+    mockPersonRepo.findBestMatch.mockResolvedValue(null);
+    mockPersonRepo.createNew.mockImplementation(async (_familyId, person) => ({
+      id: `person-${person.name.toLowerCase().replace(/\s+/g, '-')}`,
+      ...person,
+    }));
+
+    mockPlaceRepo.findOrCreate.mockImplementation(async (_familyId, place) => ({
+      id: `place-${place.name.toLowerCase().replace(/\s+/g, '-')}`,
+      ...place,
+      createdAt: new Date(Date.now() - 10000),
+    }));
+
+    mockClaimRepo.findActiveBySubject.mockResolvedValue([]);
+    mockClaimRepo.findByEntity.mockResolvedValue([]);
+    mockClaimRepo.createFromExtracted.mockImplementation(
+      async (_familyId, claim) => ({
+        id: 'claim-1',
+        ...claim,
+      }),
+    );
+    mockClaimAnalysisRepo.createForClaim.mockResolvedValue({});
+    mockClaimAnalysisRepo.findByClaimIds.mockResolvedValue([]);
+    mockClaimEntityRepo.link.mockResolvedValue({});
+    mockClaimRelationshipRepo.create.mockResolvedValue({});
+    mockEventLog.log.mockResolvedValue(undefined);
+
+    registrar = new RegistrarAgent({
+      personRepo: mockPersonRepo as any,
+      placeRepo: mockPlaceRepo as any,
+      eventRepo: mockEventRepo as any,
+      storyRepo: mockStoryRepo as any,
+      claimRepo: mockClaimRepo as any,
+      claimAnalysisRepo: mockClaimAnalysisRepo as any,
+      relationshipRepo: mockRelationshipRepo as any,
+      eventLog: mockEventLog as any,
+      conversationEventRepo: mockConversationEventRepo as any,
+      identityRepo: mockIdentityRepo as any,
+      imageRepo: mockImageRepo as any,
+      entityMergeRepo: mockEntityMergeRepo as any,
+      claimEntityRepo: mockClaimEntityRepo as any,
+      claimRelationshipRepo: mockClaimRelationshipRepo as any,
+      storyPeopleRepo: mockStoryPeopleRepo as any,
+      storyPlacesRepo: mockStoryPlacesRepo as any,
+      storyEventsRepo: mockStoryEventsRepo as any,
+      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
+      eventPeopleRepo: mockEventPeopleRepo as any,
+      eventPlacesRepo: mockEventPlacesRepo as any,
+      llmQueueRepo: mockLlmQueueRepo as any,
+      logger: mockLogger as any,
+    });
+  });
+
+  const claimDomainModel = (
+    claim: ScribeDomainModel['claims'][number],
+  ): ScribeDomainModel => ({
+    conversationEventId: 'event-123',
+    familyId: 'family-abc',
+    processedAt: new Date(),
+    people: [],
+    places: [],
+    events: [],
+    relationships: [],
+    claims: [claim],
+    imageReferences: [],
+    detectedLanguage: 'en',
+  });
+
+  it('stamps claimed_by from the deterministic sender, never from extraction (context-bleed trap)', async () => {
+    const domainModel = claimDomainModel({
+      claimType: 'date',
+      subject: 'Grandpa Ernesto',
+      claimValue: '1939',
+      confidence: 'high',
+      claimedBySource: 'direct',
+    });
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockClaimRepo.createFromExtracted).toHaveBeenCalledWith(
+      'family-abc',
+      expect.objectContaining({ subject: 'Grandpa Ernesto' }),
+      'event-123',
+      'Minnie',
+      'identity-minnie',
+      expect.any(String),
+    );
+  });
+
+  it('leaves claimedByIdentityId undefined when the identity does not resolve (e.g. WhatsApp import)', async () => {
+    mockIdentityRepo.findByProviderUserId.mockResolvedValue(null);
+
+    const domainModel = claimDomainModel({
+      claimType: 'detail',
+      subject: 'Rosa',
+      claimValue: 'loved fishing',
+      confidence: 'medium',
+      claimedBySource: 'direct',
+    });
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockClaimRepo.createFromExtracted).toHaveBeenCalledWith(
+      'family-abc',
+      expect.objectContaining({ subject: 'Rosa' }),
+      'event-123',
+      'Minnie',
+      undefined,
+      expect.any(String),
+    );
+  });
+
+  it('does not resolve an identity when there are no claims to stamp', async () => {
+    const domainModel: ScribeDomainModel = {
+      conversationEventId: 'event-123',
+      familyId: 'family-abc',
+      processedAt: new Date(),
+      people: [{ name: 'Rosa', aliases: [], confidence: 'high' }],
+      places: [],
+      events: [],
+      relationships: [],
+      claims: [],
+      imageReferences: [],
+      detectedLanguage: 'en',
+    };
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockIdentityRepo.findByProviderUserId).not.toHaveBeenCalled();
+  });
+
+  it('passes attributedTo verbatim through to the persisted claim for hearsay', async () => {
+    const domainModel = claimDomainModel({
+      claimType: 'date',
+      subject: 'Grandpa Ernesto',
+      claimValue: '1939',
+      confidence: 'medium',
+      claimedBySource: 'hearsay',
+      attributedTo: 'Mom',
+    });
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockClaimRepo.createFromExtracted).toHaveBeenCalledWith(
+      'family-abc',
+      expect.objectContaining({
+        attributedTo: 'Mom',
+        claimedBySource: 'hearsay',
+      }),
+      'event-123',
+      'Minnie',
+      'identity-minnie',
+      expect.any(String),
     );
   });
 });

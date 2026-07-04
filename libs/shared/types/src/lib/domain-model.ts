@@ -53,10 +53,15 @@ export interface ExtractedClaim {
   confidence: Confidence;
   certaintyLanguage?: string;
   contextOriginal?: string;
-  /** Who made this claim (sender name or attributed person) */
-  claimedBy: string;
   /** How the claim was attributed: direct (speaker), attributed (citing someone), hearsay (vague) */
   claimedBySource: ClaimSourceType;
+  /**
+   * The person the speaker attributes this claim to, set only when
+   * claimedBySource is 'attributed' or 'hearsay' (e.g. "Mom always said..."
+   * -> attributedTo: "Mom"). Never the deterministic sender — that is
+   * pipeline-stamped, not LLM-derived.
+   */
+  attributedTo?: string;
 
   /** Names of people referenced in this claim */
   referencedPeople?: string[];

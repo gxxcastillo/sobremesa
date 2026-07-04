@@ -50,8 +50,9 @@ export interface ExpectedClaim {
   subject: TextExpectation;
   claimType?: string;
   valueIncludes?: TextExpectation;
-  claimedBy?: TextExpectation;
   claimedBySource?: ClaimSourceType;
+  /** Who the speaker attributes this claim to (attributed/hearsay claims only — see ExtractedClaim.attributedTo) */
+  attributedTo?: TextExpectation;
 }
 
 export interface ExpectedStory {

@@ -28,7 +28,6 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
             claim_type: 'not-a-real-type',
             subject: 'Maria',
             claim_value: 'born in 1950',
-            claimed_by: 'Ana',
             claimed_by_source: 'direct',
           },
         ],
@@ -67,7 +66,6 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
             claim_type: 'detail',
             subject: 'Maria',
             claim_value: 'loved fishing',
-            claimed_by: 'Ana',
             claimed_by_source: 'direct',
           },
         ],
@@ -98,7 +96,6 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
             claim_type: 'date',
             subject: "Maria's birth",
             claim_value: '1950',
-            claimed_by: 'Ana',
             claimed_by_source: 'direct',
           },
         ],
@@ -107,6 +104,34 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
       expect(model.people[0].name).toBe('Maria');
       expect(model.claims[0].claimType).toBe('date');
       expect(model.detectedLanguage).toBe('es');
+    });
+
+    it('maps attributed_to onto claims and leaves it undefined when absent (#2)', () => {
+      const raw = JSON.stringify({
+        claims: [
+          {
+            claim_type: 'date',
+            subject: 'Grandpa Ernesto',
+            claim_value: '1939',
+            claimed_by_source: 'hearsay',
+            attributed_to: 'Mom',
+          },
+          {
+            claim_type: 'detail',
+            subject: 'Maria',
+            claim_value: 'loved fishing',
+            claimed_by_source: 'direct',
+          },
+        ],
+      });
+
+      const model = parse(raw);
+
+      expect(model.claims[0].attributedTo).toBe('Mom');
+      expect(model.claims[1].attributedTo).toBeUndefined();
+      expect((model.claims[0] as Record<string, unknown>)['claimedBy']).toBe(
+        undefined,
+      );
     });
 
     it('extracts dateYear from structured event date objects (#9)', () => {
@@ -164,7 +189,6 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
             claim_type: 'location',
             subject: 'la boda de María',
             claim_value: 'Buenos Aires',
-            claimed_by: 'Ana',
             claimed_by_source: 'direct',
             referenced_people: ['María'],
             referenced_places: ['Buenos Aires'],

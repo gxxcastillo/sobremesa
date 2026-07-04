@@ -127,6 +127,7 @@ export class ClaimRepository extends BaseRepository<Claim> {
     extracted: ExtractedClaim,
     conversationEventId: string,
     claimedBy: string,
+    claimedByIdentityId: string | undefined,
     extractionVersion?: string,
   ): Promise<Claim> {
     // Parse claim_value from Scribe (may be JSON string or plain string)
@@ -158,7 +159,9 @@ export class ClaimRepository extends BaseRepository<Claim> {
       claimValue,
       conversationEventId,
       claimedBy,
+      claimedByIdentityId,
       claimedBySource: extracted.claimedBySource,
+      attributedTo: extracted.attributedTo,
       claimedAt: new Date(),
       confidence: extracted.confidence,
       certaintyLanguage: extracted.certaintyLanguage,
