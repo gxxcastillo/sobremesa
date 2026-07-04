@@ -65,6 +65,17 @@ export interface ScribeContext {
     senderName: string;
     occurredAt: Date;
   }>;
+  /** Message that the current event replied to, when available */
+  replyToMessage?: {
+    content: string;
+    senderName: string;
+    occurredAt: Date;
+  };
+  /** Bot question that the current event answered, when available */
+  answeredQuestion?: {
+    content: string;
+    askedByName: string;
+  };
   /** Recent images shared in conversation */
   recentImages: ImageContext[];
 }

@@ -1,6 +1,7 @@
 export { MessageQueue, type MessageHandler } from './lib/message-queue';
 export {
   MessageProcessor,
+  resolveReplyToMessage,
   type FilterProcessor,
   type FilterProcessorResult,
   type ImageLinkerProcessor,

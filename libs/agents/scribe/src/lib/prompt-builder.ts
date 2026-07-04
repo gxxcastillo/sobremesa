@@ -4,6 +4,44 @@ import type { ScribeConfig, ScribeContext } from './types';
 
 const logger = createLogger({ name: 'scribe', level: 'debug' });
 
+function getFormattedDatePart(
+  parts: Intl.DateTimeFormatPart[],
+  type: Intl.DateTimeFormatPartTypes,
+): string {
+  return parts.find((part) => part.type === type)?.value ?? '';
+}
+
+function formatParts(
+  date: Date,
+  formatOptions: Intl.DateTimeFormatOptions,
+): string {
+  const parts = new Intl.DateTimeFormat('en-US', formatOptions).formatToParts(
+    date,
+  );
+  const month = getFormattedDatePart(parts, 'month');
+  const day = getFormattedDatePart(parts, 'day');
+  const hour = getFormattedDatePart(parts, 'hour');
+  const minute = getFormattedDatePart(parts, 'minute');
+  return `${month} ${day} ${hour}:${minute}`;
+}
+
+function formatContextTimestamp(date: Date, timezone?: string): string {
+  const formatOptions: Intl.DateTimeFormatOptions = {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    ...(timezone && { timeZone: timezone }),
+  };
+
+  try {
+    return formatParts(date, formatOptions);
+  } catch {
+    return formatParts(date, { ...formatOptions, timeZone: undefined });
+  }
+}
+
 /**
  * Build the system prompt with config values substituted.
  */
@@ -67,9 +105,10 @@ export function buildUserMessage(
 
   // Add recent messages for context (already filtered by character limit)
   if (context.recentMessages.length > 0) {
-    parts.push('CONTEXT:');
+    parts.push('CONTEXT (oldest first):');
     for (const msg of context.recentMessages) {
-      parts.push(`${msg.senderName}: ${msg.content}`);
+      const timestamp = formatContextTimestamp(msg.occurredAt, timezone);
+      parts.push(`[${timestamp}] ${msg.senderName}: ${msg.content}`);
     }
     parts.push('');
   }
@@ -89,6 +128,20 @@ export function buildUserMessage(
       }
       parts.push(imgParts.join(' '));
     }
+    parts.push('');
+  }
+
+  if (context.replyToMessage) {
+    parts.push(
+      `IN REPLY TO ${context.replyToMessage.senderName}: ${context.replyToMessage.content}`,
+    );
+    parts.push('');
+  }
+
+  if (context.answeredQuestion) {
+    parts.push(
+      `IN REPLY TO QUESTION (asked by ${context.answeredQuestion.askedByName}): ${context.answeredQuestion.content}`,
+    );
     parts.push('');
   }
 

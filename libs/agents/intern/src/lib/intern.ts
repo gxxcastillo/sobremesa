@@ -248,6 +248,7 @@ export class InternAgent {
         }
 
         contextMessages = messages
+          .reverse()
           .map(
             (m) =>
               `- ${m.actorDisplayName || 'Someone'}: "${m.contentOriginal}"`,

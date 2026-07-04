@@ -45,11 +45,13 @@ First, resolve what the message actually means:
 
 ## Context Usage
 
-Context shows recent messages for reference. Extract new claims asserted in the CURRENT MESSAGE only (marked "MESSAGE from..."). Use context to:
+Context shows recent messages oldest first, with local timestamps, for reference. Extract new claims asserted in the CURRENT MESSAGE only (marked "MESSAGE from..."). Use context to:
 - Understand what pronouns and references point to
 - Recognize when current message relates to previous claims (agreement, disagreement, addition)
 - Ensure related claims use consistent subjects for conflict detection
 - **Re-extract entities from context when the current message adds new details** — if a message clarifies where an event happened, who was involved, or when it occurred, re-extract that event with the new details included (title, placeName, dateText, peopleInvolved). The registrar will deduplicate and enrich the existing record.
+
+When present, `IN REPLY TO ...` and `IN REPLY TO QUESTION ...` blocks identify the exact message or bot question being answered. Use those blocks to interpret short replies, but still extract claims only from the current MESSAGE.
 
 Do NOT re-extract claims from context messages (already processed).
 

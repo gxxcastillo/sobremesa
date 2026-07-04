@@ -2,7 +2,8 @@ import type {
   ConversationEventRepository,
   ImageRepository,
 } from '@sobremesa/database';
-import type { MessageContext } from '@sobremesa/queue';
+import type { ChatProvider } from '@sobremesa/shared-types';
+import { resolveReplyToMessage, type MessageContext } from '@sobremesa/queue';
 import type { ScribeContext, ImageContext } from './types';
 
 /**
@@ -15,9 +16,21 @@ export interface ContextBuilderOptions {
   maxContextChars?: number;
   /** Number of recent images to include */
   maxImages?: number;
+  /** Exclude current/future messages by sequence when available */
+  beforeSequenceNumber?: number;
+  /** Message the current event replied to, for direct Scribe calls without preloaded context */
+  replyTo?: {
+    source: ChatProvider;
+    externalEventId: string;
+  };
 }
 
-const DEFAULT_OPTIONS: Required<ContextBuilderOptions> = {
+const DEFAULT_OPTIONS: Required<
+  Pick<
+    ContextBuilderOptions,
+    'recentMessageCount' | 'maxContextChars' | 'maxImages'
+  >
+> = {
   recentMessageCount: 30,
   maxContextChars: 2500,
   maxImages: 5,
@@ -33,6 +46,19 @@ export function convertToScribeContext(context: MessageContext): ScribeContext {
       senderName: m.senderName,
       occurredAt: m.occurredAt,
     })),
+    replyToMessage: context.replyToMessage
+      ? {
+          content: context.replyToMessage.content,
+          senderName: context.replyToMessage.senderName,
+          occurredAt: context.replyToMessage.occurredAt,
+        }
+      : undefined,
+    answeredQuestion: context.answeredQuestion
+      ? {
+          content: context.answeredQuestion.content,
+          askedByName: context.answeredQuestion.askedByName,
+        }
+      : undefined,
     recentImages: context.recentImages.map((img) => ({
       id: img.id.slice(0, 8), // Short ID for prompt efficiency
       fileType: img.fileType,
@@ -70,11 +96,13 @@ export async function buildScribeContext(
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
   // Fetch data in parallel for efficiency
-  const [recentEvents, recentImages] = await Promise.all([
+  const [recentEvents, recentImages, replyToEvent] = await Promise.all([
     repos.eventRepo.findRecent(
       familyId,
       conversationId,
       opts.recentMessageCount,
+      false,
+      opts.beforeSequenceNumber,
     ),
     repos.imageRepo
       ? repos.imageRepo.findRecentInConversation(
@@ -83,6 +111,15 @@ export async function buildScribeContext(
           opts.maxImages,
         )
       : Promise.resolve([]),
+    opts.replyTo
+      ? repos.eventRepo.findByExternalId(
+          familyId,
+          opts.replyTo.source,
+          conversationId,
+          opts.replyTo.externalEventId,
+          true,
+        )
+      : Promise.resolve(null),
   ]);
 
   // Transform recent events to context format, accumulating until character limit
@@ -111,6 +148,15 @@ export async function buildScribeContext(
     totalChars += content.length;
   }
 
+  const resolvedReplyTo = resolveReplyToMessage(replyToEvent);
+  const replyToMessage = resolvedReplyTo
+    ? {
+        content: resolvedReplyTo.content,
+        senderName: resolvedReplyTo.senderName,
+        occurredAt: resolvedReplyTo.occurredAt,
+      }
+    : undefined;
+
   // Transform images to context format
   const recentImagesContext: ImageContext[] = recentImages.map((img) => ({
     id: img.id.slice(0, 8), // Short ID for prompt efficiency
@@ -127,7 +173,8 @@ export async function buildScribeContext(
   }));
 
   return {
-    recentMessages,
+    recentMessages: recentMessages.reverse(),
+    replyToMessage,
     recentImages: recentImagesContext,
   };
 }

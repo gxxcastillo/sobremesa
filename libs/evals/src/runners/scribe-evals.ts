@@ -265,6 +265,7 @@ function makeContext(
   events: ConversationEvent[],
   current: ConversationEvent,
   windowSize: number,
+  currentMessage: EvalMessage,
 ): MessageContext {
   const recentMessages = events
     .filter(
@@ -277,6 +278,7 @@ function makeContext(
     )
     .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
     .slice(0, windowSize)
+    .reverse()
     .map((event) => ({
       id: event.id,
       content: event.contentOriginal ?? '',
@@ -284,8 +286,36 @@ function makeContext(
       occurredAt: event.occurredAt,
     }));
 
+  const replyToEvent = current.externalReplyToId
+    ? events.find(
+        (event) =>
+          event.conversationId === current.conversationId &&
+          event.externalEventId === current.externalReplyToId &&
+          event.contentOriginal,
+      )
+    : undefined;
+
   return {
     recentMessages,
+    replyToMessage: replyToEvent
+      ? {
+          id: replyToEvent.id,
+          content: replyToEvent.contentOriginal ?? '',
+          senderName:
+            replyToEvent.actorDisplayName ||
+            replyToEvent.actorUsername ||
+            'Unknown',
+          occurredAt: replyToEvent.occurredAt,
+        }
+      : undefined,
+    answeredQuestion: currentMessage.answeredQuestion
+      ? {
+          id: `${current.id}-question`,
+          content: currentMessage.answeredQuestion.content,
+          askedByName:
+            currentMessage.answeredQuestion.askedByName ?? 'Facilitator',
+        }
+      : undefined,
     recentImages: [],
   };
 }
@@ -349,6 +379,7 @@ async function runScenario(
         events,
         event,
         scenario.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+        message,
       );
       const output = await scribe.process(event.id, family.id, context);
       outputs.push(output);

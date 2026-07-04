@@ -293,6 +293,89 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
     },
   },
   {
+    id: 'order-dependent-pronoun-chronology',
+    description:
+      'Pronoun resolution follows true chronological context, not newest-first prompt order.',
+    senders,
+    initialContext: [
+      {
+        sender: 'mickey',
+        text: 'Aunt Rosa moved to Chicago in 1950.',
+      },
+      {
+        sender: 'minnie',
+        text: 'Aunt Elena moved to Miami in 1962.',
+      },
+    ],
+    messages: [
+      {
+        sender: 'daisy',
+        text: 'She later opened a bakery there.',
+      },
+    ],
+    golden: {
+      requiredPeople: [{ name: 'Elena' }],
+      requiredPlaces: [{ name: 'Miami' }],
+      requiredClaims: [
+        {
+          subject: 'Elena',
+          valueIncludes: { anyOf: ['bakery', 'opened a bakery'] },
+          claimedBy: 'Daisy',
+          claimedBySource: 'direct',
+        },
+      ],
+      forbidden: {
+        claimSubjects: ['Rosa'],
+      },
+    },
+  },
+  {
+    id: 'reply-to-old-message',
+    description:
+      'Reply block resolves a short answer to the replied-to message even outside the context window.',
+    senders,
+    contextWindow: 1,
+    initialContext: [
+      {
+        sender: 'mickey',
+        text: "Tía Elena's cafe was in León.",
+      },
+      {
+        sender: 'donald',
+        text: 'Rosa used to talk about the school in Granada.',
+      },
+      {
+        sender: 'minnie',
+        text: 'Carlos remembered the train station in Managua.',
+      },
+    ],
+    messages: [
+      {
+        sender: 'daisy',
+        replyTo: 0,
+        text: 'It opened in 1978.',
+      },
+    ],
+    familyConfig: {
+      culturalTerms: ['Tía', 'León'],
+    },
+    golden: {
+      requiredPeople: [{ name: 'Elena' }],
+      requiredPlaces: [{ name: 'León' }],
+      requiredClaims: [
+        {
+          subject: { anyOf: ["Elena's cafe", 'cafe'] },
+          valueIncludes: '1978',
+          claimedBy: 'Daisy',
+          claimedBySource: 'direct',
+        },
+      ],
+      forbidden: {
+        claimSubjects: ['Rosa', 'Carlos', 'train station'],
+      },
+    },
+  },
+  {
     id: 'context-bleed-trap',
     description:
       'A bare agreement after another speaker states a fact must not restamp that fact to the current speaker.',
@@ -322,15 +405,14 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
     description:
       'Bare answer to a bot question uses context without extracting the bot as a family person.',
     senders,
-    initialContext: [
-      {
-        sender: 'carmencita',
-        text: 'If you happen to remember, what year did Rosa move to Guadalajara?',
-      },
-    ],
     messages: [
       {
         sender: 'daisy',
+        answeredQuestion: {
+          askedByName: 'Carmencita',
+          content:
+            'If you happen to remember, what year did Rosa move to Guadalajara?',
+        },
         text: '1965, I think.',
       },
     ],

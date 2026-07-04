@@ -31,7 +31,8 @@ per-family text order.
 `MessageProcessor`:
 
 1. Loads the event and shared recent context.
-2. Marks answered bot questions when the event replies to a tracked question.
+2. Marks answered bot questions when the event replies to a tracked question and carries that
+   question text forward as extraction context.
 3. Creates image records for media.
 4. Routes to ignore, admin, historian, or Scribe.
 5. Runs the Scribe path when appropriate: filter → Scribe → image-link fallback → Registrar.
@@ -67,8 +68,9 @@ proposed → asked → answered
 ```
 
 Facilitator asks the highest-priority eligible question, records the external message id, and logs
-`question_asked`. A reply to that message marks the question `answered`, logs `question_answered`, and
-then flows through normal extraction.
+`question_asked`. A reply to that message marks the question `answered`, logs `question_answered`,
+adds the original question as an explicit Scribe context block, and then flows through normal
+extraction.
 
 ## 4.5 Family Activation
 

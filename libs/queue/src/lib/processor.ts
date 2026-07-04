@@ -3,6 +3,7 @@ import type {
   ScribeDomainModel,
   LanguageCode,
   RawImageReference,
+  ConversationEvent,
 } from '@sobremesa/shared-types';
 import {
   ConversationEventRepository,
@@ -29,18 +30,52 @@ type MediaEventType = (typeof MEDIA_EVENT_TYPES)[number];
  */
 const CONTEXT_QUERY_LIMIT = 30;
 
+export interface ContextMessage {
+  id: string;
+  content: string;
+  senderName: string;
+  occurredAt: Date;
+}
+
+export interface AnsweredQuestionContext {
+  id: string;
+  content: string;
+  askedByName: string;
+}
+
+/**
+ * Resolve a fetched conversation event into reply-to message context,
+ * or undefined if there's no usable content (no reply, or reply is empty).
+ */
+export function resolveReplyToMessage(
+  event: ConversationEvent | null,
+): ContextMessage | undefined {
+  if (
+    typeof event?.contentOriginal !== 'string' ||
+    event.contentOriginal.length === 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    id: event.id,
+    content: event.contentOriginal,
+    senderName: event.actorDisplayName || event.actorUsername || 'Unknown',
+    occurredAt: new Date(event.occurredAt),
+  };
+}
+
 /**
  * Shared message context fetched once and passed to processors.
  * Avoids duplicate DB queries for recent messages/images.
  */
 export interface MessageContext {
   /** Recent messages for context resolution */
-  recentMessages: Array<{
-    id: string;
-    content: string;
-    senderName: string;
-    occurredAt: Date;
-  }>;
+  recentMessages: ContextMessage[];
+  /** Message that the current event replied to, when available */
+  replyToMessage?: ContextMessage;
+  /** Bot question that the current event answered, when available */
+  answeredQuestion?: AnsweredQuestionContext;
   /** Recent images in conversation */
   recentImages: Array<{
     id: string;
@@ -390,13 +425,18 @@ export class MessageProcessor {
       maxContextChars?: number;
       maxImages?: number;
       beforeSequenceNumber?: number;
+      replyTo?: {
+        source: string;
+        externalEventId: string;
+      };
+      answeredQuestion?: AnsweredQuestionContext;
     },
   ): Promise<MessageContext> {
     const maxContextChars = options?.maxContextChars ?? 2500; // ~600 tokens
     const maxImages = options?.maxImages ?? 5;
 
     // Fetch data in parallel
-    const [recentEvents, recentImages] = await Promise.all([
+    const [recentEvents, recentImages, replyToEvent] = await Promise.all([
       this.eventRepo.findRecent(
         familyId,
         conversationId,
@@ -409,6 +449,15 @@ export class MessageProcessor {
         conversationId,
         maxImages,
       ),
+      options?.replyTo
+        ? this.eventRepo.findByExternalId(
+            familyId,
+            options.replyTo.source,
+            conversationId,
+            options.replyTo.externalEventId,
+            true,
+          )
+        : Promise.resolve(null),
     ]);
 
     // Transform to context format, accumulating until character limit
@@ -439,6 +488,8 @@ export class MessageProcessor {
       totalChars += content.length;
     }
 
+    const replyToMessage = resolveReplyToMessage(replyToEvent);
+
     const recentImagesContext = recentImages.map((img) => ({
       id: img.id,
       fileType: img.fileType || 'photo',
@@ -454,7 +505,9 @@ export class MessageProcessor {
     }));
 
     return {
-      recentMessages,
+      recentMessages: recentMessages.reverse(),
+      replyToMessage,
+      answeredQuestion: options?.answeredQuestion,
       recentImages: recentImagesContext,
     };
   }
@@ -495,8 +548,9 @@ export class MessageProcessor {
       }
 
       // Check if this message is a reply to a question (answer detection)
+      let answeredQuestion: AnsweredQuestionContext | undefined;
       if (event.externalReplyToId) {
-        await this.detectAndMarkAnswer(
+        answeredQuestion = await this.detectAndMarkAnswer(
           familyId,
           eventId,
           event.externalReplyToId,
@@ -518,6 +572,13 @@ export class MessageProcessor {
       // Only include messages before the current one to prevent future-message leakage
       const context = await this.fetchContext(familyId, event.conversationId, {
         beforeSequenceNumber: event.sequenceNumber,
+        replyTo: event.externalReplyToId
+          ? {
+              source: event.source,
+              externalEventId: event.externalReplyToId,
+            }
+          : undefined,
+        answeredQuestion,
       });
 
       // Handle media events: create Image record for async Curator
@@ -992,7 +1053,7 @@ export class MessageProcessor {
     familyId: string,
     answerEventId: string,
     replyToExternalId: string,
-  ): Promise<void> {
+  ): Promise<AnsweredQuestionContext | undefined> {
     try {
       // Look up if there's a question that was sent with this external message ID
       const question = await this.questionRepo.findByExternalMessageId(
@@ -1002,8 +1063,14 @@ export class MessageProcessor {
 
       if (!question) {
         // Not a reply to a question we asked
-        return;
+        return undefined;
       }
+
+      const questionContext: AnsweredQuestionContext = {
+        id: question.id,
+        content: question.contentOriginal,
+        askedByName: 'Facilitator',
+      };
 
       // Already answered? Skip
       if (question.status === 'answered') {
@@ -1011,7 +1078,7 @@ export class MessageProcessor {
           { questionId: question.id, replyToExternalId },
           'Question already marked as answered',
         );
-        return;
+        return questionContext;
       }
 
       // Mark the question as answered
@@ -1040,6 +1107,8 @@ export class MessageProcessor {
         { familyId, questionId: question.id, answerEventId },
         'Question marked as answered via reply detection',
       );
+
+      return questionContext;
     } catch (error) {
       // Don't fail processing if answer detection fails
       const errorMessage =
@@ -1048,6 +1117,7 @@ export class MessageProcessor {
         { familyId, replyToExternalId, error: errorMessage },
         'Answer detection failed (non-fatal)',
       );
+      return undefined;
     }
   }
 }

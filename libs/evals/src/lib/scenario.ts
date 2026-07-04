@@ -15,6 +15,10 @@ export interface EvalMessage {
   sender: string;
   text: string;
   replyTo?: number;
+  answeredQuestion?: {
+    content: string;
+    askedByName?: string;
+  };
   occurredAt?: Date;
 }
 

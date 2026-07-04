@@ -102,21 +102,33 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
 
   /**
    * Find by external event ID (for deduplication).
+   * When `visibleOnly` is true, excludes redacted events (for prompt context).
    */
   async findByExternalId(
     familyId: string,
     source: string,
     conversationId: string,
     externalEventId: string,
+    visibleOnly = false,
   ): Promise<ConversationEvent | null> {
-    const { data, error } = await this.client
+    let query = this.client
       .from(this.tableName)
-      .select('*')
+      .select(
+        `
+        *,
+        redacted:conversation_redactions(id)
+      `,
+      )
       .eq('family_id', familyId)
       .eq('source', source)
       .eq('conversation_id', conversationId)
-      .eq('external_event_id', externalEventId)
-      .single();
+      .eq('external_event_id', externalEventId);
+
+    if (visibleOnly) {
+      query = query.is('redacted.id', null);
+    }
+
+    const { data, error } = await query.single();
 
     if (error) {
       if (error.code === 'PGRST116') {
@@ -125,7 +137,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       throw new Error(`Failed to find event by external id: ${error.message}`);
     }
 
-    return this.mapFromDb(data);
+    return this.filterJoinedFields(data as unknown as Record<string, unknown>);
   }
 
   /**

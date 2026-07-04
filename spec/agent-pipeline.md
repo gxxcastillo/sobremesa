@@ -45,7 +45,10 @@ story, image references, language/version metadata, and interpretation notes.
 Scribe responsibilities:
 
 - Extract from the current message without deduplicating against the database.
-- Use recent context to resolve pronouns and ambiguous references.
+- Use recent context to resolve pronouns and ambiguous references. The pipeline supplies recent
+  messages oldest-to-newest with compact local timestamps, plus explicit `IN REPLY TO` and
+  `IN REPLY TO QUESTION` blocks when the current message replies to a known message or tracked bot
+  question.
 - Preserve uncertainty and conflicts; never resolve disputes.
 - Return validated structured output. Non-empty malformed extractions fail loud so the queue can retry
   rather than silently treating the event as empty.

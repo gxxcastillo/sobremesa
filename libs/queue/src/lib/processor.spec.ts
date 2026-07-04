@@ -5,6 +5,7 @@ import type { ScribeDomainModel } from '@sobremesa/shared-types';
 const mockEventRepo = {
   findById: vi.fn(),
   findRecent: vi.fn(),
+  findByExternalId: vi.fn(),
 };
 
 const mockProcessingRepo = {
@@ -101,9 +102,73 @@ describe('MessageProcessor', () => {
     vi.clearAllMocks();
     mockEventRepo.findById.mockResolvedValue({ ...baseEvent });
     mockEventRepo.findRecent.mockResolvedValue([]);
+    mockEventRepo.findByExternalId.mockResolvedValue(null);
     mockImageRepo.findRecentInConversation.mockResolvedValue([]);
     mockQueueRepo.findByEventId.mockResolvedValue({ ...baseQueueItem });
     mockEventLog.log.mockResolvedValue(undefined);
+  });
+
+  it('returns recent message context oldest first after selecting the newest window', async () => {
+    mockEventRepo.findRecent.mockResolvedValue([
+      {
+        id: 'event-new',
+        contentOriginal: 'Newest',
+        actorDisplayName: 'Nina',
+        occurredAt: new Date('2026-01-03T12:00:00Z'),
+      },
+      {
+        id: 'event-mid',
+        contentOriginal: 'Middle',
+        actorDisplayName: 'Marta',
+        occurredAt: new Date('2026-01-02T12:00:00Z'),
+      },
+      {
+        id: 'event-old',
+        contentOriginal: 'Oldest',
+        actorDisplayName: 'Olivia',
+        occurredAt: new Date('2026-01-01T12:00:00Z'),
+      },
+    ]);
+    const processor = createProcessor();
+
+    const context = await processor.fetchContext(FAMILY_ID, 'conv-1');
+
+    expect(context.recentMessages.map((msg) => msg.id)).toEqual([
+      'event-old',
+      'event-mid',
+      'event-new',
+    ]);
+  });
+
+  it('adds a visible replied-to message to shared context', async () => {
+    mockEventRepo.findByExternalId.mockResolvedValue({
+      id: 'reply-event',
+      contentOriginal: 'The wedding was in 1982.',
+      actorDisplayName: 'Carlos',
+      occurredAt: new Date('2026-01-01T12:00:00Z'),
+    });
+    const processor = createProcessor();
+
+    const context = await processor.fetchContext(FAMILY_ID, 'conv-1', {
+      replyTo: {
+        source: 'telegram',
+        externalEventId: '42',
+      },
+    });
+
+    expect(mockEventRepo.findByExternalId).toHaveBeenCalledWith(
+      FAMILY_ID,
+      'telegram',
+      'conv-1',
+      '42',
+      true,
+    );
+    expect(context.replyToMessage).toEqual({
+      id: 'reply-event',
+      content: 'The wedding was in 1982.',
+      senderName: 'Carlos',
+      occurredAt: new Date('2026-01-01T12:00:00Z'),
+    });
   });
 
   it('returns failure and never completes the queue item when the event is missing', async () => {
@@ -247,6 +312,39 @@ describe('MessageProcessor', () => {
     expect(scribe).toHaveBeenCalled();
     expect(registrar).toHaveBeenCalledWith(domainModel, FAMILY_ID, undefined);
     expect(mockQueueRepo.complete).not.toHaveBeenCalled();
+  });
+
+  it('passes answered bot-question context to Scribe', async () => {
+    mockEventRepo.findById.mockResolvedValue({
+      ...baseEvent,
+      externalReplyToId: 'bot-question-42',
+      contentOriginal: '1943',
+    });
+    mockQuestionRepo.findByExternalMessageId.mockResolvedValue({
+      id: 'question-1',
+      status: 'asked',
+      contentOriginal: 'What year did your grandmother arrive?',
+    });
+    const processor = createProcessor();
+    const domainModel = createBaseDomainModel();
+    const scribe = vi.fn().mockResolvedValue(domainModel);
+    processor.setScribe(scribe);
+    processor.setRegistrar(vi.fn().mockResolvedValue(undefined));
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(true);
+    expect(mockQuestionRepo.markAnswered).toHaveBeenCalledWith(
+      FAMILY_ID,
+      'question-1',
+      EVENT_ID,
+    );
+    expect(scribe).toHaveBeenCalled();
+    expect(scribe.mock.calls[0][2].answeredQuestion).toEqual({
+      id: 'question-1',
+      content: 'What year did your grandmother arrive?',
+      askedByName: 'Facilitator',
+    });
   });
 
   it('returns success:false without completing the queue item when scribe throws', async () => {

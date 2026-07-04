@@ -164,7 +164,15 @@ export class ScribeAgent {
         eventRepo: this.eventRepo,
         imageRepo: this.imageRepo,
       },
-      undefined, // options
+      {
+        beforeSequenceNumber: event.sequenceNumber,
+        replyTo: event.externalReplyToId
+          ? {
+              source: event.source,
+              externalEventId: event.externalReplyToId,
+            }
+          : undefined,
+      },
       preloadedContext,
     );
 
