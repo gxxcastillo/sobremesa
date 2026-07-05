@@ -1,4 +1,4 @@
-import { textMentionsName } from '@sobremesa/agents-registrar';
+import { createGrounder, textMentionsName } from '@sobremesa/agents-registrar';
 import type {
   ExtractedClaim,
   ExtractedEvent,
@@ -7,6 +7,7 @@ import type {
   ExtractedRelationship,
   ScribeDomainModel,
 } from '@sobremesa/shared-types';
+import { DEFAULT_CONTEXT_WINDOW } from './scenario';
 import type {
   CategoryScore,
   CapabilityGap,
@@ -20,12 +21,22 @@ import type {
   ExpectedStory,
   ForbiddenHit,
   GoldenExpectation,
+  GroundingSummary,
   ScenarioRunResult,
   ScenarioScore,
   TextExpectation,
 } from './scenario';
 
 const EPSILON = 0.000001;
+
+/**
+ * Max tolerated grounding-failure rate (context-bleed + unmatched over total
+ * claims) before the suite fails regardless of score. Bleed claims are
+ * filtered out before scoring (the pipeline rejects them), so without this
+ * gate a model regression that wholesale re-extracts context would still
+ * report PASS.
+ */
+export const GROUNDING_FAILURE_GATE = 0.15;
 
 interface AggregatedOutput {
   people: ExtractedPerson[];
@@ -308,6 +319,48 @@ function findForbiddenHits(
   ];
 }
 
+function emptyGroundingSummary(): GroundingSummary {
+  return { totalClaims: 0, grounded: 0, contextBleed: 0, unmatched: 0 };
+}
+
+/**
+ * Apply the pipeline's deterministic grounding check to each output's claims,
+ * mirroring the Registrar exactly: outputs[i] pairs with scenario.messages[i],
+ * whose context is the same bounded window the runner supplied to Scribe
+ * (newest `contextWindow` prior messages; the answered bot question is
+ * excluded, as in the processor). Context-bleed claims are dropped — the
+ * pipeline never persists them — while unmatched claims are kept, as the
+ * pipeline keeps them flagged.
+ */
+function applyGrounding(run: ScenarioRunResult): {
+  outputs: ScribeDomainModel[];
+  grounding: GroundingSummary;
+} {
+  const grounding = emptyGroundingSummary();
+  const windowSize = run.scenario.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+  const priorTexts = (run.scenario.initialContext ?? []).map(
+    (message) => message.text,
+  );
+
+  const outputs = run.outputs.map((output, index) => {
+    const currentText = run.scenario.messages[index]?.text;
+    // Same window the model saw: the newest `windowSize` prior messages.
+    const grounder = createGrounder(currentText, priorTexts.slice(-windowSize));
+    const claims = output.claims.filter((claim) => {
+      const verdict = grounder.ground(claim.evidence);
+      grounding.totalClaims++;
+      if (verdict === 'grounded') grounding.grounded++;
+      else if (verdict === 'context_bleed') grounding.contextBleed++;
+      else grounding.unmatched++;
+      return verdict !== 'context_bleed';
+    });
+    if (currentText !== undefined) priorTexts.push(currentText);
+    return { ...output, claims };
+  });
+
+  return { outputs, grounding };
+}
+
 export function scoreScenario(
   run: ScenarioRunResult,
   threshold: number,
@@ -329,10 +382,12 @@ export function scoreScenario(
           actual: run.error.message,
         },
       ],
+      grounding: emptyGroundingSummary(),
     };
   }
 
-  const output = aggregateOutputs(run.outputs);
+  const { outputs, grounding } = applyGrounding(run);
+  const output = aggregateOutputs(outputs);
   const golden = run.scenario.golden;
   const categories = [
     scoreCategory({
@@ -401,6 +456,7 @@ export function scoreScenario(
     hardFailed,
     categories,
     forbiddenHits,
+    grounding,
   };
 }
 
@@ -419,6 +475,17 @@ export function buildReport(options: {
   );
   const aggregateRecall = average(scenarioScores.map((score) => score.recall));
 
+  const totalClaims = scenarioScores.reduce(
+    (sum, score) => sum + score.grounding.totalClaims,
+    0,
+  );
+  const failedClaims = scenarioScores.reduce(
+    (sum, score) =>
+      sum + score.grounding.contextBleed + score.grounding.unmatched,
+    0,
+  );
+  const groundingFailureRate = totalClaims > 0 ? failedClaims / totalClaims : 0;
+
   return {
     generatedAt: new Date(),
     provider: options.provider,
@@ -427,9 +494,15 @@ export function buildReport(options: {
     aggregateScore,
     aggregatePrecision,
     aggregateRecall,
+    groundingFailureRate,
+    // Grounding gates the suite even though bleed claims never persist:
+    // dropping them pre-scoring means a wholesale re-extraction regression
+    // would otherwise be invisible to the score. Occasional single-claim
+    // failures (model nondeterminism, benign paraphrase) stay under the gate.
     passed:
       aggregateScore >= options.threshold &&
-      scenarioScores.every((score) => !score.hardFailed),
+      scenarioScores.every((score) => !score.hardFailed) &&
+      groundingFailureRate <= GROUNDING_FAILURE_GATE,
     scenarioScores,
   };
 }

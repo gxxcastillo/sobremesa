@@ -202,6 +202,12 @@ const ClaimSchema = z.object({
   ]),
   subject: z.string(),
   claim_value: ClaimValueSchema,
+  // Verbatim span from the current message supporting the claim. Required:
+  // the Registrar's deterministic grounding check verifies containment in the
+  // current message and rejects definite context bleed (provenance contract —
+  // see spec/agent-pipeline.md §3.4). A missing span fails the parse loud
+  // rather than silently persisting an ungroundable claim.
+  evidence: z.string(),
   certainty_language: z.string().optional(),
   claimed_by_source: z.enum(['direct', 'attributed', 'hearsay']),
   attributed_to: z.string().optional(),

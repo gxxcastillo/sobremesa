@@ -213,33 +213,40 @@ async function main() {
 
         return { success: responseResult.success, error: responseResult.error };
       });
-      processor.setRegistrar(async (model, familyId, pipelineVersions) => {
-        await registrar.persist(model, familyId, pipelineVersions);
+      processor.setRegistrar(
+        async (model, familyId, pipelineVersions, contextContents) => {
+          await registrar.persist(
+            model,
+            familyId,
+            pipelineVersions,
+            contextContents,
+          );
 
-        // Fire-and-forget: trigger Facilitator after persist
-        // Log errors but don't block or retry
-        facilitator.askNextQuestion(familyId).then(
-          (result) => {
-            if (result.questionContent) {
-              logger.info(
-                { familyId, questionId: result.questionId },
-                'Facilitator asked question',
+          // Fire-and-forget: trigger Facilitator after persist
+          // Log errors but don't block or retry
+          facilitator.askNextQuestion(familyId).then(
+            (result) => {
+              if (result.questionContent) {
+                logger.info(
+                  { familyId, questionId: result.questionId },
+                  'Facilitator asked question',
+                );
+              } else if (result.skippedReason) {
+                logger.debug(
+                  { familyId, reason: result.skippedReason },
+                  'Facilitator skipped asking',
+                );
+              }
+            },
+            (err) => {
+              logger.error(
+                { familyId, err },
+                'Facilitator failed to ask question',
               );
-            } else if (result.skippedReason) {
-              logger.debug(
-                { familyId, reason: result.skippedReason },
-                'Facilitator skipped asking',
-              );
-            }
-          },
-          (err) => {
-            logger.error(
-              { familyId, err },
-              'Facilitator failed to ask question',
-            );
-          },
-        );
-      });
+            },
+          );
+        },
+      );
 
       logger.info('Intern, Scribe, Registrar and Historian agents configured');
     }

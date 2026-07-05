@@ -28,6 +28,24 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
             claim_type: 'not-a-real-type',
             subject: 'Maria',
             claim_value: 'born in 1950',
+            evidence: 'born in 1950',
+            claimed_by_source: 'direct',
+          },
+        ],
+      });
+      expect(() => parse(raw)).toThrow(ScribeParseError);
+    });
+
+    it('throws ScribeParseError when a claim has no evidence span (#3)', () => {
+      // evidence is required in the LLM contract: without it the Registrar
+      // cannot ground the claim, so the parse fails loud rather than
+      // persisting an ungroundable claim.
+      const raw = JSON.stringify({
+        claims: [
+          {
+            claim_type: 'detail',
+            subject: 'Maria',
+            claim_value: 'loved fishing',
             claimed_by_source: 'direct',
           },
         ],
@@ -66,6 +84,7 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
             claim_type: 'detail',
             subject: 'Maria',
             claim_value: 'loved fishing',
+            evidence: 'she loved fishing',
             claimed_by_source: 'direct',
           },
         ],
@@ -96,6 +115,7 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
             claim_type: 'date',
             subject: "Maria's birth",
             claim_value: '1950',
+            evidence: 'Maria was born in 1950',
             claimed_by_source: 'direct',
           },
         ],
@@ -103,6 +123,7 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
       const model = parse(raw);
       expect(model.people[0].name).toBe('Maria');
       expect(model.claims[0].claimType).toBe('date');
+      expect(model.claims[0].evidence).toBe('Maria was born in 1950');
       expect(model.detectedLanguage).toBe('es');
     });
 
@@ -113,6 +134,7 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
             claim_type: 'date',
             subject: 'Grandpa Ernesto',
             claim_value: '1939',
+            evidence: 'Mom always said Grandpa was born in 1939',
             claimed_by_source: 'hearsay',
             attributed_to: 'Mom',
           },
@@ -120,6 +142,7 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
             claim_type: 'detail',
             subject: 'Maria',
             claim_value: 'loved fishing',
+            evidence: 'Maria loved fishing',
             claimed_by_source: 'direct',
           },
         ],
@@ -189,6 +212,7 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
             claim_type: 'location',
             subject: 'la boda de María',
             claim_value: 'Buenos Aires',
+            evidence: 'la boda de María fue en Buenos Aires',
             claimed_by_source: 'direct',
             referenced_people: ['María'],
             referenced_places: ['Buenos Aires'],

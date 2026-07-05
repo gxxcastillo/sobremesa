@@ -427,4 +427,37 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
       },
     },
   },
+  {
+    id: 'bot-question-confirmation',
+    description:
+      'A bare yes-confirmation of a bot question asserts the confirmed fact (the question was never itself recorded), unlike a bare agreement with a family member.',
+    senders,
+    messages: [
+      {
+        sender: 'minnie',
+        answeredQuestion: {
+          askedByName: 'Carmencita',
+          content: "Was Sofia's wedding in Puerto Vallarta in June 2022?",
+        },
+        text: 'Yes, that is right.',
+      },
+    ],
+    golden: {
+      // The question confirms two facts (place and date); extracting either
+      // one claim per fact or a combined claim covering both is acceptable.
+      requiredClaims: [
+        {
+          subject: { anyOf: ["Sofia's wedding", 'Sofia'] },
+          valueIncludes: { anyOf: ['2022', 'June'] },
+        },
+        {
+          subject: { anyOf: ["Sofia's wedding", 'Sofia'] },
+          valueIncludes: 'Puerto Vallarta',
+        },
+      ],
+      forbidden: {
+        people: ['Carmencita', 'Sobremesa'],
+      },
+    },
+  },
 ];

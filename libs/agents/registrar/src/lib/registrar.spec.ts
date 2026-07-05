@@ -1171,3 +1171,212 @@ describe('RegistrarAgent - Claim Attribution Stamping (provenance-integrity-plan
     );
   });
 });
+
+describe('RegistrarAgent - Evidence Grounding (provenance-integrity-plan.md #3)', () => {
+  let registrar: RegistrarAgent;
+
+  const CURRENT_CONTENT = 'Grandpa Ernesto was born in Oaxaca in 1943.';
+  const CONTEXT_CONTENTS = [
+    'Rosa moved from Oaxaca to Guadalajara in 1965.',
+    'We should plan the reunion soon.',
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockConversationEventRepo.findById.mockResolvedValue({
+      id: 'event-123',
+      source: 'telegram',
+      actorExternalId: 'ext-minnie',
+      actorDisplayName: 'Minnie',
+      actorUsername: 'minnie',
+      contentOriginal: CURRENT_CONTENT,
+    });
+    mockIdentityRepo.findByProviderUserId.mockResolvedValue({
+      id: 'identity-minnie',
+    });
+
+    mockPersonRepo.findBestMatch.mockResolvedValue(null);
+    mockPersonRepo.createNew.mockImplementation(async (_familyId, person) => ({
+      id: `person-${person.name.toLowerCase().replace(/\s+/g, '-')}`,
+      ...person,
+    }));
+
+    mockClaimRepo.findActiveBySubject.mockResolvedValue([]);
+    mockClaimRepo.findByEntity.mockResolvedValue([]);
+    mockClaimRepo.createFromExtracted.mockImplementation(
+      async (_familyId, claim) => ({
+        id: 'claim-1',
+        ...claim,
+      }),
+    );
+    mockClaimAnalysisRepo.createForClaim.mockResolvedValue({});
+    mockClaimAnalysisRepo.findByClaimIds.mockResolvedValue([]);
+    mockClaimEntityRepo.link.mockResolvedValue({});
+    mockClaimRelationshipRepo.create.mockResolvedValue({});
+    mockEventLog.log.mockResolvedValue(undefined);
+
+    registrar = new RegistrarAgent({
+      personRepo: mockPersonRepo as any,
+      placeRepo: mockPlaceRepo as any,
+      eventRepo: mockEventRepo as any,
+      storyRepo: mockStoryRepo as any,
+      claimRepo: mockClaimRepo as any,
+      claimAnalysisRepo: mockClaimAnalysisRepo as any,
+      relationshipRepo: mockRelationshipRepo as any,
+      eventLog: mockEventLog as any,
+      conversationEventRepo: mockConversationEventRepo as any,
+      identityRepo: mockIdentityRepo as any,
+      imageRepo: mockImageRepo as any,
+      entityMergeRepo: mockEntityMergeRepo as any,
+      claimEntityRepo: mockClaimEntityRepo as any,
+      claimRelationshipRepo: mockClaimRelationshipRepo as any,
+      storyPeopleRepo: mockStoryPeopleRepo as any,
+      storyPlacesRepo: mockStoryPlacesRepo as any,
+      storyEventsRepo: mockStoryEventsRepo as any,
+      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
+      eventPeopleRepo: mockEventPeopleRepo as any,
+      eventPlacesRepo: mockEventPlacesRepo as any,
+      llmQueueRepo: mockLlmQueueRepo as any,
+      logger: mockLogger as any,
+    });
+  });
+
+  const claimDomainModel = (
+    claim: ScribeDomainModel['claims'][number],
+  ): ScribeDomainModel => ({
+    conversationEventId: 'event-123',
+    familyId: 'family-abc',
+    processedAt: new Date(),
+    people: [],
+    places: [],
+    events: [],
+    relationships: [],
+    claims: [claim],
+    imageReferences: [],
+    detectedLanguage: 'en',
+  });
+
+  it('persists a claim whose evidence is grounded in the current message, unflagged', async () => {
+    const domainModel = claimDomainModel({
+      claimType: 'date',
+      subject: "Grandpa Ernesto's birth",
+      claimValue: '1943',
+      evidence: 'born in Oaxaca in 1943',
+      confidence: 'high',
+      claimedBySource: 'direct',
+    });
+
+    await registrar.persist(
+      domainModel,
+      'family-abc',
+      undefined,
+      CONTEXT_CONTENTS,
+    );
+
+    expect(mockClaimRepo.createFromExtracted).toHaveBeenCalledTimes(1);
+    const analysis = mockClaimAnalysisRepo.createForClaim.mock.calls[0][2];
+    expect(analysis.strengthFactors.grounding).toBeUndefined();
+  });
+
+  it('rejects a context-bleed claim: nothing persisted, claim_rejected logged', async () => {
+    const domainModel = claimDomainModel({
+      claimType: 'detail',
+      subject: "Rosa's move",
+      claimValue: 'Guadalajara',
+      // Verbatim from a context message, absent from the current message.
+      evidence: 'moved from Oaxaca to Guadalajara in 1965',
+      confidence: 'medium',
+      claimedBySource: 'direct',
+    });
+
+    await registrar.persist(
+      domainModel,
+      'family-abc',
+      undefined,
+      CONTEXT_CONTENTS,
+    );
+
+    expect(mockClaimRepo.createFromExtracted).not.toHaveBeenCalled();
+    expect(mockClaimAnalysisRepo.createForClaim).not.toHaveBeenCalled();
+    expect(mockEventLog.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'claim_rejected',
+        severity: 'warning',
+        eventData: expect.objectContaining({ reason: 'context_bleed' }),
+      }),
+    );
+  });
+
+  it('keeps an unmatched-evidence claim but flags grounding=failed in the analysis', async () => {
+    const domainModel = claimDomainModel({
+      claimType: 'detail',
+      subject: 'Grandpa Ernesto',
+      claimValue: 'loved mangoes',
+      evidence: 'he really loved mangoes', // paraphrase; matches nothing
+      confidence: 'medium',
+      claimedBySource: 'direct',
+    });
+
+    await registrar.persist(
+      domainModel,
+      'family-abc',
+      undefined,
+      CONTEXT_CONTENTS,
+    );
+
+    expect(mockClaimRepo.createFromExtracted).toHaveBeenCalledTimes(1);
+    const analysis = mockClaimAnalysisRepo.createForClaim.mock.calls[0][2];
+    expect(analysis.strengthFactors.grounding).toBe('failed');
+  });
+
+  it('never rejects when the source event has no content, even if evidence matches context', async () => {
+    mockConversationEventRepo.findById.mockResolvedValue({
+      id: 'event-123',
+      source: 'telegram',
+      actorExternalId: 'ext-minnie',
+      actorDisplayName: 'Minnie',
+      actorUsername: 'minnie',
+      contentOriginal: undefined, // e.g. media without caption
+    });
+
+    const domainModel = claimDomainModel({
+      claimType: 'detail',
+      subject: "Rosa's move",
+      claimValue: 'Guadalajara',
+      evidence: 'moved from Oaxaca to Guadalajara in 1965',
+      confidence: 'medium',
+      claimedBySource: 'direct',
+    });
+
+    await registrar.persist(
+      domainModel,
+      'family-abc',
+      undefined,
+      CONTEXT_CONTENTS,
+    );
+
+    // Bleed cannot be proven without a current message: flag, never reject.
+    expect(mockClaimRepo.createFromExtracted).toHaveBeenCalledTimes(1);
+    const analysis = mockClaimAnalysisRepo.createForClaim.mock.calls[0][2];
+    expect(analysis.strengthFactors.grounding).toBe('failed');
+  });
+
+  it('never rejects without contextContents: out-of-message evidence is flagged, kept', async () => {
+    const domainModel = claimDomainModel({
+      claimType: 'detail',
+      subject: "Rosa's move",
+      claimValue: 'Guadalajara',
+      evidence: 'moved from Oaxaca to Guadalajara in 1965',
+      confidence: 'medium',
+      claimedBySource: 'direct',
+    });
+
+    // No contextContents passed (e.g. a legacy caller).
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockClaimRepo.createFromExtracted).toHaveBeenCalledTimes(1);
+    const analysis = mockClaimAnalysisRepo.createForClaim.mock.calls[0][2];
+    expect(analysis.strengthFactors.grounding).toBe('failed');
+  });
+});

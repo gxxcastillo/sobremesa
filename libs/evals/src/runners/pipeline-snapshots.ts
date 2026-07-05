@@ -163,8 +163,8 @@ async function runScenario(
     processor.setScribe((eventId, familyId, context, preprocessed) =>
       scribe.process(eventId, familyId, context, preprocessed),
     );
-    processor.setRegistrar((domainModel, familyId, versions) =>
-      registrar.persist(domainModel, familyId, versions),
+    processor.setRegistrar((domainModel, familyId, versions, contextContents) =>
+      registrar.persist(domainModel, familyId, versions, contextContents),
     );
     processor.setPipelineVersions({ scribeVersion: 'canned' });
 

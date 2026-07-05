@@ -48,6 +48,21 @@ The scorer uses the same word-boundary token matching exported by `@sobremesa/ag
 Each actual extraction can satisfy at most one required expectation, so duplicate extractions count
 against precision. Forbidden extractions are hard failures.
 
+Before scoring, the scorer applies the pipeline's deterministic evidence-grounding check
+(`createGrounder` from `@sobremesa/agents-registrar`) to every claim, exactly as the Registrar
+does — including the same bounded context window the model saw (`contextWindow`, default 30):
+claims whose `evidence` span matches only a context message are dropped (the pipeline rejects
+them as context bleed), and claims whose evidence matches nothing are kept but counted as
+unmatched (the pipeline persists them flagged). The report shows per-scenario grounding tallies
+when any claim fails, plus an aggregate grounding-failure rate (context-bleed + unmatched over
+total claims). A rising unmatched rate means the model is paraphrasing evidence; a rising bleed
+rate means context is leaking into extraction.
+
+Because bleed claims are filtered out before scoring, the failure rate itself gates the suite:
+a report FAILs when the aggregate grounding-failure rate exceeds `GROUNDING_FAILURE_GATE`
+(0.15), regardless of score — otherwise a regression that wholesale re-extracts context would be
+invisible to the acceptance baseline.
+
 The report prints one score column per provider. When Anthropic and local run together it also prints
 the capability gap (`anthropic - local`) per scenario and in aggregate. Anthropic remains the
 acceptance baseline: a pipeline change should hold or improve Anthropic's score and use the local

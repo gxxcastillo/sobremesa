@@ -167,11 +167,14 @@ export interface PipelineVersions {
 /**
  * Registrar processor function type.
  * Implementations should persist the domain model to the database.
+ * contextContents carries the prior context message texts the extraction saw,
+ * for the Registrar's deterministic grounding check (context-bleed rejection).
  */
 export type RegistrarProcessor = (
   domainModel: ScribeDomainModel,
   familyId: string,
   pipelineVersions?: PipelineVersions,
+  contextContents?: string[],
 ) => Promise<void>;
 
 /**
@@ -957,7 +960,20 @@ export class MessageProcessor {
     // Run Registrar (if configured and we have a domain model)
     if (this.registrar && domainModel) {
       this.logger.debug({ eventId }, 'Running Registrar');
-      await this.registrar(domainModel, familyId, this.pipelineVersions);
+      // Prior context texts for the grounding check: the recent window plus
+      // the replied-to message (both already-processed user content). The
+      // answered bot question is deliberately excluded — bot text was never
+      // extracted, so evidence matching only it must flag, not reject.
+      const contextContents = [
+        ...context.recentMessages.map((message) => message.content),
+        ...(context.replyToMessage ? [context.replyToMessage.content] : []),
+      ];
+      await this.registrar(
+        domainModel,
+        familyId,
+        this.pipelineVersions,
+        contextContents,
+      );
     }
   }
 

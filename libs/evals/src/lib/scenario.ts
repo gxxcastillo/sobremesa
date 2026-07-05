@@ -3,6 +3,13 @@ import type {
   ScribeDomainModel,
 } from '@sobremesa/shared-types';
 
+/**
+ * Default recent-message window a scenario run supplies to Scribe, shared by
+ * the runner (context construction) and the scorer (grounding must consult
+ * exactly the context the model saw — no more, no less).
+ */
+export const DEFAULT_CONTEXT_WINDOW = 30;
+
 export type TextExpectation = string | { anyOf: string[] };
 
 export interface EvalSender {
@@ -117,6 +124,19 @@ export interface ForbiddenHit {
   actual: string;
 }
 
+/**
+ * Per-scenario evidence-grounding tallies (provenance plan #3). Mirrors the
+ * Registrar's deterministic check: context-bleed claims are excluded from
+ * scoring because the pipeline rejects them before persistence; unmatched
+ * claims stay (the pipeline keeps them, flagged).
+ */
+export interface GroundingSummary {
+  totalClaims: number;
+  grounded: number;
+  contextBleed: number;
+  unmatched: number;
+}
+
 export interface ScenarioScore {
   scenarioId: string;
   description: string;
@@ -127,6 +147,7 @@ export interface ScenarioScore {
   hardFailed: boolean;
   categories: CategoryScore[];
   forbiddenHits: ForbiddenHit[];
+  grounding: GroundingSummary;
 }
 
 export interface EvalReport {
@@ -137,6 +158,8 @@ export interface EvalReport {
   aggregateScore: number;
   aggregatePrecision: number;
   aggregateRecall: number;
+  /** Fraction of extracted claims whose evidence did not ground in the current message (context-bleed + unmatched). 0 when no claims. */
+  groundingFailureRate: number;
   passed: boolean;
   scenarioScores: ScenarioScore[];
 }

@@ -19,6 +19,12 @@ export interface StrengthFactors {
   llmScore?: number;
   llmReasoning?: string;
   evaluationTriggered?: string[]; // Reasons for LLM evaluation
+  /**
+   * Set to 'failed' when the claim's evidence span matched neither the current
+   * message nor context (paraphrase or hallucination — see grounding.ts).
+   * Definite context bleed is rejected outright and never reaches analysis.
+   */
+  grounding?: 'failed';
 }
 
 /**

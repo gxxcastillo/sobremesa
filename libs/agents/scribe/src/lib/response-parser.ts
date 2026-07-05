@@ -266,6 +266,7 @@ export function parseScribeResponse(
     claimType: c.claim_type,
     subject: c.subject,
     claimValue: c.claim_value,
+    evidence: c.evidence,
     confidence: inferConfidence(c.certainty_language),
     certaintyLanguage: c.certainty_language,
     claimedBySource: c.claimed_by_source,

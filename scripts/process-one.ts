@@ -36,8 +36,8 @@ async function main() {
   // Set up processor
   const processor = new MessageProcessor({ dbClient: client });
   processor.setScribe((eventId, familyId) => scribe.process(eventId, familyId));
-  processor.setRegistrar((model, familyId) =>
-    registrar.persist(model, familyId),
+  processor.setRegistrar((model, familyId, versions, contextContents) =>
+    registrar.persist(model, familyId, versions, contextContents),
   );
 
   // Dequeue one item

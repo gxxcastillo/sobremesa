@@ -50,6 +50,14 @@ export interface ExtractedClaim {
   claimType: string;
   subject: string;
   claimValue: string | Record<string, unknown>;
+  /**
+   * Verbatim span from the current message supporting the claim. Required in
+   * the Scribe LLM contract (schema fails loud without it); optional here so
+   * non-Scribe constructors (tests, fixtures) can omit it — the Registrar
+   * treats a missing/unmatchable span as a grounding failure to flag, never
+   * as grounds to reject.
+   */
+  evidence?: string;
   confidence: Confidence;
   certaintyLanguage?: string;
   contextOriginal?: string;

@@ -56,6 +56,14 @@ Scribe responsibilities:
   only for attributed/hearsay claims, `attributed_to` — the person the speaker attributes the fact
   to (e.g. "Mom always said..." → `attributed_to: "Mom"`). Scribe does not output a speaker name;
   the pipeline stamps that deterministically (see §3.4).
+- Every claim carries a required `evidence` field: a short verbatim span from the current message
+  supporting the claim (never paraphrased, never quoted from context). A claim without evidence
+  fails the parse loud, like any other malformed entity data. The Registrar verifies the span
+  deterministically (see §3.4).
+- Bare agreements with another family member's context message assert a stance, not the fact (the
+  fact was already extracted from the original message) — no claim is emitted. Confirming a tracked
+  bot question is the exception: bot questions are never themselves recorded, so a confirmation
+  asserts the confirmed fact, evidenced by the reply's own words.
 
 ## 3.4 Registrar Contract
 
@@ -78,6 +86,22 @@ extracted text, so a claim can never be misattributed regardless of what the ext
 participants, which are `people` records, not `identities`). `attributed_to`, when present on the
 extraction, is persisted verbatim as free text — it is not entity-resolved and carries no
 attribution guarantee beyond what the speaker said.
+
+Every claim's `evidence` span is verified deterministically before persistence (grounding check).
+The span and the candidate texts are normalized identically (lowercase, diacritics folded,
+punctuation collapsed) and containment is whole-word anchored. Three-way rule:
+
+- Evidence appears in the current message → grounded; the claim persists normally.
+- Evidence appears only in a prior context message (the recent window or the replied-to message,
+  both supplied by the processor) → definite context bleed; the claim is **rejected** before it can
+  drive entity resolution or merges, with a WARN log and a `claim_rejected` event-log entry.
+- Evidence matches neither → the claim persists but its claim-analysis `strength_factors` records
+  `grounding: 'failed'` (paraphrase and hallucination are indistinguishable here; the rate is
+  measured by the eval harness before any escalation to rejection).
+
+The answered-bot-question text is deliberately excluded from the bleed check: bot outbound text is
+never extracted, so evidence matching only a bot question flags rather than rejects. A message with
+no retrievable content (e.g. media without caption) can only flag, never reject.
 
 ## 3.5 Question Answering and Sending
 

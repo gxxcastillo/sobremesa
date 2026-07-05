@@ -82,6 +82,7 @@ export const pipelineSnapshotScenarios: PipelineSnapshotScenario[] = [
               claim_type: 'location',
               subject: 'Rosa',
               claim_value: 'moved to Guadalajara around 1965',
+              evidence: 'moved from Oaxaca to Guadalajara around 1965',
               claimed_by_source: 'direct',
               referenced_places: ['Guadalajara'],
             },
@@ -184,6 +185,7 @@ export const pipelineSnapshotScenarios: PipelineSnapshotScenario[] = [
               claim_type: 'date',
               subject: "Sofia's wedding",
               claim_value: 'June 2022',
+              evidence: "Sofia's wedding in Puerto Vallarta was in June 2022",
               claimed_by_source: 'direct',
               referenced_people: ['Sofia'],
               referenced_places: ['Puerto Vallarta'],
@@ -211,6 +213,9 @@ export const pipelineSnapshotScenarios: PipelineSnapshotScenario[] = [
               claim_type: 'detail',
               subject: "Sofia's wedding",
               claim_value: 'Carlos walked Sofia down the aisle',
+              // Verbatim from the message; the pronoun-resolved claim_value
+              // legitimately differs from the quoted evidence span.
+              evidence: 'Carlos walked her down the aisle',
               claimed_by_source: 'direct',
               referenced_people: ['Carlos', 'Sofia'],
             },
@@ -294,6 +299,7 @@ export const pipelineSnapshotScenarios: PipelineSnapshotScenario[] = [
               claim_type: 'date',
               subject: 'Ernesto',
               claim_value: '1939',
+              evidence: 'Grandpa Ernesto was born in 1939',
               claimed_by_source: 'hearsay',
               attributed_to: 'Mom',
             },

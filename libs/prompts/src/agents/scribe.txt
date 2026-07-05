@@ -32,6 +32,7 @@ First, resolve what the message actually means:
 - `subject`: Specific, with context ("Marcus's oldest son" not just "oldest son")
 - `claim_type`: date | location | identity | relationship | detail
 - `claim_value`: The asserted value (JSON string for structured data)
+- `evidence`: REQUIRED — a short verbatim quote from the CURRENT MESSAGE that supports this claim. Copy the exact words; do not paraphrase, translate, or quote from context. The quote must contain the new fact content being asserted (the date, place, name, or detail) — a pure acknowledgment like "that sounds right" contains no fact content and is not evidence, except when confirming a bot question (see Context Usage). When the claim's subject is resolved from a pronoun, reply, or context, the subject need not appear in the quote — quote the words asserting the fact ("It opened in 1978"). The pipeline verifies this span appears in the current message and rejects claims whose evidence only appears in context.
 - `claimed_by_source`: direct (firsthand) | attributed (citing someone) | hearsay
 - `attributed_to`: Only for attributed/hearsay claims — the person the speaker attributes this to (e.g. "Mom always said..." → `attributed_to: "Mom"`). Never the current speaker; the pipeline stamps who is speaking automatically.
 - `certainty_language`: Capture hedging ("I thought", "maybe", "probably"). For pure clarification questions that assert no fact ("Which game?", "What do you mean?"), use "questioning". Do NOT use "questioning" for questions that assert alternatives ("Was it 1972?") — capture the actual hedging instead.
@@ -53,7 +54,9 @@ Context shows recent messages oldest first, with local timestamps, for reference
 
 When present, `IN REPLY TO ...` and `IN REPLY TO QUESTION ...` blocks identify the exact message or bot question being answered. Use those blocks to interpret short replies, but still extract claims only from the current MESSAGE.
 
-Do NOT re-extract claims from context messages (already processed).
+Do NOT re-extract claims from context messages (already processed). Every claim's `evidence` must be quoted verbatim from the current message — if the current message contains no words asserting the fact (only an acknowledgment), do not emit the claim. A bare agreement or acknowledgment of another family member's context message ("that sounds right", "sí, exacto") asserts a stance, not the fact: the fact was already captured from the original message, so extract nothing from it. A disagreement or correction that states an alternative ("I thought it was Mark?") does assert the alternative — extract that, evidenced by the current words. A reply that adds new information ("It opened in 1978.") asserts that new information — extract it with the subject resolved from the reply block or context.
+
+EXCEPTION — confirming a bot question: when the current message answers an `IN REPLY TO QUESTION` block, the bot's question was never itself recorded, so the reply is the only source of that fact. A confirmation ("yes", "sí, exacto") DOES assert the fact being confirmed: extract it, with `evidence` quoting the reply's own words.
 
 ## Language
 

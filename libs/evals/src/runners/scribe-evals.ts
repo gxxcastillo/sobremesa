@@ -25,6 +25,7 @@ import type {
 } from '@sobremesa/shared-types';
 import { buildReport, buildSuiteReport } from '../lib/scorer';
 import {
+  DEFAULT_CONTEXT_WINDOW,
   selectScenarios,
   type EvalMessage,
   type EvalSender,
@@ -37,7 +38,6 @@ import { scribeEvalScenarios } from '../scenarios/scribe-scenarios';
 
 const DEFAULT_THRESHOLD = 0.8;
 const DEFAULT_BASE_TIME = new Date('2026-01-15T18:00:00.000Z');
-const DEFAULT_CONTEXT_WINDOW = 30;
 
 interface CliOptions {
   threshold: number;
@@ -466,6 +466,12 @@ function printReport(report: EvalReport): void {
         `  forbidden ${hit.category}: expected no "${hit.expected}", saw "${hit.actual}"`,
       );
     }
+    const { grounding } = scenario;
+    if (grounding.contextBleed > 0 || grounding.unmatched > 0) {
+      console.log(
+        `  grounding: ${grounding.grounded}/${grounding.totalClaims} grounded, ${grounding.contextBleed} context-bleed rejected, ${grounding.unmatched} unmatched (kept, flagged)`,
+      );
+    }
   }
   console.log(
     '----------------------------------------------------------------',
@@ -473,9 +479,9 @@ function printReport(report: EvalReport): void {
   console.log(
     `Aggregate ${formatScore(report.aggregateScore)} precision ${formatScore(
       report.aggregatePrecision,
-    )} recall ${formatScore(report.aggregateRecall)}: ${
-      report.passed ? 'PASS' : 'FAIL'
-    }`,
+    )} recall ${formatScore(report.aggregateRecall)} grounding-failure ${formatScore(
+      report.groundingFailureRate,
+    )}: ${report.passed ? 'PASS' : 'FAIL'}`,
   );
 }
 

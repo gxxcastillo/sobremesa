@@ -44,6 +44,7 @@ export type EventLogType =
   | 'event_redacted'
   | 'event_unredacted'
   | 'image_linked'
+  | 'claim_rejected'
   | 'question_proposed'
   | 'question_asked'
   | 'question_answered'

@@ -35,6 +35,7 @@ import {
   nameMentionedInTokens,
   wordTokens,
 } from './name-match';
+import { createGrounder } from './grounding';
 import {
   EntityMatcherService,
   ConflictDetectorService,
@@ -225,6 +226,8 @@ export interface PersistResult {
   storiesCreated: number;
   storiesUpdated: number;
   claimsCreated: number;
+  /** Claims rejected by the grounding check (evidence matched context, not the current message) */
+  claimsRejected: number;
   conflictsDetected: number;
   relationshipsCreated: number;
   imageReferencesProcessed: number;
@@ -386,6 +389,13 @@ export class RegistrarAgent {
     domainModel: ScribeDomainModel,
     familyId: string,
     pipelineVersions?: { internVersion?: string; scribeVersion?: string },
+    /**
+     * Contents of the prior context messages the extraction saw (recent
+     * window + replied-to message). Used by the grounding check to detect
+     * context bleed; without it, ungrounded evidence can only be flagged,
+     * never rejected.
+     */
+    contextContents: string[] = [],
   ): Promise<void> {
     this.logger.info(
       { familyId, conversationEventId: domainModel.conversationEventId },
@@ -400,6 +410,7 @@ export class RegistrarAgent {
       storiesCreated: 0,
       storiesUpdated: 0,
       claimsCreated: 0,
+      claimsRejected: 0,
       conflictsDetected: 0,
       relationshipsCreated: 0,
       imageReferencesProcessed: 0,
@@ -834,6 +845,12 @@ export class RegistrarAgent {
       }
 
       // 6. Process Claims (with conflict detection and identity resolution)
+      // One grounder per persist: current message + context normalized once,
+      // checked against every claim's evidence span.
+      const grounder = createGrounder(
+        sourceEvent?.contentOriginal ?? undefined,
+        contextContents,
+      );
       for (const claim of domainModel.claims) {
         // Skip claims with unresolved pronoun subjects
         const pronouns = [
@@ -884,6 +901,55 @@ export class RegistrarAgent {
             'Skipping claim with invalid type (not in database constraint)',
           );
           continue;
+        }
+
+        // Deterministic grounding check (spec §3.4): claims are
+        // current-message-only by contract, and the evidence span proves it
+        // without trusting the model. Runs before entity resolution so a
+        // bled claim can't drive identity merges or entity links either.
+        const grounding = grounder.ground(claim.evidence);
+        if (grounding === 'context_bleed') {
+          this.logger.warn(
+            {
+              familyId,
+              conversationEventId,
+              subject: claim.subject,
+              claimType: claim.claimType,
+              evidence: claim.evidence,
+            },
+            'Rejecting claim: evidence matches a context message, not the current message (context bleed)',
+          );
+          await this.eventLog.log({
+            familyId,
+            eventType: 'claim_rejected',
+            eventCategory: 'system_event',
+            actor: 'registrar',
+            actorType: 'system',
+            conversationEventId,
+            eventData: {
+              reason: 'context_bleed',
+              subject: claim.subject,
+              claimType: claim.claimType,
+              evidence: claim.evidence,
+            },
+            severity: 'warning',
+          });
+          result.claimsRejected++;
+          continue;
+        }
+        if (grounding === 'unmatched') {
+          // Paraphrased evidence is expected occasionally; keep the claim but
+          // flag it in the analysis record (measure before punishing).
+          this.logger.warn(
+            {
+              familyId,
+              conversationEventId,
+              subject: claim.subject,
+              claimType: claim.claimType,
+              evidence: claim.evidence,
+            },
+            'Claim evidence matches neither current message nor context; keeping claim with grounding=failed',
+          );
         }
 
         // Find entity ID if we can resolve it
@@ -1141,6 +1207,12 @@ export class RegistrarAgent {
           contradictingConflicts.length,
           isHighStakes,
         );
+
+        // Record an unmatched evidence span in the (mutable) analysis
+        // factors so the grounding-failure rate is measurable per claim.
+        if (grounding === 'unmatched') {
+          strengthResult.factors.grounding = 'failed';
+        }
 
         // Get existing claims with their strengths for conflict resolution
         const existingClaimsForResolution =

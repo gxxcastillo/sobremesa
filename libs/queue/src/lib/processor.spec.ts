@@ -273,7 +273,12 @@ describe('MessageProcessor', () => {
     expect(historianProcessor).toHaveBeenCalledWith(EVENT_ID, FAMILY_ID);
     expect(scribe).toHaveBeenCalled();
     expect(callOrder).toEqual(['historian', 'scribe']);
-    expect(registrar).toHaveBeenCalledWith(domainModel, FAMILY_ID, undefined);
+    expect(registrar).toHaveBeenCalledWith(
+      domainModel,
+      FAMILY_ID,
+      undefined,
+      expect.any(Array),
+    );
     expect(mockQueueRepo.complete).not.toHaveBeenCalled();
   });
 
@@ -310,8 +315,47 @@ describe('MessageProcessor', () => {
 
     expect(result.success).toBe(true);
     expect(scribe).toHaveBeenCalled();
-    expect(registrar).toHaveBeenCalledWith(domainModel, FAMILY_ID, undefined);
+    expect(registrar).toHaveBeenCalledWith(
+      domainModel,
+      FAMILY_ID,
+      undefined,
+      expect.any(Array),
+    );
     expect(mockQueueRepo.complete).not.toHaveBeenCalled();
+  });
+
+  it('passes context message contents (recent + replied-to, not bot question) to the registrar for grounding', async () => {
+    mockEventRepo.findById.mockResolvedValue({
+      ...baseEvent,
+      externalReplyToId: '42',
+    });
+    mockEventRepo.findRecent.mockResolvedValue([
+      {
+        id: 'event-prev',
+        contentOriginal: 'Rosa moved to Guadalajara.',
+        actorDisplayName: 'Marta',
+        occurredAt: new Date('2026-01-02T12:00:00Z'),
+      },
+    ]);
+    mockEventRepo.findByExternalId.mockResolvedValue({
+      id: 'reply-event',
+      contentOriginal: 'The wedding was in 1982.',
+      actorDisplayName: 'Carlos',
+      occurredAt: new Date('2026-01-01T12:00:00Z'),
+    });
+    const processor = createProcessor();
+    const domainModel = createBaseDomainModel();
+    processor.setScribe(vi.fn().mockResolvedValue(domainModel));
+    const registrar = vi.fn().mockResolvedValue(undefined);
+    processor.setRegistrar(registrar);
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(true);
+    expect(registrar).toHaveBeenCalledWith(domainModel, FAMILY_ID, undefined, [
+      'Rosa moved to Guadalajara.',
+      'The wedding was in 1982.',
+    ]);
   });
 
   it('passes answered bot-question context to Scribe', async () => {
