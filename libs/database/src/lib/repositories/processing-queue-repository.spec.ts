@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ProcessingQueueRepository } from './processing-queue-repository';
 import { QueuePriority } from '@sobremesa/shared-types';
 
 // Mock Supabase client
 const mockSupabaseClient = {
   from: vi.fn(),
+  rpc: vi.fn(),
 };
 
 // Helper to create chainable mock
@@ -288,49 +292,38 @@ describe('ProcessingQueueRepository - dequeue', () => {
   });
 
   it('should return null when queue is empty', async () => {
-    // Both queries return empty
-    const emptyChain = createChainableMock({ data: [], error: null });
-    mockSupabaseClient.from.mockReturnValue(emptyChain);
+    mockSupabaseClient.rpc.mockResolvedValue({ data: [], error: null });
 
     const result = await queueRepo.dequeue('fam1', 'worker-1');
 
     expect(result).toBeNull();
+    expect(mockSupabaseClient.rpc).toHaveBeenCalledWith(
+      'dequeue_processing_queue_item',
+      {
+        p_worker_id: 'worker-1',
+        p_lock_timeout_ms: 300000,
+        p_family_id: 'fam1',
+      },
+    );
   });
 
   it('should lock and return queued item', async () => {
-    const queuedItem = {
+    const lockedItem = {
       id: 'q1',
       family_id: 'fam1',
       conversation_event_id: 'event-1',
-      status: 'queued',
+      status: 'processing',
       attempts: 0,
       priority: 100,
       process_after: new Date(Date.now() - 1000).toISOString(), // In the past
       queued_at: new Date().toISOString(),
-    };
-
-    const lockedItem = {
-      ...queuedItem,
-      status: 'processing',
       locked_at: new Date().toISOString(),
       locked_by: 'worker-1',
     };
 
-    // First call: select queued items
-    const selectChain = createChainableMock({
-      data: [queuedItem],
-      error: null,
-    });
-    // Second call: update to lock
-    const updateChain = createChainableMock({
+    mockSupabaseClient.rpc.mockResolvedValue({
       data: [lockedItem],
       error: null,
-    });
-
-    let callCount = 0;
-    mockSupabaseClient.from.mockImplementation(() => {
-      callCount++;
-      return callCount === 1 ? selectChain : updateChain;
     });
 
     const result = await queueRepo.dequeue('fam1', 'worker-1');
@@ -342,7 +335,7 @@ describe('ProcessingQueueRepository - dequeue', () => {
   });
 
   it('should pick up stale processing items', async () => {
-    const staleItem = {
+    const releasedItem = {
       id: 'q1',
       family_id: 'fam1',
       conversation_event_id: 'event-1',
@@ -350,40 +343,95 @@ describe('ProcessingQueueRepository - dequeue', () => {
       attempts: 1,
       priority: 100,
       process_after: new Date(Date.now() - 1000).toISOString(),
-      locked_at: new Date(Date.now() - 400000).toISOString(), // 6+ minutes ago (stale)
-      locked_by: 'dead-worker',
+      locked_at: new Date().toISOString(),
+      locked_by: 'worker-1',
       queued_at: new Date().toISOString(),
     };
 
-    const releasedItem = {
-      ...staleItem,
-      locked_at: new Date().toISOString(),
-      locked_by: 'worker-1',
-    };
-
-    // First call: select queued items (empty)
-    const emptyChain = createChainableMock({ data: [], error: null });
-    // Second call: select stale processing items
-    const staleChain = createChainableMock({ data: [staleItem], error: null });
-    // Third call: update to re-lock
-    const updateChain = createChainableMock({
+    mockSupabaseClient.rpc.mockResolvedValue({
       data: [releasedItem],
       error: null,
     });
 
-    let callCount = 0;
-    mockSupabaseClient.from.mockImplementation(() => {
-      callCount++;
-      if (callCount === 1) return emptyChain;
-      if (callCount === 2) return staleChain;
-      return updateChain;
-    });
-
-    const result = await queueRepo.dequeue('fam1', 'worker-1');
+    const result = await queueRepo.dequeue('fam1', 'worker-1', 300000);
 
     expect(result).not.toBeNull();
     expect(result?.id).toBe('q1');
     expect(result?.lockedBy).toBe('worker-1');
+  });
+
+  it('should surface database dequeue errors', async () => {
+    mockSupabaseClient.rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'function failed' },
+    });
+
+    await expect(queueRepo.dequeue('fam1', 'worker-1')).rejects.toThrow(
+      'Failed to dequeue queue item: function failed',
+    );
+  });
+});
+
+describe('ProcessingQueueRepository - dequeueAny', () => {
+  let queueRepo: ProcessingQueueRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queueRepo = new ProcessingQueueRepository(mockSupabaseClient as any);
+  });
+
+  it('should call the shared dequeue function without a family scope', async () => {
+    const lockedItem = {
+      id: 'q-y',
+      family_id: 'family-y',
+      conversation_event_id: 'event-y',
+      status: 'processing',
+      attempts: 0,
+      priority: 5,
+      process_after: new Date(Date.now() - 1000).toISOString(),
+      queued_at: new Date().toISOString(),
+      locked_at: new Date().toISOString(),
+      locked_by: 'worker-1',
+    };
+    mockSupabaseClient.rpc.mockResolvedValue({
+      data: [lockedItem],
+      error: null,
+    });
+
+    const result = await queueRepo.dequeueAny('worker-1', 120000);
+
+    expect(result?.id).toBe('q-y');
+    expect(result?.familyId).toBe('family-y');
+    expect(mockSupabaseClient.rpc).toHaveBeenCalledWith(
+      'dequeue_processing_queue_item',
+      {
+        p_worker_id: 'worker-1',
+        p_lock_timeout_ms: 120000,
+        p_family_id: null,
+      },
+    );
+  });
+});
+
+describe('processing queue dequeue migration', () => {
+  it('should enforce per-family in-flight exclusion in the database function', () => {
+    const migration = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        '../../../../../apps/db/supabase/migrations/20260705120000_processing_queue_per_family_dequeue.sql',
+      ),
+      'utf8',
+    );
+
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION public.dequeue_processing_queue_item',
+    );
+    expect(migration).toContain('FOR UPDATE OF q, f SKIP LOCKED');
+    expect(migration).toContain("inflight.status = 'processing'");
+    expect(migration).toContain('inflight.family_id = q.family_id');
+    expect(migration).toContain(
+      'Queued rows are skipped for families that already have status=processing',
+    );
   });
 });
 

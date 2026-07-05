@@ -101,6 +101,10 @@ name is `Clio` (`libs/agents/historian/src/lib/types.ts`).
 3. **Single writer.** Only the Registrar writes core entity/claim tables from the pipeline.
 4. **Conflicts are data.** Contradictory claims are linked, never deleted or auto-merged.
 5. **Ordered, sequential processing per family.** The queue processes one event at a time in order so
-   that pronoun/context resolution is deterministic.
+   that pronoun/context resolution is deterministic. The database dequeue function skips queued
+   candidates for any family that already has an in-flight `processing` row, so concurrent workers
+   may process different families without interleaving one family's events. Telegram long-polling
+   and the in-memory outbound send queue remain deliberate single-instance constraints outside this
+   processing invariant.
 6. **Entity resolution favors precision.** False merges are worse than duplicates; matching must be
    structurally anchored and high-confidence.

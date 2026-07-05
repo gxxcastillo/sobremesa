@@ -87,158 +87,46 @@ export class ProcessingQueueRepository {
   }
 
   /**
-   * Dequeue the next item for processing.
-   * Implements locking to prevent duplicate processing.
-   * Orders by priority (ascending, lower = higher priority), then by queued_at.
-   * Only returns items where process_after <= NOW (for debouncing support).
+   * Dequeue the next item for processing from one family.
    */
   async dequeue(
     familyId: string,
     workerId: string,
     lockTimeoutMs = 300000,
   ): Promise<QueueItem | null> {
-    const lockExpiry = new Date(Date.now() - lockTimeoutMs).toISOString();
-    const now = new Date().toISOString();
-
-    // Find the next available item (respecting process_after for debouncing)
-    const { data: queuedItems, error: selectError } = await this.client
-      .from(this.tableName)
-      .select('*')
-      .eq('family_id', familyId)
-      .eq('status', 'queued')
-      .lte('process_after', now)
-      .order('priority', { ascending: true })
-      .order('queued_at', { ascending: true })
-      .limit(1);
-
-    if (selectError) {
-      throw new Error(`Failed to find queue item: ${selectError.message}`);
-    }
-
-    // If no queued items ready, try stale processing items
-    let itemToLock = queuedItems?.[0];
-    if (!itemToLock) {
-      const { data: staleItems, error: staleError } = await this.client
-        .from(this.tableName)
-        .select('*')
-        .eq('family_id', familyId)
-        .eq('status', 'processing')
-        .lt('locked_at', lockExpiry)
-        .lte('process_after', now)
-        .order('priority', { ascending: true })
-        .order('queued_at', { ascending: true })
-        .limit(1);
-
-      if (staleError) {
-        throw new Error(
-          `Failed to find stale queue item: ${staleError.message}`,
-        );
-      }
-      itemToLock = staleItems?.[0];
-    }
-
-    if (!itemToLock) {
-      return null;
-    }
-
-    // Lock the item
-    const { data: lockedItems, error: updateError } = await this.client
-      .from(this.tableName)
-      .update({
-        status: 'processing',
-        locked_at: new Date().toISOString(),
-        locked_by: workerId,
-      })
-      .eq('id', itemToLock.id)
-      .eq('status', itemToLock.status)
-      .select();
-
-    if (updateError) {
-      throw new Error(`Failed to lock queue item: ${updateError.message}`);
-    }
-
-    // If another worker grabbed it first, retry
-    if (!lockedItems?.[0]) {
-      return this.dequeue(familyId, workerId, lockTimeoutMs);
-    }
-
-    return mapRowToCamelCase<QueueItem>(lockedItems[0]);
+    return this.dequeueFromDatabase(workerId, lockTimeoutMs, familyId);
   }
 
   /**
    * Dequeue the next item from any family for processing.
-   * Used for multi-family queue processing.
-   * Orders by priority (ascending, lower = higher priority), then by queued_at.
-   * Only returns items where process_after <= NOW (for debouncing support).
    */
   async dequeueAny(
     workerId: string,
     lockTimeoutMs = 300000,
   ): Promise<QueueItem | null> {
-    const lockExpiry = new Date(Date.now() - lockTimeoutMs).toISOString();
-    const now = new Date().toISOString();
+    return this.dequeueFromDatabase(workerId, lockTimeoutMs);
+  }
 
-    // Find queued items ready for processing (respecting process_after)
-    const { data: queuedItems, error: selectError } = await this.client
-      .from(this.tableName)
-      .select('*')
-      .eq('status', 'queued')
-      .lte('process_after', now)
-      .order('priority', { ascending: true })
-      .order('queued_at', { ascending: true })
-      .limit(1);
+  private async dequeueFromDatabase(
+    workerId: string,
+    lockTimeoutMs: number,
+    familyId?: string,
+  ): Promise<QueueItem | null> {
+    const { data, error } = await this.client.rpc(
+      'dequeue_processing_queue_item',
+      {
+        p_worker_id: workerId,
+        p_lock_timeout_ms: lockTimeoutMs,
+        p_family_id: familyId ?? null,
+      },
+    );
 
-    if (selectError) {
-      throw new Error(`Failed to find queue item: ${selectError.message}`);
+    if (error) {
+      throw new Error(`Failed to dequeue queue item: ${error.message}`);
     }
 
-    // If no queued items ready, try stale processing items
-    let itemToLock = queuedItems?.[0];
-    if (!itemToLock) {
-      const { data: staleItems, error: staleError } = await this.client
-        .from(this.tableName)
-        .select('*')
-        .eq('status', 'processing')
-        .lt('locked_at', lockExpiry)
-        .lte('process_after', now)
-        .order('priority', { ascending: true })
-        .order('queued_at', { ascending: true })
-        .limit(1);
-
-      if (staleError) {
-        throw new Error(
-          `Failed to find stale queue item: ${staleError.message}`,
-        );
-      }
-      itemToLock = staleItems?.[0];
-    }
-
-    if (!itemToLock) {
-      return null;
-    }
-
-    // Lock the item
-    const { data: lockedItems, error: updateError } = await this.client
-      .from(this.tableName)
-      .update({
-        status: 'processing',
-        locked_at: new Date().toISOString(),
-        locked_by: workerId,
-      })
-      .eq('id', itemToLock.id)
-      .eq('status', itemToLock.status)
-      .select();
-
-    if (updateError) {
-      throw new Error(`Failed to lock queue item: ${updateError.message}`);
-    }
-
-    // If another worker grabbed it first, retry
-    if (!lockedItems?.[0]) {
-      return this.dequeueAny(workerId, lockTimeoutMs);
-    }
-
-    return mapRowToCamelCase<QueueItem>(lockedItems[0]);
+    const row = Array.isArray(data) ? data[0] : data;
+    return row ? mapRowToCamelCase<QueueItem>(row) : null;
   }
 
   /**
