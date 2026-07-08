@@ -8,7 +8,7 @@ import {
   type AIConfig,
   type AIProvider,
 } from '@sobremesa/ai-provider';
-import { ScribeAgent } from '@sobremesa/agents-scribe';
+import { DEFAULT_SCRIBE_CONFIG, ScribeAgent } from '@sobremesa/agents-scribe';
 import type {
   ConversationEventRepository,
   FamilyRepository,
@@ -45,6 +45,7 @@ interface CliOptions {
   providerNames: string[];
   list: boolean;
   json: boolean;
+  dump: boolean;
 }
 
 interface ProviderSetup {
@@ -108,6 +109,7 @@ function parseArgs(argv: string[]): CliOptions {
     providerNames: [],
     list: false,
     json: false,
+    dump: false,
   };
 
   for (let index = 0; index < argv.length; index++) {
@@ -130,6 +132,9 @@ function parseArgs(argv: string[]): CliOptions {
         break;
       case '--json':
         options.json = true;
+        break;
+      case '--dump':
+        options.dump = true;
         break;
       case '--help':
       case '-h':
@@ -156,7 +161,8 @@ Options:
   --scenario <id>     Run only one scenario. Repeat to run several.
   --provider <name>   Live provider to run: anthropic or local. Repeat to run both.
   --threshold <n>     Aggregate pass threshold. Default: ${DEFAULT_THRESHOLD}.
-  --json              Print the report as JSON.`);
+  --json              Print the report as JSON.
+  --dump              Print each scenario's raw extracted domain models (diagnosis aid).`);
 }
 
 function createProviders(options: CliOptions): ProviderSetup[] {
@@ -435,7 +441,7 @@ function printReport(report: EvalReport): void {
   console.log('Scribe Evaluation Report');
   console.log(`Generated: ${report.generatedAt.toISOString()}`);
   console.log(`Provider:  ${report.provider}`);
-  console.log(`Model:     ${report.model}`);
+  console.log(`Model:     ${report.model} (temperature ${report.temperature})`);
   console.log(`Threshold: ${formatScore(report.threshold)}`);
   console.log(
     `Baseline:  ${formatScore(report.aggregateScore)} (record this first real run as the initial baseline)`,
@@ -509,6 +515,9 @@ function printSuiteReport(report: EvalSuiteReport): void {
   console.log(`Generated: ${report.generatedAt.toISOString()}`);
   console.log(`Threshold: ${formatScore(report.threshold)}`);
   console.log(`Baseline:  ${report.baselineProvider}`);
+  console.log(
+    `Temperature: ${report.reports[0]?.temperature ?? DEFAULT_SCRIBE_CONFIG.temperature}`,
+  );
   console.log('');
   console.log('Providers:');
   for (const column of report.providerColumns) {
@@ -601,13 +610,26 @@ async function main(): Promise<void> {
     const results: ScenarioRunResult[] = [];
     for (const scenario of scenarios) {
       console.log(`Running ${providerSetup.id}/${scenario.id}...`);
-      results.push(
-        await runScenario(
-          scenario,
-          providerSetup.provider,
-          providerSetup.model,
-        ),
+      const result = await runScenario(
+        scenario,
+        providerSetup.provider,
+        providerSetup.model,
       );
+      results.push(result);
+      if (options.dump) {
+        console.log(
+          JSON.stringify(
+            {
+              scenarioId: scenario.id,
+              provider: providerSetup.id,
+              outputs: result.outputs,
+              error: result.error?.message,
+            },
+            null,
+            2,
+          ),
+        );
+      }
     }
 
     reports.push(
@@ -615,6 +637,7 @@ async function main(): Promise<void> {
         results,
         provider: providerSetup.id,
         model: providerSetup.model,
+        temperature: DEFAULT_SCRIBE_CONFIG.temperature,
         threshold: options.threshold,
       }),
     );

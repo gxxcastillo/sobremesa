@@ -6,6 +6,12 @@ import type { SupportedLanguage } from '@sobremesa/shared-types';
 export interface ScribeConfig {
   /** Maximum tokens for response */
   maxTokens: number;
+  /**
+   * Sampling temperature for extraction requests. Pinned (not provider
+   * default) so identical messages extract identically and eval run-to-run
+   * spread measures the pipeline rather than the sampler.
+   */
+  temperature: number;
   /** Extraction thoroughness level */
   thoroughness: 'essential' | 'standard' | 'comprehensive';
   /** Confidence threshold for extraction */
@@ -23,6 +29,7 @@ export interface ScribeConfig {
  */
 export const DEFAULT_SCRIBE_CONFIG: ScribeConfig = {
   maxTokens: 4096,
+  temperature: 0,
   thoroughness: 'standard',
   confidence: 'moderate',
   culturalTerms: [],

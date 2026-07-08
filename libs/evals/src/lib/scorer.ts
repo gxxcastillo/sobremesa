@@ -464,6 +464,7 @@ export function buildReport(options: {
   results: ScenarioRunResult[];
   provider: string;
   model: string;
+  temperature: number;
   threshold: number;
 }): EvalReport {
   const scenarioScores = options.results.map((result) =>
@@ -490,6 +491,7 @@ export function buildReport(options: {
     generatedAt: new Date(),
     provider: options.provider,
     model: options.model,
+    temperature: options.temperature,
     threshold: options.threshold,
     aggregateScore,
     aggregatePrecision,

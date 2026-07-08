@@ -154,6 +154,8 @@ export interface EvalReport {
   generatedAt: Date;
   provider: string;
   model: string;
+  /** Sampling temperature the run used, so recorded baselines are comparable across runs. */
+  temperature: number;
   threshold: number;
   aggregateScore: number;
   aggregatePrecision: number;

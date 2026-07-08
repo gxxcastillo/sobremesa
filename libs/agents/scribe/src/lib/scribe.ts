@@ -202,6 +202,7 @@ export class ScribeAgent {
       const response = await this.provider.complete({
         model: this.model,
         maxTokens: config.maxTokens,
+        temperature: config.temperature,
         system: systemPrompt,
         enablePromptCache: true, // Cache system prompt (90% cost savings on reuse)
         messages: [{ role: 'user', content: userMessage }],

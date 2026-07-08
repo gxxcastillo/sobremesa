@@ -48,6 +48,11 @@ Prompt templates are filled from family config and runtime values:
 Scribe uses JSON-schema constrained structured output. Pipeline version strings and token usage are
 recorded for audit/cost tracking.
 
+Scribe requests pin sampling temperature (default `0`, set in `ScribeConfig`) rather than inheriting
+the provider default, so identical messages extract identically and eval run-to-run spread measures
+the pipeline rather than the sampler. The same pinned value applies in production and in Tier-1
+evals — scored sampling behavior is production sampling behavior.
+
 ## 5.5 Evaluation
 
 Extraction quality is evaluated outside normal tests through `libs/evals`.
@@ -56,7 +61,9 @@ Extraction quality is evaluated outside normal tests through `libs/evals`.
   in-memory repositories and scored scenario goldens. These scenarios check required people, places,
   events, relationships, stories, claims, attribution fields, and forbidden extractions. The runner
   starts with a `0.8` aggregate threshold, prints the first real run's score as the baseline, and can
-  report Anthropic and local provider columns side by side with a diagnostic capability gap.
+  report Anthropic and local provider columns side by side with a diagnostic capability gap. Reports
+  record the sampling temperature alongside provider and model so recorded baselines are comparable
+  across runs.
 - **Tier 2: pipeline golden snapshots.** Deterministic local-DB runs use canned Scribe JSON/mock
   provider responses to drive `MessageProcessor` through Registrar persistence and compare stable DB
   snapshots while ignoring IDs and timestamps. The local-DB runner must refuse non-local Supabase

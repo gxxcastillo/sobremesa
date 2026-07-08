@@ -15,6 +15,7 @@ function report(
     generatedAt: new Date('2026-01-01T00:00:00.000Z'),
     provider,
     model: `${provider}-model`,
+    temperature: 0,
     threshold: 0.8,
     aggregateScore:
       scenarioScores.reduce((sum, [, score]) => sum + score, 0) /
@@ -202,6 +203,7 @@ describe('scoreScenario — grounding filter (provenance #3)', () => {
       results: [run],
       provider: 'anthropic',
       model: 'test-model',
+      temperature: 0,
       threshold: 0.8,
     });
 
