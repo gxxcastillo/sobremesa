@@ -283,7 +283,7 @@ describe('ProcessingQueueRepository - fail', () => {
   });
 });
 
-describe('ProcessingQueueRepository - dequeue', () => {
+describe('ProcessingQueueRepository - dequeueAny', () => {
   let queueRepo: ProcessingQueueRepository;
 
   beforeEach(() => {
@@ -294,7 +294,7 @@ describe('ProcessingQueueRepository - dequeue', () => {
   it('should return null when queue is empty', async () => {
     mockSupabaseClient.rpc.mockResolvedValue({ data: [], error: null });
 
-    const result = await queueRepo.dequeue('fam1', 'worker-1');
+    const result = await queueRepo.dequeueAny('worker-1');
 
     expect(result).toBeNull();
     expect(mockSupabaseClient.rpc).toHaveBeenCalledWith(
@@ -302,12 +302,11 @@ describe('ProcessingQueueRepository - dequeue', () => {
       {
         p_worker_id: 'worker-1',
         p_lock_timeout_ms: 300000,
-        p_family_id: 'fam1',
       },
     );
   });
 
-  it('should lock and return queued item', async () => {
+  it('should lock and return a queued item', async () => {
     const lockedItem = {
       id: 'q1',
       family_id: 'fam1',
@@ -326,7 +325,7 @@ describe('ProcessingQueueRepository - dequeue', () => {
       error: null,
     });
 
-    const result = await queueRepo.dequeue('fam1', 'worker-1');
+    const result = await queueRepo.dequeueAny('worker-1');
 
     expect(result).not.toBeNull();
     expect(result?.id).toBe('q1');
@@ -353,7 +352,7 @@ describe('ProcessingQueueRepository - dequeue', () => {
       error: null,
     });
 
-    const result = await queueRepo.dequeue('fam1', 'worker-1', 300000);
+    const result = await queueRepo.dequeueAny('worker-1', 300000);
 
     expect(result).not.toBeNull();
     expect(result?.id).toBe('q1');
@@ -366,21 +365,12 @@ describe('ProcessingQueueRepository - dequeue', () => {
       error: { message: 'function failed' },
     });
 
-    await expect(queueRepo.dequeue('fam1', 'worker-1')).rejects.toThrow(
+    await expect(queueRepo.dequeueAny('worker-1')).rejects.toThrow(
       'Failed to dequeue queue item: function failed',
     );
   });
-});
 
-describe('ProcessingQueueRepository - dequeueAny', () => {
-  let queueRepo: ProcessingQueueRepository;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    queueRepo = new ProcessingQueueRepository(mockSupabaseClient as any);
-  });
-
-  it('should call the shared dequeue function without a family scope', async () => {
+  it('should call the shared dequeue function with a custom lock timeout', async () => {
     const lockedItem = {
       id: 'q-y',
       family_id: 'family-y',
@@ -407,7 +397,6 @@ describe('ProcessingQueueRepository - dequeueAny', () => {
       {
         p_worker_id: 'worker-1',
         p_lock_timeout_ms: 120000,
-        p_family_id: null,
       },
     );
   });
@@ -418,20 +407,22 @@ describe('processing queue dequeue migration', () => {
     const migration = readFileSync(
       resolve(
         dirname(fileURLToPath(import.meta.url)),
-        '../../../../../apps/db/supabase/migrations/20260705120000_processing_queue_per_family_dequeue.sql',
+        '../../../../../apps/db/supabase/migrations/20260112074715_init_schema.sql',
       ),
       'utf8',
     );
 
     expect(migration).toContain(
-      'CREATE OR REPLACE FUNCTION public.dequeue_processing_queue_item',
+      'CREATE OR REPLACE FUNCTION dequeue_processing_queue_item',
     );
-    expect(migration).toContain('FOR UPDATE OF q, f SKIP LOCKED');
-    expect(migration).toContain("inflight.status = 'processing'");
-    expect(migration).toContain('inflight.family_id = q.family_id');
-    expect(migration).toContain(
-      'Queued rows are skipped for families that already have status=processing',
-    );
+    // Per-family exclusivity mechanism: transaction-scoped advisory lock.
+    expect(migration).toContain('pg_try_advisory_xact_lock(');
+    // Fresh-statement recheck of in-flight state after the advisory lock is held.
+    expect(migration).toContain('live.family_id = v_candidate.family_id');
+    expect(migration).toContain("live.status = 'processing'");
+    // A stale-processing row with no locked_at must still count as in-flight,
+    // not silently fall through the exclusion check.
+    expect(migration).toContain('live.locked_at IS NULL');
   });
 });
 

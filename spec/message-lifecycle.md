@@ -24,11 +24,16 @@ For each accepted inbound event, `MessageIngester`:
 ## 4.2 Queue Processing
 
 `MessageQueue` polls ready rows from `processing_queue`, leases one item, invokes
-`MessageProcessor`, and marks the row `done` or `error`. The database dequeue function leases by
-priority then enqueue time, skips queued candidates for any family that already has a
-`status = 'processing'` row, and uses stale-lock recovery for abandoned processing rows. The live
-processor handles one item at a time per worker; the dequeue exclusion preserves deterministic
-per-family text order across workers.
+`MessageProcessor`, and marks the row `done` or `error`. The database dequeue function computes, for
+each family, a single next candidate — its stale `processing` row if one exists, else its oldest
+ready `queued` row when it has no live in-flight row — orders these per-family candidates by
+priority then queued time, and leases the first one it can lock. A transaction-scoped advisory lock
+per family plus a fresh-statement recheck of the family's in-flight state (not just the
+candidate-selection query's own snapshot) close the window between candidate selection and lease, so
+two workers can never hold two in-flight rows for the same family. A family's own stale row is
+always retried before its newer queued rows, rather than waiting for every other family's queue to
+drain. The live processor handles one item at a time per worker; the dequeue exclusion preserves
+deterministic per-family text order across workers.
 
 `MessageProcessor`:
 

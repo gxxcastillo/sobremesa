@@ -87,37 +87,19 @@ export class ProcessingQueueRepository {
   }
 
   /**
-   * Dequeue the next item for processing from one family.
-   */
-  async dequeue(
-    familyId: string,
-    workerId: string,
-    lockTimeoutMs = 300000,
-  ): Promise<QueueItem | null> {
-    return this.dequeueFromDatabase(workerId, lockTimeoutMs, familyId);
-  }
-
-  /**
-   * Dequeue the next item from any family for processing.
+   * Dequeue the next ready item from any family for processing. The
+   * database function enforces one in-flight item per family, so this
+   * never returns an item for a family that already has one processing.
    */
   async dequeueAny(
     workerId: string,
     lockTimeoutMs = 300000,
-  ): Promise<QueueItem | null> {
-    return this.dequeueFromDatabase(workerId, lockTimeoutMs);
-  }
-
-  private async dequeueFromDatabase(
-    workerId: string,
-    lockTimeoutMs: number,
-    familyId?: string,
   ): Promise<QueueItem | null> {
     const { data, error } = await this.client.rpc(
       'dequeue_processing_queue_item',
       {
         p_worker_id: workerId,
         p_lock_timeout_ms: lockTimeoutMs,
-        p_family_id: familyId ?? null,
       },
     );
 

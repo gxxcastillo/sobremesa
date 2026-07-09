@@ -111,10 +111,9 @@ async function main() {
   // 4. Try to dequeue immediately (should return null due to processAfter)
   console.log('\n--- Step 4: Attempting immediate dequeue (should fail) ---\n');
 
-  const immediateDequeue = await queueRepo.dequeue(
-    TEST_FAMILY_ID,
-    'test-worker',
-  );
+  // dequeueAny() is family-agnostic; this assumes an otherwise-idle local
+  // queue, same as scripts/process-one.ts.
+  const immediateDequeue = await queueRepo.dequeueAny('test-worker');
   if (immediateDequeue) {
     console.log('WARNING: Dequeued item immediately (debounce not working!)');
     console.log(`  Item: ${immediateDequeue.id}`);
@@ -176,7 +175,7 @@ async function main() {
 
   await new Promise((r) => setTimeout(r, 5500)); // Wait slightly longer than 5s
 
-  const delayedDequeue = await queueRepo.dequeue(TEST_FAMILY_ID, 'test-worker');
+  const delayedDequeue = await queueRepo.dequeueAny('test-worker');
   if (delayedDequeue) {
     console.log(
       `✓ Dequeued item after debounce: ${delayedDequeue.id.slice(0, 8)}...`,

@@ -199,7 +199,16 @@ SECURITY DEFINER
 SET search_path = '';
 
 COMMENT ON FUNCTION delete_family_cascade IS 'Approved whole-family hard delete path. Enables cascades through immutable child tables while direct child deletes remain blocked.';
+-- REVOKE ... FROM PUBLIC alone does not close this off: Supabase's local/
+-- hosted bootstrap grants EXECUTE on public-schema functions directly to
+-- anon/authenticated (not via PUBLIC), so a PUBLIC-only revoke leaves both
+-- with EXECUTE. Verified live: without the explicit per-role revoke below,
+-- an anon-only client (no auth) could call this function with an arbitrary
+-- family_id and it actually deleted the family -- this function is
+-- SECURITY DEFINER, owned by a role with BYPASSRLS, and has no internal
+-- authorization check, so the grant is its only access control.
 REVOKE ALL ON FUNCTION delete_family_cascade(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION delete_family_cascade(UUID) FROM anon, authenticated;
 GRANT EXECUTE ON FUNCTION delete_family_cascade(UUID) TO service_role;
 
 -- ============================================================================
@@ -530,6 +539,150 @@ CREATE INDEX IF NOT EXISTS idx_processing_queue_ready
 CREATE INDEX IF NOT EXISTS idx_processing_queue_global_ready
   ON processing_queue(status, process_after, priority ASC, queued_at ASC)
   WHERE status IN ('queued', 'error');
+
+-- Index for the in-flight-family exclusion check dequeue_processing_queue_item
+-- performs below (both the candidate scan and its fresh-statement recheck).
+CREATE INDEX IF NOT EXISTS idx_processing_queue_inflight_family
+  ON processing_queue(family_id, locked_at)
+  WHERE status = 'processing';
+
+-- ----------------------------------------------------------------------------
+-- Per-family dequeue serialization
+-- ----------------------------------------------------------------------------
+-- The application may run multiple queue workers, but family-local context
+-- resolution depends on processing events sequentially within a family.
+-- This function leases one ready row per call while enforcing that no two
+-- workers can hold an in-flight row for the same family at once, and that a
+-- family's own stale (crashed-worker) row is always retried before its
+-- newer queued rows -- competing with other families by priority/queued_at
+-- rather than waiting for the whole queue to drain.
+--
+-- Per-family exclusivity is closed two ways: a transaction-scoped advisory
+-- lock (pg_try_advisory_xact_lock) serializes workers targeting the same
+-- family, and a fresh-statement recheck of in-flight state after the lock
+-- is held closes the window between candidate selection and lease (a new
+-- statement gets a new READ COMMITTED snapshot, so it sees any lease that
+-- committed after the candidate scan's own snapshot was taken).
+CREATE OR REPLACE FUNCTION dequeue_processing_queue_item(
+  p_worker_id TEXT,
+  p_lock_timeout_ms INTEGER DEFAULT 300000
+)
+RETURNS SETOF processing_queue
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_lock_expiry TIMESTAMPTZ := NOW() - make_interval(
+    secs => GREATEST(COALESCE(p_lock_timeout_ms, 300000), 0)::DOUBLE PRECISION / 1000.0
+  );
+  v_candidate RECORD;
+BEGIN
+  -- Bounded per-family candidate stream: each family contributes at most
+  -- one row (its stale processing row if it has one, else its oldest
+  -- ready queued row when it has no live in-flight row), ordered globally
+  -- by priority/queued_at. LIMIT bounds the scan so heavy lock contention
+  -- can't degrade this into a full-table walk.
+  FOR v_candidate IN
+    SELECT c.id, c.family_id
+    FROM (
+      SELECT DISTINCT ON (q.family_id)
+        q.id,
+        q.family_id,
+        q.priority,
+        q.queued_at
+      FROM public.processing_queue q
+      WHERE
+        (
+          (q.status = 'queued' AND q.process_after <= NOW())
+          OR (
+            q.status = 'processing'
+            AND q.locked_at < v_lock_expiry
+            AND q.process_after <= NOW()
+          )
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.processing_queue live
+          WHERE live.family_id = q.family_id
+            AND live.status = 'processing'
+            AND (live.locked_at IS NULL OR live.locked_at >= v_lock_expiry)
+        )
+      ORDER BY
+        q.family_id,
+        CASE WHEN q.status = 'processing' THEN 0 ELSE 1 END,
+        q.priority ASC,
+        q.queued_at ASC
+    ) c
+    ORDER BY c.priority ASC, c.queued_at ASC
+    LIMIT 50
+  LOOP
+    -- Non-blocking: a worker already mid-selection for this exact row
+    -- skips it rather than waiting on it.
+    PERFORM 1
+    FROM public.processing_queue q
+    WHERE q.id = v_candidate.id
+    FOR UPDATE SKIP LOCKED;
+
+    IF NOT FOUND THEN
+      CONTINUE;
+    END IF;
+
+    -- Serialize per family: only one worker may be mid-lease for a given
+    -- family at a time. Transaction-scoped, so it releases automatically
+    -- when this call's transaction ends -- no explicit unlock needed.
+    IF NOT pg_try_advisory_xact_lock(
+      hashtextextended('pq_family:' || v_candidate.family_id::text, 0)
+    ) THEN
+      CONTINUE;
+    END IF;
+
+    -- Fresh statement -> fresh READ COMMITTED snapshot, so this sees any
+    -- lease that committed after the candidate scan above ran, closing
+    -- the race the outer query's own snapshot could not.
+    IF EXISTS (
+      SELECT 1
+      FROM public.processing_queue live
+      WHERE live.family_id = v_candidate.family_id
+        AND live.status = 'processing'
+        AND live.id <> v_candidate.id
+        AND (live.locked_at IS NULL OR live.locked_at >= v_lock_expiry)
+    ) THEN
+      CONTINUE;
+    END IF;
+
+    RETURN QUERY
+    UPDATE public.processing_queue q
+    SET status = 'processing',
+        locked_at = NOW(),
+        locked_by = p_worker_id
+    WHERE q.id = v_candidate.id
+      AND (
+        q.status = 'queued'
+        OR (q.status = 'processing' AND q.locked_at < v_lock_expiry)
+      )
+    RETURNING q.*;
+
+    IF FOUND THEN
+      RETURN;
+    END IF;
+  END LOOP;
+
+  RETURN;
+END;
+$$;
+
+COMMENT ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER)
+  IS 'Leases one ready processing_queue row while enforcing one in-flight item per family. A family''s stale processing row is always retried before its newer queued rows. Per-family exclusivity is enforced with a transaction-scoped advisory lock plus a fresh-statement in-flight recheck, so a lease that commits mid-scan is never missed.';
+
+-- REVOKE ... FROM PUBLIC alone does not close this off: Supabase's local/
+-- hosted bootstrap grants EXECUTE on public-schema functions directly to
+-- anon/authenticated (not via PUBLIC), so a PUBLIC-only revoke leaves both
+-- with EXECUTE (same gap closed explicitly for delete_family_cascade
+-- above). Revoke from anon/authenticated by name too so the grant is
+-- actually closed.
+REVOKE ALL ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER) FROM PUBLIC;
+REVOKE ALL ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER) TO service_role;
 
 -- ============================================================================
 -- PEOPLE (Identity + optional derived summaries)
@@ -1334,7 +1487,9 @@ CREATE TABLE IF NOT EXISTS claims (
   -- Provenance
   conversation_event_id UUID NOT NULL,
   claimed_by VARCHAR(255) NOT NULL,
+  claimed_by_identity_id UUID REFERENCES identities(id),
   claimed_by_source VARCHAR(20) NOT NULL DEFAULT 'direct', -- 'direct','attributed','hearsay'
+  attributed_to VARCHAR(255),
   claimed_at TIMESTAMPTZ DEFAULT NOW(),
 
   -- Certainty
@@ -1385,6 +1540,8 @@ CREATE TABLE IF NOT EXISTS claims (
 COMMENT ON TABLE claims IS 'Atomic factual claims with full provenance (canonical truth layer).';
 COMMENT ON COLUMN claims.conversation_event_id IS 'Reference to the conversation event where this claim originated';
 COMMENT ON COLUMN claims.extraction_version IS 'Version of extraction logic that created this record (e.g., scribe-v1.0.0). For event sourcing.';
+COMMENT ON COLUMN claims.claimed_by_identity_id IS 'Identity of the deterministic sender of the source event, resolved by provider + provider_user_id. NULL for historical rows and for sources (e.g. WhatsApp import) that do not create identities.';
+COMMENT ON COLUMN claims.attributed_to IS 'Person the speaker attributes this claim to, set only when claimed_by_source is attributed or hearsay (e.g. "Mom always said..." -> attributed_to: Mom). Free text, not entity-resolved.';
 
 DROP TRIGGER IF EXISTS update_claims_updated_at ON claims;
 CREATE TRIGGER update_claims_updated_at
@@ -1412,6 +1569,10 @@ CREATE INDEX IF NOT EXISTS idx_claims_family_source_type
 CREATE INDEX IF NOT EXISTS idx_claims_extraction_version
   ON claims(extraction_version)
   WHERE extraction_version IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_claims_claimed_by_identity
+  ON claims(claimed_by_identity_id)
+  WHERE claimed_by_identity_id IS NOT NULL;
 
 -- ============================================================================
 -- CLAIM ANALYSIS (System-computed metadata, separated from immutable provenance)
@@ -2029,7 +2190,9 @@ BEGIN
      OLD.claim_value IS DISTINCT FROM NEW.claim_value OR
      OLD.conversation_event_id IS DISTINCT FROM NEW.conversation_event_id OR
      OLD.claimed_by IS DISTINCT FROM NEW.claimed_by OR
+     OLD.claimed_by_identity_id IS DISTINCT FROM NEW.claimed_by_identity_id OR
      OLD.claimed_by_source IS DISTINCT FROM NEW.claimed_by_source OR
+     OLD.attributed_to IS DISTINCT FROM NEW.attributed_to OR
      OLD.claimed_at IS DISTINCT FROM NEW.claimed_at OR
      OLD.certainty_language IS DISTINCT FROM NEW.certainty_language OR
      OLD.context_original IS DISTINCT FROM NEW.context_original OR
