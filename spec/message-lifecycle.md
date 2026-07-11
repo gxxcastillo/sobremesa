@@ -45,7 +45,9 @@ deterministic per-family text order across workers.
 5. Runs the Scribe path when appropriate: filter → Scribe → image-link fallback → Registrar.
 6. Returns a success/failure result. `MessageProcessor` never marks the queue row itself; the queue
    loop is the sole owner of completing or failing it. Failures requeue for retry up to a max
-   attempt count, then dead-letter (`status = 'error'`).
+   attempt count, then dead-letter (`status = 'error'`). A retried (non-dead-lettered) item's
+   `process_after` is pushed out by `retryDelayMs` so retries are spaced out rather than firing on
+   the very next poll.
 
 Historian-routed messages fall through to Scribe once Historian's own answer succeeds, so user
 questions can contribute facts. A Historian failure is reported as a processing failure immediately,

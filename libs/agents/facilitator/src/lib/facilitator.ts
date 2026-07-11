@@ -175,7 +175,8 @@ export class FacilitatorAgent {
         return { success: false, error: 'Family not found' };
       }
 
-      if (!family.chatId) {
+      const chatId = family.chatId;
+      if (!chatId) {
         return {
           success: false,
           skippedReason: 'Family has no chat ID configured',
@@ -200,7 +201,11 @@ export class FacilitatorAgent {
       const question = pending[0];
 
       // 4. Send the question via Facilitator bot
-      const externalMessageId = await this.sendQuestion(family, question);
+      const externalMessageId = await this.sendQuestion(
+        family,
+        question,
+        chatId,
+      );
 
       // 5. Mark as asked with the external message ID for answer detection
       await this.questionRepo.markAsked(
@@ -249,22 +254,17 @@ export class FacilitatorAgent {
    * Send a question to the family chat.
    * Applies warmth formula via AI if Anthropic client is available.
    * Returns the Telegram message_id of the sent message.
+   * Caller (`askNextQuestion`) already verified `family.chatId` is present
+   * and passes it as `chatId`.
    */
   private async sendQuestion(
     family: Family,
     question: Question,
+    chatId: string,
   ): Promise<number> {
     // Apply warmth formula via AI if available
     let message: string;
-    if (!family.chatId) {
-      const error = new Error('Failed to send message, missing clientId');
-      this.logger.warn(
-        { questionId: question.id, error },
-        'Failed to apply warmth, falling back to verbatim',
-      );
-
-      return NaN;
-    } else if (this.provider) {
+    if (this.provider) {
       try {
         // Check if target person is a verified participant
         const isTargetParticipant = await this.checkTargetParticipant(
@@ -297,7 +297,7 @@ export class FacilitatorAgent {
     return await this.messageSender.sendMessage(
       'facilitator',
       {
-        chatId: family.chatId,
+        chatId,
         text: message,
       },
       { priority: Priorities.BOT_QUESTION },

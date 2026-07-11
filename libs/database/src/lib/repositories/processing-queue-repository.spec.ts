@@ -281,6 +281,71 @@ describe('ProcessingQueueRepository - fail', () => {
       }),
     );
   });
+
+  it('should push process_after out by retryDelayMs on a retry', async () => {
+    const fetchChain = createChainableMock({
+      data: { attempts: 0 },
+      error: null,
+    });
+    const updateChain = createChainableMock({ data: null, error: null });
+
+    let callCount = 0;
+    mockSupabaseClient.from.mockImplementation(() => {
+      callCount++;
+      return callCount === 1 ? fetchChain : updateChain;
+    });
+
+    const before = Date.now();
+    await queueRepo.fail('fam1', 'q1', 'Test error', 3, 5000);
+    const after = Date.now();
+
+    const call = updateChain.update.mock.calls[0][0];
+    expect(call.status).toBe('queued');
+    const processAfterMs = new Date(call.process_after).getTime();
+    expect(processAfterMs).toBeGreaterThanOrEqual(before + 5000);
+    expect(processAfterMs).toBeLessThanOrEqual(after + 5000);
+  });
+
+  it('should not set process_after when dead-lettering, even with retryDelayMs', async () => {
+    const fetchChain = createChainableMock({
+      data: { attempts: 2 },
+      error: null,
+    });
+    const updateChain = createChainableMock({ data: null, error: null });
+
+    let callCount = 0;
+    mockSupabaseClient.from.mockImplementation(() => {
+      callCount++;
+      return callCount === 1 ? fetchChain : updateChain;
+    });
+
+    // maxRetries=3, attempts 2+1=3 >= 3, so this dead-letters.
+    await queueRepo.fail('fam1', 'q1', 'Test error', 3, 5000);
+
+    const call = updateChain.update.mock.calls[0][0];
+    expect(call.status).toBe('error');
+    expect(call.process_after).toBeUndefined();
+  });
+
+  it('should not set process_after when retryDelayMs is omitted', async () => {
+    const fetchChain = createChainableMock({
+      data: { attempts: 0 },
+      error: null,
+    });
+    const updateChain = createChainableMock({ data: null, error: null });
+
+    let callCount = 0;
+    mockSupabaseClient.from.mockImplementation(() => {
+      callCount++;
+      return callCount === 1 ? fetchChain : updateChain;
+    });
+
+    await queueRepo.fail('fam1', 'q1', 'Test error');
+
+    const call = updateChain.update.mock.calls[0][0];
+    expect(call.status).toBe('queued');
+    expect(call.process_after).toBeUndefined();
+  });
 });
 
 describe('ProcessingQueueRepository - dequeueAny', () => {

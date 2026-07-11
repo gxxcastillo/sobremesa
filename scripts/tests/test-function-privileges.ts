@@ -11,9 +11,13 @@
  *
  * This drives the real RPC as an anon-only client (no service role key) --
  * a static check of migration text or grant lists can't catch this class of
- * bug, only a live call can. Manual only -- not part of test:all/CI (per
- * AGENTS.md, no live-DB calls belong there); requires `bun nx run db:start`
- * first.
+ * bug, only a live call can. Manual only -- not part of test:all/CI: no
+ * live-DB test of any kind runs in CI today, since no CI infra spins up a
+ * local Supabase instance yet (AGENTS.md itself says nothing on this; the
+ * only written CI-exclusion rule, in spec/ai-providers-and-prompts.md, is
+ * specifically about live LLM evals). Wiring this into CI is open work --
+ * see .agents/extraction-hardening-plan.md item C's 2026-07-08 residual
+ * note. Requires `bun nx run db:start` first.
  *
  * Run with: bun scripts/tests/test-function-privileges.ts
  */

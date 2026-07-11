@@ -150,6 +150,7 @@ export class MessageQueue {
           item.id,
           errorMessage,
           this.options.maxRetries,
+          this.options.retryDelayMs,
         );
         this.logFailureOutcome(item, familyId, newStatus, errorMessage, {
           level: 'warn',
@@ -166,6 +167,7 @@ export class MessageQueue {
         item.id,
         errorMessage,
         this.options.maxRetries,
+        this.options.retryDelayMs,
       );
       this.logFailureOutcome(item, familyId, newStatus, errorMessage, {
         level: 'error',

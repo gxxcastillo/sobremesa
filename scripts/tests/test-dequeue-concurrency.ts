@@ -5,8 +5,13 @@
  * ("one in-flight processing_queue row per family") only shows up under real
  * concurrent Postgres transactions, so this drives the actual RPC against a
  * running local Supabase instance instead of asserting RPC-call parameters
- * against a mock. Manual only -- not part of test:all/CI (per AGENTS.md, no
- * live-DB calls belong there); requires `bun nx run db:start` first, and
+ * against a mock. Manual only -- not part of test:all/CI: no live-DB test of
+ * any kind (including the Tier-2 pipeline-snapshot runner) runs in CI today,
+ * since no CI infra spins up a local Supabase instance yet (AGENTS.md itself
+ * says nothing on this; the only written CI-exclusion rule, in
+ * spec/ai-providers-and-prompts.md, is specifically about live LLM evals).
+ * Wiring this into CI is open work -- see .agents/extraction-hardening-plan.md
+ * item C's 2026-07-08 residual note. Requires `bun nx run db:start` first, and
  * assumes an otherwise-idle local queue (same assumption as
  * scripts/process-one.ts and scripts/tests/test-consolidated-welcome.ts) --
  * if a scenario fails unexpectedly, try `bun nx run db:reset` first.

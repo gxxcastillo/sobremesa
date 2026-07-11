@@ -563,6 +563,14 @@ CREATE INDEX IF NOT EXISTS idx_processing_queue_inflight_family
 -- is held closes the window between candidate selection and lease (a new
 -- statement gets a new READ COMMITTED snapshot, so it sees any lease that
 -- committed after the candidate scan's own snapshot was taken).
+--
+-- Drop the pre-squash 3-arg overload first: CREATE OR REPLACE only replaces a
+-- function with the same argument list, so on any database where the prior
+-- (p_worker_id, p_lock_timeout_ms, p_family_id) version already ran, this
+-- CREATE OR REPLACE would otherwise leave both overloads in place, and a
+-- 2-arg call becomes ambiguous against the 3rd arg's default (42725).
+DROP FUNCTION IF EXISTS dequeue_processing_queue_item(TEXT, INTEGER, UUID);
+
 CREATE OR REPLACE FUNCTION dequeue_processing_queue_item(
   p_worker_id TEXT,
   p_lock_timeout_ms INTEGER DEFAULT 300000
@@ -580,8 +588,10 @@ BEGIN
   -- Bounded per-family candidate stream: each family contributes at most
   -- one row (its stale processing row if it has one, else its oldest
   -- ready queued row when it has no live in-flight row), ordered globally
-  -- by priority/queued_at. LIMIT bounds the scan so heavy lock contention
-  -- can't degrade this into a full-table walk.
+  -- by priority/queued_at. The outer LIMIT bounds how many candidates this
+  -- call will loop through under lock contention; it does not bound the
+  -- inner DISTINCT ON scan itself, which still evaluates every ready or
+  -- stale-processing row across all families to pick one per family.
   FOR v_candidate IN
     SELECT c.id, c.family_id
     FROM (

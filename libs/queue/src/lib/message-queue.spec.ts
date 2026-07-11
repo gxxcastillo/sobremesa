@@ -31,7 +31,11 @@ const baseItem = {
 
 function createQueue(
   overrides: Partial<{
-    queueOptions: { maxRetries?: number; lockTimeoutMs?: number };
+    queueOptions: {
+      maxRetries?: number;
+      retryDelayMs?: number;
+      lockTimeoutMs?: number;
+    };
     pollIntervalMs: number;
   }> = {},
 ): MessageQueue {
@@ -139,10 +143,31 @@ describe('MessageQueue', () => {
         baseItem.id,
         'handler exploded',
         1,
+        5000, // default retryDelayMs
       );
       expect(silentLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({ itemId: baseItem.id }),
         'Queue item dead-lettered after max retries',
+      );
+    });
+
+    it('forwards the configured retryDelayMs to fail() so retries are spaced out', async () => {
+      mockRepository.dequeueAny.mockResolvedValue({ ...baseItem });
+      mockRepository.fail.mockResolvedValueOnce('queued');
+      const handler: MessageHandler = vi
+        .fn()
+        .mockResolvedValue({ success: false, error: 'boom', duration: 1 });
+      const queue = createQueue({ queueOptions: { retryDelayMs: 9000 } });
+      queue.setHandler(handler);
+
+      await queue.processOne();
+
+      expect(mockRepository.fail).toHaveBeenCalledWith(
+        FAMILY_ID,
+        baseItem.id,
+        'boom',
+        expect.any(Number),
+        9000,
       );
     });
   });

@@ -128,13 +128,16 @@ export class ProcessingQueueRepository {
 
   /**
    * Mark an item as failed. Returns the resulting status so callers can detect
-   * when an item transitions to the dead-letter state ('error').
+   * when an item transitions to the dead-letter state ('error'). On a retry
+   * (not dead-lettered), `retryDelayMs` pushes `process_after` out so the
+   * retry doesn't fire on the very next poll.
    */
   async fail(
     familyId: string,
     id: string,
     errorMessage: string,
     maxRetries = 3,
+    retryDelayMs = 0,
   ): Promise<QueueItemStatus> {
     // First get current attempts
     const { data: current, error: fetchError } = await this.client
@@ -159,6 +162,9 @@ export class ProcessingQueueRepository {
         last_error: errorMessage,
         locked_at: null,
         locked_by: null,
+        ...(status === 'queued' && retryDelayMs > 0
+          ? { process_after: new Date(Date.now() + retryDelayMs).toISOString() }
+          : {}),
       })
       .eq('family_id', familyId)
       .eq('id', id);
