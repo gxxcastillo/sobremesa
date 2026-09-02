@@ -7,7 +7,7 @@
  * PUBLIC-only revoke leaves them able to call functions meant to be
  * service_role-only. `delete_family_cascade` had exactly this gap and an
  * anon-only client (no auth at all) could hard-delete an arbitrary family
- * before it was closed (see .agents/extraction-hardening-plan.md item C).
+ * before it was closed.
  *
  * This drives the real RPC as an anon-only client (no service role key) --
  * a static check of migration text or grant lists can't catch this class of
@@ -15,9 +15,8 @@
  * live-DB test of any kind runs in CI today, since no CI infra spins up a
  * local Supabase instance yet (AGENTS.md itself says nothing on this; the
  * only written CI-exclusion rule, in spec/ai-providers-and-prompts.md, is
- * specifically about live LLM evals). Wiring this into CI is open work --
- * see .agents/extraction-hardening-plan.md item C's 2026-07-08 residual
- * note. Requires `bun nx run db:start` first.
+ * specifically about live LLM evals). Wiring this into CI is open work.
+ * Requires `bun nx run db:start` first.
  *
  * Run with: bun scripts/tests/test-function-privileges.ts
  */
@@ -61,7 +60,7 @@ async function main(): Promise<void> {
     {
       allPassed: 'All restricted functions correctly deny anon.',
       someFailed: (count) =>
-        `${count} function(s) are callable by anon -- fix the grant (see .agents/extraction-hardening-plan.md item C).`,
+        `${count} function(s) are callable by anon -- revoke their EXECUTE grant from anon/authenticated directly (not just PUBLIC); it must be service_role-only.`,
     },
   );
 }

@@ -1,7 +1,7 @@
 /**
  * Minimal fake `DatabaseClient` for authz boundary tests.
  *
- * Item D's test matrix exercises the auth guard layer (401/403 decisions),
+ * This test matrix exercises the auth guard layer (401/403 decisions),
  * not each route's business logic. The only DB-touching step reached before
  * a guard's `beforeHandle` runs is `createAuthPlugin`'s `.derive()`, which
  * makes exactly three calls, all simple filters against in-memory fixture
@@ -17,8 +17,7 @@
  * plain `await` (via `.then()`) for a list result. It does NOT implement
  * `.insert()`/`.update()`/`.rpc()` with real semantics — those are only
  * reached by 200-path business logic, which is out of scope for the authz
- * boundary this test matrix covers (see `.agents/extraction-hardening-plan.md`
- * item D). Calling them is harmless: they return an empty/no-op result
+ * boundary this test matrix covers. Calling them is harmless: they return an empty/no-op result
  * rather than throwing, so a route whose guard passes doesn't crash the
  * test — it just won't do anything useful past that point, which is fine
  * since these tests don't assert on 200-path response bodies.

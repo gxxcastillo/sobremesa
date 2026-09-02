@@ -1,3 +1,8 @@
+> [!NOTE]
+> **Agent working memory:** Read [`.agents/README.md`](.agents/README.md) before
+> non-trivial work — coding or not — and keep it current as you go. It holds private
+> working state; it does not replace the project's designated shared sources of truth.
+
 # Contributor Agent Guide
 
 This file is for AI coding agents and contributors working in this repository.
@@ -84,11 +89,11 @@ git diff --check
 - Keep `docs/QUICKSTART.md` as the onboarding and setup guide.
 - Do not add new parallel technical specs under `docs/`; add to `spec/` or create a redirect.
 - An ADR records a decision that was made and acted on. Desired behavior belongs in `spec/` (if
-  built) or an `.agents/` plan (if pending). When implementation departs from an ADR, mark it
+  built) or private working notes (if pending). When implementation departs from an ADR, mark it
   Superseded with a dated note and, if a real decision replaced it, record the new decision as a
   new ADR.
-- ADRs never link to `.agents/` (ephemeral, gitignored, reorganized freely) — describe or name the
-  pending work in prose instead. `.agents/` plans may link to ADRs.
+- ADRs never link to private, ephemeral planning material — describe or name the pending work in
+  prose instead.
 
 ## Style Notes
 
