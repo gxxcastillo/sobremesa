@@ -5,10 +5,14 @@ WORKDIR /app
 
 # Copy the API app and its workspace dependencies
 COPY apps/api ./apps/api
-COPY libs/auth ./libs/auth
-COPY libs/database ./libs/database
-COPY libs/shared/types ./libs/shared/types
-COPY libs/shared/utils ./libs/shared/utils
+COPY libs ./libs
+
+# bun install --frozen-lockfile validates the lockfile against every workspace
+# member declared by the root package.json's globs, so sibling apps not built
+# here still need their manifest present (source not needed, not copied).
+COPY apps/chatbots/package.json ./apps/chatbots/package.json
+COPY apps/studio/package.json ./apps/studio/package.json
+COPY apps/db/package.json ./apps/db/package.json
 
 # Copy workspace configuration
 COPY package.json bun.lock ./

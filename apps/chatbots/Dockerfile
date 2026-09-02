@@ -10,6 +10,13 @@ COPY package.json bun.lock nx.json tsconfig.base.json ./
 COPY apps/chatbots ./apps/chatbots
 COPY libs ./libs
 
+# bun install --frozen-lockfile validates the lockfile against every workspace
+# member declared by the root package.json's globs, so sibling apps not built
+# here still need their manifest present (source not needed, not copied).
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/studio/package.json ./apps/studio/package.json
+COPY apps/db/package.json ./apps/db/package.json
+
 # Install dependencies
 RUN bun install --frozen-lockfile
 
