@@ -102,3 +102,15 @@ git diff --check
 - Keep edits scoped; avoid opportunistic refactors.
 - For frontend work, match the existing Solid.js/CSS style and verify responsive behavior where UI
   changes are visible.
+
+## Presenting Findings and Decisions
+
+Applies to messages that report analysis, offer options, or revise a recommendation — not
+to `.agents/` notes, which may stay dense.
+
+- Lead with the plain-language problem before jargon, ADR numbers, or code refs — those are
+  supporting evidence, not the opener.
+- Define a term on first use or drop it; don't assume prior context from the investigation.
+- Prefer a concrete example over naming the abstract mechanism.
+- If a recommendation changed, say what changed and why in one plain sentence before
+  re-presenting options.
