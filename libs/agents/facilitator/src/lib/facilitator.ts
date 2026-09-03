@@ -90,7 +90,7 @@ export interface SendResponseOptions {
 }
 
 /** Default model to use for warmth transformation (fast and cheap) */
-const DEFAULT_WARMTH_MODEL = 'claude-3-5-haiku-latest';
+const DEFAULT_WARMTH_MODEL = 'claude-haiku-4-5';
 
 /**
  * The Facilitator agent asks warm follow-up questions to families.
