@@ -1,0 +1,13 @@
+[mcp_servers.nx-mcp]
+command = "bun"
+args = [
+    "nx",
+    "mcp",
+]
+
+[features]
+memories = false
+
+[memories]
+use_memories = false
+generate_memories = false
