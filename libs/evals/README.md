@@ -1,6 +1,9 @@
 # Evals
 
-Manual evaluation harnesses for extraction quality. This library is not imported by any deployed app.
+Manual evaluation harnesses for extraction quality. This library is not imported by any deployed
+app, but its Tier-1 runner internals (`runScenario` and the in-memory repos, `src/lib/
+run-scenario.ts`) are exported and reused by `apps/eval`, a local-only web UI for the same
+comparisons — see `apps/eval/README.md`.
 
 ## Tier 1: Scribe Unit Evals
 

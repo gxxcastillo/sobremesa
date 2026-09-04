@@ -5,14 +5,9 @@ import {
   createAIProviderFactory,
   validateConfig,
 } from '@sobremesa/ai-provider';
-import { MessageQueue, MessageProcessor } from '@sobremesa/queue';
+import { MessageQueue } from '@sobremesa/queue';
 import { BotManager } from '@sobremesa/telegram';
-import { AdminAgent } from '@sobremesa/agents-admin';
-import { HistorianAgent } from '@sobremesa/agents-historian';
-import { InternAgent, INTERN_VERSION } from '@sobremesa/agents-intern';
-import { ScribeAgent, SCRIBE_VERSION } from '@sobremesa/agents-scribe';
-import { RegistrarAgent } from '@sobremesa/agents-registrar';
-import { FacilitatorAgent } from '@sobremesa/agents-facilitator';
+import { buildMessagePipeline, type PipelineStage } from '@sobremesa/pipeline';
 import {
   createDatabaseClient,
   ProcessingQueueRepository,
@@ -98,20 +93,6 @@ async function main() {
     const botInfo = await botManager.getBot().telegram.getMe();
     logger.info({ username: botInfo.username }, 'Bot info retrieved');
 
-    logger.debug('Creating MessageProcessor...');
-    const processor = new MessageProcessor({ dbClient });
-
-    // Configure Admin agent (doesn't require AI)
-    logger.debug('Configuring Admin agent...');
-    const admin = new AdminAgent({
-      dbClient,
-      messageSender: botManager,
-    });
-    processor.setAdminProcessor((eventId, familyId, subtype) =>
-      admin.handle(eventId, familyId, subtype),
-    );
-    logger.info('Admin agent configured');
-
     // Load AI configuration from environment
     const aiConfig = loadAIConfig(
       process.env as Record<string, string | undefined>,
@@ -139,121 +120,64 @@ async function main() {
     const aiFactory = createAIProviderFactory(aiConfig, anthropic);
     const hasAIProvider = aiConfig.defaultProvider !== 'mock';
 
-    // Configure Facilitator agent (with optional AI for warmth transformation)
-    logger.debug('Configuring Facilitator agent...');
-    const facilitatorProvider = hasAIProvider
-      ? aiFactory.getProviderForAgent('facilitator')
-      : undefined;
-    const facilitator = new FacilitatorAgent({
-      dbClient,
-      messageSender: botManager,
-      provider: facilitatorProvider,
-      model: aiFactory.getModelForAgent('facilitator'),
-      minMinutesBetweenQuestions: 5,
-    });
-    logger.info({ hasAI: hasAIProvider }, 'Facilitator agent configured');
-
-    // Configure AI agents if a provider is available
+    // Admin doesn't require AI; the rest of the pipeline does. When no AI
+    // provider is configured, only Admin gets wired -- messages still get
+    // admin handling, but nothing reaches Scribe/Registrar/Historian.
+    logger.debug('Building message pipeline...');
+    const stages = new Set<PipelineStage>(['admin']);
     if (hasAIProvider) {
-      logger.debug(
-        'Configuring Intern, Scribe, Registrar and Historian agents...',
-      );
-
-      const intern = new InternAgent({
-        dbClient,
-        provider: aiFactory.getProviderForAgent('intern'),
-        model: aiFactory.getModelForAgent('intern'),
-        config: { botUsername: botInfo.username },
-      });
-      const scribe = new ScribeAgent({
-        dbClient,
-        provider: aiFactory.getProviderForAgent('scribe'),
-        model: aiFactory.getModelForAgent('scribe'),
-      });
-      const registrar = new RegistrarAgent({ dbClient });
-      const historian = new HistorianAgent({
-        dbClient,
-        provider: aiFactory.getProviderForAgent('historian'),
-        model: aiFactory.getModelForAgent('historian'),
-      });
-
-      // Set router (Intern routes to admin/scribe/ignore)
-      // Context is pre-fetched by MessageProcessor and shared to avoid duplicate DB queries
-      processor.setRouter((eventId, familyId, context) =>
-        intern.route(eventId, familyId, context),
-      );
-      processor.setFilter((eventId, familyId, context) =>
-        intern.filter(eventId, familyId, context),
-      );
-      processor.setImageLinker((eventId, familyId, context) =>
-        intern.linkToImage(eventId, familyId, context),
-      );
-      processor.setScribe((eventId, familyId, context) =>
-        scribe.process(eventId, familyId, context),
-      );
-      processor.setPipelineVersions({
-        internVersion: INTERN_VERSION,
-        scribeVersion: SCRIBE_VERSION,
-      });
-      processor.setHistorianProcessor(async (eventId, familyId) => {
-        // 1. Historian generates the answer
-        const result = await historian.answer(eventId, familyId);
-        if (!result.success || !result.answer) {
-          return { success: result.success, error: result.error ?? '' };
-        }
-
-        // 2. Facilitator formats and sends the response with appropriate warmth/language
-        const responseResult = await facilitator.sendResponse({
-          familyId,
-          originalQuestion: result.originalQuestion,
-          historianAnswer: result.answer,
-          chatId: result.chatId,
-          replyToMessageId: result.replyToMessageId,
-        });
-
-        return { success: responseResult.success, error: responseResult.error };
-      });
-      processor.setRegistrar(
-        async (model, familyId, pipelineVersions, contextContents) => {
-          await registrar.persist(
-            model,
-            familyId,
-            pipelineVersions,
-            contextContents,
-          );
-
-          // Fire-and-forget: trigger Facilitator after persist
-          // Log errors but don't block or retry
-          facilitator.askNextQuestion(familyId).then(
-            (result) => {
-              if (result.questionContent) {
-                logger.info(
-                  { familyId, questionId: result.questionId },
-                  'Facilitator asked question',
-                );
-              } else if (result.skippedReason) {
-                logger.debug(
-                  { familyId, reason: result.skippedReason },
-                  'Facilitator skipped asking',
-                );
-              }
-            },
-            (err) => {
-              logger.error(
-                { familyId, err },
-                'Facilitator failed to ask question',
-              );
-            },
-          );
-        },
-      );
-
-      logger.info('Intern, Scribe, Registrar and Historian agents configured');
+      stages.add('router');
+      stages.add('filter');
+      stages.add('imageLinker');
+      stages.add('scribe');
+      stages.add('registrar');
+      stages.add('historian');
+      stages.add('facilitatorNudge');
     }
+
+    const processor = buildMessagePipeline({
+      dbClient,
+      stages,
+      messageSender: botManager,
+      botUsername: botInfo.username,
+      minMinutesBetweenQuestions: 5,
+      logger,
+      providers: hasAIProvider
+        ? {
+            intern: aiFactory.getProviderForAgent('intern'),
+            scribe: aiFactory.getProviderForAgent('scribe'),
+            historian: aiFactory.getProviderForAgent('historian'),
+            facilitator: aiFactory.getProviderForAgent('facilitator'),
+          }
+        : {},
+      models: hasAIProvider
+        ? {
+            intern: aiFactory.getModelForAgent('intern'),
+            scribe: aiFactory.getModelForAgent('scribe'),
+            historian: aiFactory.getModelForAgent('historian'),
+            facilitator: aiFactory.getModelForAgent('facilitator'),
+          }
+        : {},
+    });
+    logger.info(
+      { hasAI: hasAIProvider, stages: [...stages] },
+      'Message pipeline built',
+    );
 
     logger.debug('Starting MessageQueue...');
     const queue = new MessageQueue({
       repository: new ProcessingQueueRepository(dbClient),
+      // Never claim a 'triage'- or 'extract'-only row: both belong to
+      // import's scoped drains (libs/import/src/lib/intern-triage.ts), not
+      // this always-on poller. 'triage' means a human hasn't reviewed the
+      // message yet -- claiming it early would run Scribe on it before the
+      // review screen ever sees it, silently defeating the review. 'extract'
+      // means the message is mid-drain through the extraction phase's own
+      // scribe+registrar-only pipeline -- claiming it here would instead run
+      // the full live stage set (Intern/Historian/Facilitator included) on a
+      // bulk-import backfill message, and could race the scoped drain's own
+      // dequeue for the same row.
+      queueOptions: { intentFilter: ['live'] },
     });
     queue.setHandler(processor.createHandler());
     await queue.start();

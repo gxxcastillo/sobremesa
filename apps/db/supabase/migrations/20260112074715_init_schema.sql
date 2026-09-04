@@ -517,6 +517,17 @@ CREATE TABLE IF NOT EXISTS processing_queue (
   attempts INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
 
+  -- What this row is queued *for*: 'live' (the always-on production poller,
+  -- full stage set), 'triage' (a scoped drain running only router+filter,
+  -- e.g. import's phase-1 Intern review), or 'extract' (a scoped drain
+  -- running only scribe+registrar, e.g. import's phase-2 submission after
+  -- human review). Distinguishing these lets a scoped drain claim only the
+  -- rows it's meant for, and lets the live poller refuse to ever claim a
+  -- 'triage' row before a human has reviewed it -- see
+  -- `dequeue_processing_queue_item`'s own p_intent_filter parameter below.
+  intent VARCHAR(20) NOT NULL DEFAULT 'live'
+    CHECK (intent IN ('live','triage','extract')),
+
   CONSTRAINT uq_processing_queue_event UNIQUE(family_id, conversation_event_id),
 
   -- Composite FK enforces tenant integrity
@@ -568,12 +579,42 @@ CREATE INDEX IF NOT EXISTS idx_processing_queue_inflight_family
 -- function with the same argument list, so on any database where the prior
 -- (p_worker_id, p_lock_timeout_ms, p_family_id) version already ran, this
 -- CREATE OR REPLACE would otherwise leave both overloads in place, and a
--- 2-arg call becomes ambiguous against the 3rd arg's default (42725).
+-- 2-arg call becomes ambiguous against the 3rd arg's default (42725). (That
+-- old 3-arg version had the same signature reintroduced below, so this drop
+-- also covers it -- kept as its own statement for clarity of intent.) It also
+-- clears the way for the 4-arg (p_intent_filter added) version defined below,
+-- for the identical reason: a bare 3-arg signature left in place alongside
+-- the new 4-arg one would create the same kind of ambiguity for any call
+-- that omits both optional trailing arguments.
 DROP FUNCTION IF EXISTS dequeue_processing_queue_item(TEXT, INTEGER, UUID);
+
+-- Also drop the 2-arg version this migration used to define: it's being
+-- replaced by a 3-arg one immediately below (p_family_id, reintroduced as an
+-- optional filter -- see its own comment), and leaving the 2-arg version in
+-- place would trigger the exact same 42725 ambiguity this file already fixed
+-- once, just in the opposite direction.
+DROP FUNCTION IF EXISTS dequeue_processing_queue_item(TEXT, INTEGER);
 
 CREATE OR REPLACE FUNCTION dequeue_processing_queue_item(
   p_worker_id TEXT,
-  p_lock_timeout_ms INTEGER DEFAULT 300000
+  p_lock_timeout_ms INTEGER DEFAULT 300000,
+  -- Optional family filter, defaulting to no filter (every production call
+  -- site omits it, unchanged). Lets a caller -- e.g. `sbm process
+  -- --family-id=...` -- claim only one family's queued work instead of
+  -- competing for the whole shared queue, so a scoped process run can never
+  -- accidentally sweep up and persist another family's leftover messages
+  -- (the exact failure mode recorded in .agents/current-state.md's "Known
+  -- bugs" section). Previously existed on this function (dropped above,
+  -- see comment) and is reintroduced here on the current candidate-scan
+  -- algorithm rather than the old one it was dropped alongside.
+  p_family_id UUID DEFAULT NULL,
+  -- Optional intent filter, defaulting to no filter (matches every row's
+  -- intent, i.e. today's pre-`intent`-column behavior). A scoped drain
+  -- (e.g. import's triage/extract phases) passes exactly the intent(s) it's
+  -- allowed to claim, e.g. ARRAY['triage']; the always-on live poller passes
+  -- ARRAY['live'] so it can never claim a 'triage' row that hasn't been
+  -- through human review yet, or an 'extract' row a scoped drain owns.
+  p_intent_filter TEXT[] DEFAULT NULL
 )
 RETURNS SETOF processing_queue
 LANGUAGE plpgsql
@@ -610,6 +651,8 @@ BEGIN
             AND q.process_after <= NOW()
           )
         )
+        AND (p_family_id IS NULL OR q.family_id = p_family_id)
+        AND (p_intent_filter IS NULL OR q.intent = ANY(p_intent_filter))
         AND NOT EXISTS (
           SELECT 1
           FROM public.processing_queue live
@@ -681,8 +724,8 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER)
-  IS 'Leases one ready processing_queue row while enforcing one in-flight item per family. A family''s stale processing row is always retried before its newer queued rows. Per-family exclusivity is enforced with a transaction-scoped advisory lock plus a fresh-statement in-flight recheck, so a lease that commits mid-scan is never missed.';
+COMMENT ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER, UUID, TEXT[])
+  IS 'Leases one ready processing_queue row while enforcing one in-flight item per family. A family''s stale processing row is always retried before its newer queued rows. Per-family exclusivity is enforced with a transaction-scoped advisory lock plus a fresh-statement in-flight recheck, so a lease that commits mid-scan is never missed. p_family_id, when given, restricts leasing to that family only. p_intent_filter, when given, restricts leasing to rows whose intent is in the array (e.g. the live poller passes ARRAY[''live''] so it never claims a ''triage'' or ''extract'' row owned by a scoped drain); every production call site either omits both or passes only p_intent_filter.';
 
 -- REVOKE ... FROM PUBLIC alone does not close this off: Supabase's local/
 -- hosted bootstrap grants EXECUTE on public-schema functions directly to
@@ -690,9 +733,9 @@ COMMENT ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER)
 -- with EXECUTE (same gap closed explicitly for delete_family_cascade
 -- above). Revoke from anon/authenticated by name too so the grant is
 -- actually closed.
-REVOKE ALL ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER) FROM PUBLIC;
-REVOKE ALL ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER) FROM anon, authenticated;
-GRANT EXECUTE ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER) TO service_role;
+REVOKE ALL ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER, UUID, TEXT[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER, UUID, TEXT[]) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER, UUID, TEXT[]) TO service_role;
 
 -- ============================================================================
 -- PEOPLE (Identity + optional derived summaries)
@@ -2340,6 +2383,7 @@ CREATE TABLE IF NOT EXISTS questions (
   -- Source tracking
   source_message_id UUID NULL,
   asked_by_identity_id UUID NULL REFERENCES identities(id),
+  asked_by_name TEXT NULL,
 
   -- When asked/answered
   asked_at TIMESTAMPTZ NULL,
@@ -2368,6 +2412,7 @@ CREATE TABLE IF NOT EXISTS questions (
 
 COMMENT ON TABLE questions IS 'Question lifecycle managed by Facilitator.';
 COMMENT ON COLUMN questions.asked_external_message_id IS 'External message ID of the sent question, for matching replies';
+COMMENT ON COLUMN questions.asked_by_name IS 'Facilitator persona display name (family.config.bots.facilitator.displayName, or the default) at the time this question was asked, so a later reply reads back the name actually used instead of a hardcoded literal';
 COMMENT ON COLUMN questions.target_person IS 'Name of the person this question should be directed to';
 COMMENT ON COLUMN questions.target_event IS 'Name/title of the event this question relates to';
 COMMENT ON COLUMN questions.target_place IS 'Name of the place this question relates to';
@@ -3898,6 +3943,48 @@ CREATE POLICY intern_decisions_update_super_admin ON intern_decisions
 CREATE POLICY intern_decisions_delete_super_admin ON intern_decisions
   FOR DELETE
   USING (is_super_admin());
+
+-- ----------------------------------------------------------------------------
+-- Intern decision upsert: preserve a human override across re-triage
+-- ----------------------------------------------------------------------------
+-- A TypeScript-side "SELECT existing, skip the write if overridden" check has
+-- a window: a PATCH /decisions/:eventId override can commit between that
+-- read and the subsequent upsert write, so a fresh Intern verdict for the
+-- same event silently resets the human's correction back to the LLM's
+-- decision. Folding the guard into one INSERT ... ON CONFLICT statement
+-- closes it: decision/reason are simply left out of the SET clause (so they
+-- keep their current values) whenever the existing row is already
+-- overridden, and that check-and-write happens as a single atomic statement
+-- instead of two round trips a concurrent write can land between.
+CREATE OR REPLACE FUNCTION upsert_intern_decision(
+  p_family_id UUID,
+  p_import_job_id UUID,
+  p_conversation_event_id UUID,
+  p_decision TEXT,
+  p_reason TEXT
+)
+RETURNS SETOF intern_decisions
+LANGUAGE sql
+SET search_path = ''
+AS $$
+  INSERT INTO public.intern_decisions AS t (
+    family_id, import_job_id, conversation_event_id, decision, reason, overridden, original_decision
+  )
+  VALUES (
+    p_family_id, p_import_job_id, p_conversation_event_id, p_decision, p_reason, FALSE, NULL
+  )
+  ON CONFLICT (import_job_id, conversation_event_id) DO UPDATE
+  SET decision = CASE WHEN t.overridden THEN t.decision ELSE excluded.decision END,
+      reason = CASE WHEN t.overridden THEN t.reason ELSE excluded.reason END
+  RETURNING t.*;
+$$;
+
+COMMENT ON FUNCTION upsert_intern_decision(UUID, UUID, UUID, TEXT, TEXT)
+  IS 'Atomically inserts or updates an intern_decisions row for (import_job_id, conversation_event_id). When the existing row is already human-overridden, decision/reason are left untouched -- closes the TOCTOU window a TypeScript-side read-then-write would leave between checking overridden and writing.';
+
+REVOKE ALL ON FUNCTION upsert_intern_decision(UUID, UUID, UUID, TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION upsert_intern_decision(UUID, UUID, UUID, TEXT, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION upsert_intern_decision(UUID, UUID, UUID, TEXT, TEXT) TO service_role;
 
 -- ============================================================================
 -- TABLE PRIVILEGES

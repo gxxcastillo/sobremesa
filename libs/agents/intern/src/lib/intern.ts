@@ -7,7 +7,11 @@ import {
 import { createLogger } from '@sobremesa/shared-utils';
 import type { AIProvider } from '@sobremesa/ai-provider';
 import type pino from 'pino';
-import type { Image, LanguageCode } from '@sobremesa/shared-types';
+import type {
+  ConversationEventType,
+  Image,
+  LanguageCode,
+} from '@sobremesa/shared-types';
 import type { MessageContext } from '@sobremesa/queue';
 
 /**
@@ -15,6 +19,136 @@ import type { MessageContext } from '@sobremesa/queue';
  * Should be enough to cover maxContextChars (2500) in most cases.
  */
 const CONTEXT_QUERY_LIMIT = 30;
+
+/**
+ * WhatsApp's own placeholder text for a media message with no caption (see
+ * `MEDIA_PATTERNS`, `libs/import-utils/src/lib/whatsapp-parser.ts`) -- the
+ * export format's `content`/`contentOriginal` for an uncaptioned photo is
+ * literally this string, optionally wrapped in WhatsApp's own invisible
+ * directionality marks, never empty. Stripped out (globally, case-
+ * insensitive) so what's left is the actual caption, if any.
+ */
+const MEDIA_PLACEHOLDER_PATTERN =
+  /<media omitted>|(?:image|video|audio|sticker|document|gif)\s+omitted/gi;
+
+const INVISIBLE_MARK_PATTERN = /[\u200e\u200f]/g;
+
+/**
+ * Modifiers that combine with a preceding pictograph (ZWJ for multi-person
+ * sequences, the variation selector, skin-tone modifiers) -- stripped before
+ * the emoji-only test below so the test itself doesn't need a combined-
+ * character-class regex (which `no-misleading-character-class` flags).
+ */
+const EMOJI_MODIFIER_PATTERN = /\u200d|\ufe0f|[\u{1F3FB}-\u{1F3FF}]/gu;
+
+/**
+ * Emoji-only detection. Deliberately narrower than a plain `\p{Emoji}` test:
+ * that Unicode property also covers plain ASCII digits and `#`/`*` (they
+ * participate in keycap sequences like 1️⃣), which would wrongly mark a
+ * bare year like "1920" as emoji-only. `\p{Extended_Pictographic}` (after
+ * stripping the modifiers above) matches real emoji without that false
+ * positive.
+ */
+const EMOJI_ONLY_PATTERN = /^[\p{Extended_Pictographic}\s]+$/u;
+
+function isEmojiOnly(text: string): boolean {
+  return EMOJI_ONLY_PATTERN.test(text.replace(EMOJI_MODIFIER_PATTERN, ''));
+}
+
+/**
+ * Reject reasons from `evaluateMessageText` that mean "too terse to carry
+ * content" in isolation, but are exactly how a real answer to a yes/no or
+ * fill-in-the-blank question looks (a bare "no", a bare 👍). `InternAgent.
+ * filter()` lifts a reject with one of these reasons back to relevant when
+ * the message is a reply to a tracked bot question -- see its use there.
+ * `Empty message` is deliberately excluded: an empty reply body has no
+ * content to assert regardless of what it's replying to.
+ */
+const ANSWER_OVERRIDE_REASONS = new Set([
+  'Message too short',
+  'Emoji-only message',
+]);
+
+/**
+ * Deterministic checks shared by both the "is there a caption at all" path
+ * (media) and the plain-text path (regular messages): empty/too-short or
+ * emoji-only. `null` means neither resolves it -- fall through to the LLM.
+ *
+ * Deliberately does NOT try to recognize acknowledgements ("thanks", "jaja")
+ * or continuation fragments ("and cilantro...") by word list: those are
+ * language-specific judgments that don't scale as a hardcoded list (every
+ * supported language would need its own set of words, forever incomplete),
+ * and getting one wrong silently drops real content instead of just costing
+ * an extra cheap LLM call. The length/emoji checks below are the only ones
+ * cheap enough to be free AND safe to apply without understanding the text.
+ */
+function evaluateMessageText(
+  messageText: string,
+): { relevant: boolean; reason: string } | null {
+  if (!messageText) {
+    return { relevant: false, reason: 'Empty message' };
+  }
+
+  // Skip very short messages (likely reactions)
+  if (messageText.length < 3) {
+    return { relevant: false, reason: 'Message too short' };
+  }
+
+  if (isEmojiOnly(messageText)) {
+    return { relevant: false, reason: 'Emoji-only message' };
+  }
+
+  return null;
+}
+
+/**
+ * The deterministic fast-path checks from `InternAgent.filter()` that don't
+ * need an LLM call or conversation context, extracted so other callers (e.g.
+ * the import review step, which classifies messages in bulk before they're
+ * ever queued) can reuse the exact same pre-LLM judgment instead of
+ * approximating it. Returns a verdict for the "obvious" cases; `null` means
+ * `filter()` itself would fall through to the LLM.
+ *
+ * NOTE: `InternAgent.route()` does NOT run non-'message' events through this
+ * heuristic (or `filter()` at all) -- it short-circuits straight to
+ * `action: 'scribe'` for any non-text event (see `route()` below), so the
+ * "no caption" skip here only applies when `filter()` is invoked directly
+ * without a router in front of it. Every current pipeline wires `router`
+ * and `filter` together (`buildMessagePipeline`), so `route()`'s decision
+ * always wins there and this never fires for media in practice today -- but
+ * `PipelineStage`s are independently selectable (e.g. `apps/cli`'s
+ * `--stages` flag), so a filter-only caller would silently skip captionless
+ * media that a router-based caller sends to Scribe. If that divergence ever
+ * needs to go away, make `route()` call this heuristic for non-text events
+ * too instead of special-casing them.
+ */
+export function internFilterHeuristic(
+  content: string | null | undefined,
+  eventType: ConversationEventType,
+): { relevant: boolean; reason: string } | null {
+  const rawText = content?.trim() ?? '';
+
+  if (eventType !== 'message') {
+    // A media event's content always carries at least the platform's own
+    // placeholder text (never empty) -- strip it to see if there's a real
+    // caption underneath. No caption: skip for free. A real caption gets the
+    // same scrutiny as a text message (it may itself be just "thanks!" or an
+    // emoji, or genuine content the LLM should judge).
+    const caption = rawText
+      .replace(INVISIBLE_MARK_PATTERN, '')
+      .replace(MEDIA_PLACEHOLDER_PATTERN, '')
+      .trim();
+    if (!caption) {
+      return {
+        relevant: false,
+        reason: `Media with no caption (${eventType})`,
+      };
+    }
+    return evaluateMessageText(caption);
+  }
+
+  return evaluateMessageText(rawText);
+}
 
 /**
  * Result of a message filter task.
@@ -179,38 +313,31 @@ export class InternAgent {
         };
       }
 
-      // Skip non-text events (photos, documents) - let Scribe handle those
-      if (event.eventType !== 'message') {
-        return {
-          relevant: true,
-          reason: `Non-text event type: ${event.eventType}`,
-        };
+      const heuristicResult = internFilterHeuristic(
+        event.contentOriginal,
+        event.eventType,
+      );
+      if (heuristicResult) {
+        if (
+          !heuristicResult.relevant &&
+          context?.answeredQuestion &&
+          ANSWER_OVERRIDE_REASONS.has(heuristicResult.reason)
+        ) {
+          // A reply to a tracked bot question ("Is John married to Kathy
+          // now?") asserts the confirmed fact even when it's just "no" or
+          // a thumbs-up -- Scribe gets the question as explicit context, so
+          // there's no need for (or benefit to) discarding it here.
+          return {
+            relevant: true,
+            reason: `Answer to tracked question (${heuristicResult.reason})`,
+          };
+        }
+        return heuristicResult;
       }
 
-      // Skip empty messages
-      const messageText = event.contentOriginal?.trim();
-      if (!messageText) {
-        return { relevant: false, reason: 'Empty message' };
-      }
-
-      // Skip very short messages (likely reactions)
-      if (messageText.length < 3) {
-        return { relevant: false, reason: 'Message too short' };
-      }
-
-      // Fast path: Messages starting with conjunctions are continuations
-      const lowerText = messageText.toLowerCase();
-      if (
-        lowerText.startsWith('and ') ||
-        lowerText.startsWith('but ') ||
-        lowerText.startsWith('or ') ||
-        lowerText.startsWith('also ')
-      ) {
-        return {
-          relevant: true,
-          reason: 'Continuation (starts with conjunction)',
-        };
-      }
+      // heuristicResult only returns null past the non-text/empty/too-short
+      // checks, so this is always a non-empty string here.
+      const messageText = (event.contentOriginal as string).trim();
 
       // Use pre-fetched context if provided, otherwise fetch from DB
       let contextMessages: string;
@@ -265,6 +392,7 @@ export class InternAgent {
       const response = await this.provider.complete({
         model: this.model,
         maxTokens: this.config.maxTokens,
+        temperature: 0,
         system: loadPrompt('internFilter'),
         messages: [{ role: 'user', content: userMessage }],
       });

@@ -39,15 +39,15 @@ See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** for the full setup guide.
 Current system behavior is specified in [`spec/`](spec/). Treat it as canonical when implementation
 and older docs disagree.
 
-| Document                                           | Purpose                                   |
-| -------------------------------------------------- | ----------------------------------------- |
-| [spec/README.md](spec/README.md)                   | Canonical technical specification         |
-| [docs/QUICKSTART.md](docs/QUICKSTART.md)           | Local setup and common commands           |
-| [spec/product/product.md](spec/product/product.md) | Product vision and principles             |
-| [spec/product/warmth.md](spec/product/warmth.md)   | Product voice and warmth guidelines       |
-| [spec/product/culture.md](spec/product/culture.md) | Cultural and language adaptation guidance |
-| [docs/adr/README.md](docs/adr/README.md)           | Historical architecture decision records  |
-| [AGENTS.md](AGENTS.md)                             | Contributor/agent working instructions    |
+| Document                                             | Purpose                                   |
+| ---------------------------------------------------- | ----------------------------------------- |
+| [spec/README.md](spec/README.md)                     | Canonical technical specification         |
+| [docs/QUICKSTART.md](docs/QUICKSTART.md)             | Local setup and common commands           |
+| [spec/product/product.md](spec/product/product.md)   | Product vision and principles             |
+| [spec/product/warmth.md](spec/product/warmth.md)     | Product voice and warmth guidelines       |
+| [spec/product/culture.md](spec/product/culture.md)   | Cultural and language adaptation guidance |
+| [docs/decisions/README.md](docs/decisions/README.md) | Historical architecture decision records  |
+| [AGENTS.md](AGENTS.md)                               | Contributor/agent working instructions    |
 
 ## Tech Stack
 

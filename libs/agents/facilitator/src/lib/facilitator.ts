@@ -15,6 +15,7 @@ import {
   type MessageSender,
   detectLanguage,
   Priorities,
+  DEFAULT_FACILITATOR_NAME,
 } from '@sobremesa/shared-types';
 import {
   buildSystemPrompt,
@@ -89,9 +90,6 @@ export interface SendResponseOptions {
   replyToMessageId?: number;
 }
 
-/** Default model to use for warmth transformation (fast and cheap) */
-const DEFAULT_WARMTH_MODEL = 'claude-haiku-4-5';
-
 /**
  * The Facilitator agent asks warm follow-up questions to families.
  * It picks the highest priority pending question and sends it via the Facilitator bot.
@@ -100,7 +98,7 @@ const DEFAULT_WARMTH_MODEL = 'claude-haiku-4-5';
 export class FacilitatorAgent {
   private messageSender: MessageSender;
   private provider?: AIProvider;
-  private model: string;
+  private model?: string;
   private questionRepo!: QuestionRepository;
   private familyRepo!: FamilyRepository;
   private eventLog!: EventLogRepository;
@@ -156,7 +154,7 @@ export class FacilitatorAgent {
 
     this.messageSender = options.messageSender;
     this.provider = options.provider;
-    this.model = options.model || DEFAULT_WARMTH_MODEL;
+    this.model = options.model;
     this.logger = options.logger || createLogger({ name: 'facilitator' });
     this.minMinutesBetweenQuestions = options.minMinutesBetweenQuestions ?? 60; // Default 1 hour
   }
@@ -207,12 +205,18 @@ export class FacilitatorAgent {
         chatId,
       );
 
-      // 5. Mark as asked with the external message ID for answer detection
+      // 5. Mark as asked with the external message ID for answer detection,
+      // and stamp the persona name so a later reply's answeredQuestion
+      // context can read it back instead of hardcoding a role name.
+      const askedByName =
+        family.config.bots?.facilitator?.displayName ??
+        DEFAULT_FACILITATOR_NAME;
       await this.questionRepo.markAsked(
         familyId,
         question.id,
         undefined,
         externalMessageId,
+        askedByName,
       );
 
       // 6. Log the event
@@ -375,7 +379,7 @@ export class FacilitatorAgent {
     question: Question,
     isTargetParticipant?: boolean,
   ): Promise<string> {
-    if (!this.provider) {
+    if (!this.provider || !this.model) {
       throw new Error('No AI provider available for warmth formatting');
     }
 
@@ -548,7 +552,7 @@ export class FacilitatorAgent {
     originalQuestion: string,
     historianAnswer: string,
   ): Promise<string> {
-    if (!this.provider) {
+    if (!this.provider || !this.model) {
       throw new Error('No AI provider available for warmth formatting');
     }
 

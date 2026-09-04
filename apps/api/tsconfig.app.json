@@ -10,9 +10,10 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "src"
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "../../types/global/index.d.ts"],
   "exclude": [
     "src/**/*.test.ts",
     "src/**/*.spec.ts",

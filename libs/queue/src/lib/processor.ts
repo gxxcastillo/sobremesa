@@ -1,9 +1,10 @@
-import type {
-  ProcessingResult,
-  ScribeDomainModel,
-  LanguageCode,
-  RawImageReference,
-  ConversationEvent,
+import {
+  DEFAULT_FACILITATOR_NAME,
+  type ProcessingResult,
+  type ScribeDomainModel,
+  type LanguageCode,
+  type RawImageReference,
+  type ConversationEvent,
 } from '@sobremesa/shared-types';
 import {
   ConversationEventRepository,
@@ -214,7 +215,7 @@ export interface RoutingProcessorResult {
   /** Reason for the routing decision */
   reason: string;
   /** Detected language of the message (en, es) */
-  language?: string;
+  language?: LanguageCode;
   /** Tokens used (if AI was called) */
   tokensUsed?: number;
 }
@@ -260,6 +261,26 @@ export type OnImageCreatedCallback = (
 ) => void;
 
 /**
+ * Callback invoked for every Filter verdict, relevant or not. `processTextContent`
+ * itself only ever logs a *not-relevant* verdict to `event_log`
+ * (`event_filtered`) -- a relevant verdict never reaches durable storage
+ * otherwise. Import's triage drain (`buildMessagePipeline`'s `onFilterDecision`
+ * option) supplies a callback that upserts every verdict into
+ * `intern_decisions`, replacing the old pre-queue heuristic-only guess with
+ * the real filter's own judgment. Live supplies nothing -- no-op, no
+ * behavior change. Unlike `OnImageCreatedCallback`, a thrown error here is
+ * NOT swallowed: for a triage-only drain, recording the decision *is* the
+ * point of the run, so a failure to record one should fail that event's
+ * processing (and retry/dead-letter through the normal queue lifecycle)
+ * rather than silently succeeding with a missing decision.
+ */
+export type FilterDecisionCallback = (
+  eventId: string,
+  familyId: string,
+  result: FilterProcessorResult,
+) => Promise<void>;
+
+/**
  * Message processor that orchestrates Router, Filter, Scribe, Registrar, and Admin.
  * Media events create Image records and notify via callback for async Curator analysis.
  */
@@ -279,6 +300,7 @@ export class MessageProcessor {
   private registrar?: RegistrarProcessor;
   private pipelineVersions?: PipelineVersions;
   private onImageCreated?: OnImageCreatedCallback;
+  private onFilterDecision?: FilterDecisionCallback;
   private logger: pino.Logger;
 
   constructor(options: {
@@ -412,6 +434,15 @@ export class MessageProcessor {
    */
   setOnImageCreated(callback: OnImageCreatedCallback): void {
     this.onImageCreated = callback;
+  }
+
+  /**
+   * Set callback invoked for every Filter verdict (relevant or not). See
+   * `FilterDecisionCallback`'s own doc for why this exists and why, unlike
+   * `onImageCreated`, its errors are not swallowed.
+   */
+  setOnFilterDecision(callback: FilterDecisionCallback): void {
+    this.onFilterDecision = callback;
   }
 
   /**
@@ -593,9 +624,11 @@ export class MessageProcessor {
       // Route the message if router is configured
       let routingAction: RoutingAction = 'scribe'; // Default to scribe pipeline
       let adminSubtype: AdminSubtype | undefined;
+      let routingResult: RoutingProcessorResult | undefined;
 
       if (this.router) {
         const routing = await this.router(eventId, familyId, context);
+        routingResult = routing;
         routingAction = routing.action;
         adminSubtype = routing.adminSubtype;
 
@@ -628,6 +661,30 @@ export class MessageProcessor {
             tokensUsed: routing.tokensUsed,
           },
         });
+
+        // Report the router's outcome as a filter verdict. Intern's route()
+        // already calls filter() internally (or deterministically decides
+        // ignore for e.g. an unknown command) before ever reaching here, so
+        // processTextContent's own registered `this.filter` call is skipped
+        // for every routed message (see the `!this.router` guard below) --
+        // without firing it here, onFilterDecision would never fire at all
+        // for a 'scribe'/'historian' routing outcome, only for 'ignore'.
+        // Fire it for every outcome that answers "should this go to Scribe"
+        // (ignore = no, scribe/historian = yes); 'admin' is excluded since
+        // it's deterministic command/DM/mention handling, not a
+        // Scribe-relevance judgment, and never sent through filter().
+        if (this.onFilterDecision && routingAction !== 'admin') {
+          await this.onFilterDecision(eventId, familyId, {
+            relevant: routingAction !== 'ignore',
+            reason:
+              routingResult?.reason ??
+              (routingAction === 'ignore'
+                ? 'Routed to ignore'
+                : 'Routed for processing'),
+            language: routingResult?.language,
+            tokensUsed: routingResult?.tokensUsed,
+          });
+        }
       }
 
       // Handle based on routing action
@@ -713,7 +770,13 @@ export class MessageProcessor {
       // Route to scribe pipeline (runs for both historian and scribe routing)
       // Process text content through Filter/Scribe (including media captions)
       if (event.contentOriginal || event.eventType === 'message') {
-        await this.processTextContent(eventId, familyId, context);
+        await this.processTextContent(
+          eventId,
+          familyId,
+          context,
+          routingResult?.language,
+          event.languageOriginal,
+        );
       }
 
       // Log processing complete
@@ -780,13 +843,23 @@ export class MessageProcessor {
     eventId: string,
     familyId: string,
     context: MessageContext,
+    routingLanguage?: LanguageCode,
+    ingestedLanguage?: LanguageCode,
   ): Promise<void> {
-    // Run Filter (if configured) to determine if message is relevant
+    // Run Filter (if configured) to determine if message is relevant.
+    // Skipped when a router is registered: Intern's route() already calls
+    // filter() internally, and a routingAction of 'ignore' already
+    // short-circuited before this method runs -- so a second call here
+    // would just be a duplicate charge for the same verdict.
     let shouldProcess = true;
     let filterResult: FilterProcessorResult | undefined;
-    if (this.filter) {
+    if (this.filter && !this.router) {
       this.logger.debug({ eventId }, 'Running Filter');
       filterResult = await this.filter(eventId, familyId, context);
+
+      if (this.onFilterDecision) {
+        await this.onFilterDecision(eventId, familyId, filterResult);
+      }
 
       if (!filterResult.relevant) {
         // Message is not relevant - skip Scribe
@@ -827,21 +900,30 @@ export class MessageProcessor {
       }
     }
 
-    // Store detected language from filter if different from original
-    let detectedLanguage: LanguageCode | undefined;
-    if (shouldProcess && filterResult?.language) {
-      detectedLanguage = filterResult.language;
-      const event = await this.eventRepo.findById(familyId, eventId);
-
-      // If filter detected different language than ingestion, store in processing table
-      if (event && event.languageOriginal !== detectedLanguage) {
-        await this.processingRepo.upsert({
-          conversationEventId: eventId,
-          familyId,
-          detectedLanguage,
-          processedBy: 'intern',
-        });
-      }
+    // Store detected language from filter if different from original.
+    // filterResult.language is only set when this method ran its own
+    // filter call above; when a router already ran it, use the language
+    // it carried back instead.
+    const detectedLanguage: LanguageCode | undefined =
+      filterResult?.language ?? routingLanguage;
+    if (
+      shouldProcess &&
+      detectedLanguage &&
+      ingestedLanguage !== detectedLanguage
+    ) {
+      // If filter detected different language than ingestion, store in
+      // processing table. Uses the event's language as already loaded by
+      // process() -- this used to re-fetch the same (immutable) event row
+      // again here, an extra DB round trip on what's now the common case
+      // for essentially every message (routingLanguage is set by Intern's
+      // route() for nearly every ordinary message, not just when this
+      // method's own standalone filter call ran).
+      await this.processingRepo.upsert({
+        conversationEventId: eventId,
+        familyId,
+        detectedLanguage,
+        processedBy: 'intern',
+      });
     }
 
     // Run Scribe (if configured and filter passed)
@@ -1085,7 +1167,7 @@ export class MessageProcessor {
       const questionContext: AnsweredQuestionContext = {
         id: question.id,
         content: question.contentOriginal,
-        askedByName: 'Facilitator',
+        askedByName: question.askedByName ?? DEFAULT_FACILITATOR_NAME,
       };
 
       // Already answered? Skip

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { loadAIConfig, validateConfig } from './config';
+import { loadAIConfig, validateConfig, DEFAULT_MODELS } from './config';
 import { AIProviderFactory } from './factory';
 import { AnthropicProvider } from './providers/anthropic';
 import { MockProvider } from './providers/mock';
@@ -53,6 +53,36 @@ describe('loadAIConfig', () => {
 
     expect(config.agentModels.intern?.provider).toBe('local');
     expect(config.agentModels.scribe?.provider).toBe('anthropic');
+  });
+
+  it('resolves each agent to its own tier model on Anthropic instead of collapsing onto one model', () => {
+    // Regression test for the dead model-tier system: the anthropic provider
+    // used to always set a hardcoded `defaultModel`, which short-circuited
+    // getModelForTier's tier switch and put every agent on the standard
+    // (Sonnet) model regardless of its assigned tier.
+    const config = loadAIConfig({ ANTHROPIC_API_KEY: 'sk-ant-test' });
+
+    expect(config.agentModels.intern?.model).toBe(
+      DEFAULT_MODELS.anthropic.fast,
+    );
+    expect(config.agentModels.facilitator?.model).toBe(
+      DEFAULT_MODELS.anthropic.fast,
+    );
+    expect(config.agentModels.scribe?.model).toBe(
+      DEFAULT_MODELS.anthropic.standard,
+    );
+    expect(config.agentModels.historian?.model).toBe(
+      DEFAULT_MODELS.anthropic.standard,
+    );
+    // Curator's 'vision' tier has no dedicated Anthropic model in
+    // DEFAULT_MODELS and falls through to 'standard' -- still exercises the
+    // same getModelForTier path as the other agents.
+    expect(config.agentModels.curator?.model).toBe(
+      DEFAULT_MODELS.anthropic.standard,
+    );
+    expect(config.agentModels.intern?.model).not.toBe(
+      config.agentModels.scribe?.model,
+    );
   });
 });
 

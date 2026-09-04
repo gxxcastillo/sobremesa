@@ -67,10 +67,14 @@ function makeProvider(): {
   return { provider, requests };
 }
 
-function makeScribe(options?: { temperature?: number }) {
+function makeScribe(options?: {
+  temperature?: number;
+  systemPromptOverride?: string;
+  event?: ConversationEvent;
+}) {
   const { provider, requests } = makeProvider();
-  const event = makeEvent();
-  const scribe = new ScribeAgent({
+  const event = options?.event ?? makeEvent();
+  const scribe = ScribeAgent.forEval({
     provider,
     model: 'test-model',
     eventRepo: {
@@ -87,6 +91,7 @@ function makeScribe(options?: { temperature?: number }) {
       options?.temperature !== undefined
         ? { temperature: options.temperature }
         : undefined,
+    systemPromptOverride: options?.systemPromptOverride,
   });
   return { scribe, requests };
 }
@@ -109,5 +114,45 @@ describe('ScribeAgent provider request', () => {
 
     expect(requests).toHaveLength(1);
     expect(requests[0].temperature).toBe(0.7);
+  });
+
+  it('sends a systemPromptOverride verbatim instead of the generated prompt', async () => {
+    const { scribe, requests } = makeScribe({
+      systemPromptOverride: 'Custom hand-edited prompt text.',
+    });
+
+    await scribe.process(EVENT_ID, FAMILY_ID, makeContext());
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].system).toBe('Custom hand-edited prompt text.');
+  });
+});
+
+describe('ScribeAgent.buildPrompt', () => {
+  it('builds the exact prompt process() would send, without calling the provider', async () => {
+    const { scribe, requests } = makeScribe();
+
+    const built = await scribe.buildPrompt(EVENT_ID, FAMILY_ID, makeContext());
+
+    expect(requests).toHaveLength(0);
+    expect(built.empty).toBe(false);
+    if (built.empty) throw new Error('expected a non-empty build');
+    expect(built.systemPrompt).toContain('Scribe');
+    expect(built.userMessage).toContain(
+      'My mother Rosa was born in Oaxaca in 1943.',
+    );
+
+    await scribe.process(EVENT_ID, FAMILY_ID, makeContext());
+    expect(requests).toHaveLength(1);
+    expect(requests[0].system).toBe(built.systemPrompt);
+  });
+
+  it('reports empty:true for a contentless event without building a prompt', async () => {
+    const event = { ...makeEvent(), contentOriginal: null };
+    const { scribe } = makeScribe({ event });
+
+    const built = await scribe.buildPrompt(EVENT_ID, FAMILY_ID, makeContext());
+
+    expect(built.empty).toBe(true);
   });
 });

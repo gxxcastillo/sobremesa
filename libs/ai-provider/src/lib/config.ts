@@ -23,7 +23,7 @@ export type AgentTier = 'fast' | 'standard' | 'vision';
  */
 export const DEFAULT_MODELS = {
   anthropic: {
-    fast: 'claude-3-5-haiku-20241022',
+    fast: 'claude-haiku-4-5',
     standard: 'claude-sonnet-4-5-20250929',
   },
   local: {
@@ -97,13 +97,16 @@ export function loadAIConfig(
 ): AIConfig {
   const providers: Record<string, ProviderConfig> = {};
 
-  // Configure Anthropic provider if API key is available
+  // Configure Anthropic provider if API key is available. No defaultModel:
+  // there is no env var to configure one, and setting it unconditionally
+  // (as this used to) short-circuits getModelForTier's tier-based
+  // resolution below for every agent, collapsing them all onto one model
+  // regardless of tier.
   const anthropicKey = env[ENV_KEYS.ANTHROPIC_API_KEY];
   if (anthropicKey) {
     providers['anthropic'] = {
       type: 'anthropic',
       apiKey: anthropicKey,
-      defaultModel: DEFAULT_MODELS.anthropic.standard,
     };
   }
 

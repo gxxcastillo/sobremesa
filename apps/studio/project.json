@@ -6,6 +6,8 @@
   "tags": [],
   "targets": {
     "dev": {
+      "continuous": true,
+      "dependsOn": [{ "projects": ["api"], "target": "dev" }],
       "executor": "nx:run-commands",
       "options": {
         "command": "bun vite",

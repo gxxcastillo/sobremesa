@@ -284,4 +284,42 @@ describe('FacilitatorAgent - Participant Addressing', () => {
       expect(mockFamilyAccessRepo.isPersonParticipant).not.toHaveBeenCalled();
     });
   });
+
+  describe('persona name stamped when marking a question asked', () => {
+    it('defaults to Carmencita when the family has not customized the persona', async () => {
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      await facilitator.askNextQuestion(baseFamily.id);
+
+      expect(mockQuestionRepo.markAsked).toHaveBeenCalledWith(
+        baseFamily.id,
+        baseQuestion.id,
+        undefined,
+        12345,
+        'Carmencita',
+      );
+    });
+
+    it('uses the family-configured display name when set', async () => {
+      const customFamily: Family = {
+        ...baseFamily,
+        config: {
+          ...baseFamily.config,
+          bots: { facilitator: { displayName: 'Abuelita' } },
+        },
+      };
+      mockFamilyRepo.findById.mockResolvedValue(customFamily);
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      await facilitator.askNextQuestion(customFamily.id);
+
+      expect(mockQuestionRepo.markAsked).toHaveBeenCalledWith(
+        customFamily.id,
+        baseQuestion.id,
+        undefined,
+        12345,
+        'Abuelita',
+      );
+    });
+  });
 });

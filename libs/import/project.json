@@ -4,5 +4,24 @@
   "sourceRoot": "libs/import/src",
   "projectType": "library",
   "tags": ["scope:service"],
-  "targets": {}
+  "targets": {
+    "types": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun tsc --noEmit -p libs/import/tsconfig.lib.json"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun eslint libs/import"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun vitest run --config libs/import/vite.config.ts"
+      }
+    }
+  }
 }

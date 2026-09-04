@@ -1,8 +1,9 @@
 import { loadPrompt } from '@sobremesa/prompts';
-import type {
-  Question,
-  FamilyConfig,
-  LanguageCode,
+import {
+  DEFAULT_FACILITATOR_NAME,
+  type Question,
+  type FamilyConfig,
+  type LanguageCode,
 } from '@sobremesa/shared-types';
 
 /**
@@ -25,7 +26,7 @@ const DEFAULT_PERSONALITY = {
 export function buildSystemPrompt(config: FamilyConfig): string {
   const personality = config.bots?.facilitator?.personality ?? {};
   const facilitatorName =
-    config.bots?.facilitator?.displayName ?? 'Facilitator';
+    config.bots?.facilitator?.displayName ?? DEFAULT_FACILITATOR_NAME;
   const primaryLanguage = config.languages?.primary ?? 'en';
   const culturalTerms = config.culturalTerms ?? [];
 
@@ -111,7 +112,7 @@ export function buildResponseSystemPrompt(
 ): string {
   const personality = config.bots?.facilitator?.personality ?? {};
   const facilitatorName =
-    config.bots?.facilitator?.displayName ?? 'Facilitator';
+    config.bots?.facilitator?.displayName ?? DEFAULT_FACILITATOR_NAME;
   const primaryLanguage = config.languages?.primary ?? 'en';
   const culturalTerms = config.culturalTerms ?? [];
 

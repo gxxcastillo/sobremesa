@@ -1,11 +1,14 @@
 /**
- * Types for WhatsApp History Import feature.
+ * Types for the chat history import feature. The shapes below (ParsedMessage,
+ * ParseResult, etc.) are format-agnostic by design; WhatsApp is the only
+ * source with a parser implemented today (`libs/import-utils`), but
+ * `ImportSource` already reserves room for others.
  */
 
 import type { LanguageCode } from './languages';
 
 /**
- * A single parsed message from WhatsApp export.
+ * A single parsed message from a chat export.
  */
 export interface ParsedMessage {
   /** Unique ID: wa-{timestamp_ms}-{line_index} */
@@ -34,7 +37,7 @@ export interface ParsedMessage {
 }
 
 /**
- * Participant extracted from WhatsApp export.
+ * Participant extracted from a chat export.
  */
 export interface ParsedParticipant {
   /** Raw name from export (e.g., "~ Gerie Najlis") */
@@ -46,7 +49,7 @@ export interface ParsedParticipant {
 }
 
 /**
- * Result of parsing a WhatsApp export file.
+ * Result of parsing a chat export file.
  */
 export interface ParseResult {
   /** All parsed messages (stored in memory) */
@@ -220,13 +223,22 @@ export interface DuplicateCheckResult {
 }
 
 /**
+ * Chat export source recognized by the data model. Only 'whatsapp' has a
+ * parser implemented today (see `libs/import-utils` and
+ * `apps/cli/src/commands/import.ts`) -- 'telegram' and 'other' are reserved
+ * for formats not yet supported, so callers can name them (and fail clearly)
+ * rather than mis-detecting an unrelated format as WhatsApp.
+ */
+export type ImportSource = 'whatsapp' | 'telegram' | 'other';
+
+/**
  * Import job record stored in database.
  */
 export interface ImportJob {
   id: string;
   createdBy: string;
   status: ImportJobStatus;
-  source: 'whatsapp' | 'telegram' | 'other';
+  source: ImportSource;
   config: ImportConfig;
   progress: {
     current: number;

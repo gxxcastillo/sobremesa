@@ -20,7 +20,8 @@ import { FamilyAccessRepository } from '@sobremesa/auth';
 // import { RegistrarAgent } from '@sobremesa/agents-registrar';
 import type { ImportJob } from '@sobremesa/shared-types';
 import {
-  parseWhatsAppExport,
+  IMPORT_PARSERS,
+  SUPPORTED_IMPORT_SOURCES,
   parseTimestampWithTimezone,
 } from '@sobremesa/import-utils';
 import { ImportJobRepository } from './import-job-repository';
@@ -149,7 +150,14 @@ export class ImportProcessor {
       throw new Error('Job missing raw file content in metadata');
     }
 
-    const parseResult = parseWhatsAppExport(rawFileContent);
+    const parse = IMPORT_PARSERS[job.source];
+    if (!parse) {
+      throw new Error(
+        `Import source "${job.source}" has no parser implemented (only ` +
+          `${SUPPORTED_IMPORT_SOURCES.join(', ')} today).`,
+      );
+    }
+    const parseResult = parse(rawFileContent);
     const messages = parseResult.messages;
     const config = job.config;
 

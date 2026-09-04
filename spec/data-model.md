@@ -71,17 +71,29 @@ Queues:
 
 - `processing_queue`: ordered retryable event pipeline, with priority, leases, attempts, and
   stale-lock recovery. Items that exhaust retries dead-letter (`status = 'error'`); admins can list and
-  requeue dead-lettered items per family.
+  requeue dead-lettered items per family. `intent` (`'live' | 'triage' | 'extract'`, default `'live'`)
+  marks what a row is queued _for_; the dequeue function takes an optional intent filter so the
+  always-on live poller (`['live', 'extract']`) never claims a `'triage'`-intent row an import's
+  human-review phase hasn't cleared yet (§4.6 of
+  [`message-lifecycle.md`](./message-lifecycle.md)).
 - `llm_evaluation_queue`: async review queue for uncertain claim strength, entity matches, or
   conflict resolution. Claims can be enqueued today; no live worker drains it.
 
 Imports:
 
-- `import_jobs`: super-admin WhatsApp import jobs. The implemented path parses a `.txt` export,
-  creates/reuses family and participant records, inserts immutable `conversation_events`, then pauses
-  for review.
-- `intern_decisions`: per-import-event `process|skip` decisions with optional user override. Selected
-  messages are queued into the normal Scribe/Registrar path.
+- `import_jobs`: super-admin import jobs. `source` names the export format (`whatsapp`, `telegram`,
+  or `other`). Both job-creating entry points (`sbm import`, `POST /api/imports`) resolve it via
+  the shared `resolveImportSource` (explicit or auto-detected from the file), and the background
+  processor (`ImportProcessor`) parses using the same `IMPORT_PARSERS` registry (`libs/import-utils`)
+  keyed by the job's stored `source`. WhatsApp is the only source with a parser implemented today --
+  the others are reserved and fail clearly rather than being mis-parsed as WhatsApp (Studio's wizard
+  is WhatsApp-only and always sends `source: 'whatsapp'` explicitly). The implemented path parses
+  the export, creates/reuses family and participant records, inserts immutable `conversation_events`,
+  then pauses for review.
+- `intern_decisions`: per-import-event `process|skip` decisions with optional user override, populated
+  from Intern's real router+filter verdicts (a triage-only queue drain, `intent: 'triage'` — see §4.6
+  of [`message-lifecycle.md`](./message-lifecycle.md)), not a free-standing heuristic guess. Selected
+  messages are re-enqueued (`intent: 'extract'`) into the Scribe/Registrar-only path.
 
 ## 2.5 Media, Questions, Audit, and Integrity
 

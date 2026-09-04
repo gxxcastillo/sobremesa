@@ -35,6 +35,12 @@ always retried before its newer queued rows, rather than waiting for every other
 drain. The live processor handles one item at a time per worker; the dequeue exclusion preserves
 deterministic per-family text order across workers.
 
+Every `processing_queue` row also carries an `intent` (`'live' | 'triage' | 'extract'`, default
+`'live'`), and the dequeue function takes an optional intent filter. The always-on live poller
+(`apps/chatbots`) restricts itself to `['live', 'extract']` — it can never claim a `'triage'`-intent
+row, which exists specifically so a scoped import drain (§4.6) and the live poller never compete for
+the same row.
+
 `MessageProcessor`:
 
 1. Loads the event and shared recent context.
@@ -79,7 +85,13 @@ proposed → asked → answered
 Facilitator asks the highest-priority eligible question, records the external message id, and logs
 `question_asked`. A reply to that message marks the question `answered`, logs `question_answered`,
 adds the original question as an explicit Scribe context block, and then flows through normal
-extraction.
+extraction. Intern's deterministic filter (§3.2 of [`agent-pipeline.md`](./agent-pipeline.md))
+normally discards an empty, too-short, or emoji-only message without ever calling Scribe or the LLM
+filter; when the message is a reply to a tracked question, that discard is skipped instead (except
+for a truly empty body), since a bare "no" or a thumbs-up emoji is exactly how a real answer to a
+yes/no question looks. Word-based judgments — is this an acknowledgement, a continuation of the
+previous message — are not hardcoded by word list (that doesn't scale across languages); they always
+fall through to the filter LLM, which already gets the recent conversation for context.
 
 ## 4.5 Family Activation
 
@@ -93,10 +105,30 @@ The Studio WhatsApp import path enters through the API but reuses the same ledge
 
 1. Browser parses/previews a `.txt` export and posts file + family/participant config.
 2. `ImportProcessor` creates/reuses family and participant records, then inserts immutable
-   `conversation_events` under an import conversation id.
-3. Import pauses for Intern review (`process|skip`, with super-admin overrides).
-4. Selected events are enqueued into `processing_queue` and processed by the normal Scribe/Registrar
-   path.
+   `conversation_events` under an import conversation id. Every parsed event is written and, later,
+   enqueued unconditionally — there is no separate pre-queue skip/process decision at this stage
+   (matches live's `MessageIngester`, which never consults Intern before enqueueing either).
+3. **Phase 1 (triage).** Every event in the job's conversation is enqueued with
+   `intent: 'triage'` and drained directly (by event id, not via the shared dequeue function, so
+   this never competes with the live poller or a concurrent scoped drain) through
+   `buildMessagePipeline({ stages: ['router', 'filter'] })` — Intern's real router and filter, the
+   same free-rule-then-LLM-fallback judgment a live message gets, at no Scribe cost. Every verdict
+   (relevant or not) is recorded into `intern_decisions` via a filter-decision callback threaded
+   through `MessageProcessor`, replacing the old free heuristic-only guess.
+4. **Human review**, unchanged UI/UX: the Studio wizard shows each message with Intern's real
+   `process`/`skip` decision and reason; a super admin can override any of them.
+5. **Phase 2 (extraction).** The human-approved (`process`) events are re-enqueued with
+   `intent: 'extract'` and drained through `buildMessagePipeline({ stages: ['scribe', 'registrar'] })`
+   — `'filter'` is deliberately excluded here: `MessageProcessor` defaults `shouldProcess` to `true`
+   when no filter is wired, and re-running it would both double-pay for the same judgment and risk
+   silently overriding a human's override.
+
+`sbm import`/`sbm process` (local dev CLI) don't have a human reviewer in the loop, so they collapse
+phases 1-2 into `sbm process`'s own single default pass (`router, filter, imageLinker, scribe,
+registrar`) — the same per-event shape a live message gets, just run as a batch. `sbm import` enqueues
+every parsed event unconditionally (default `intent: 'live'`, since nothing else competes with a
+local one-shot batch run); `sbm process` accepts an optional `--intent` filter for replicating the
+Studio two-phase shape locally if needed.
 
 Duplicate checking compares timestamp, actor, and content prefix before import. Failed imports can be
 resumed; in-progress imports can be cancelled between insertion batches.

@@ -1,6 +1,7 @@
 /**
  * Internal role identifiers for agents.
- * Display names are configurable via SobremesaConfig.
+ * Display names are configurable via FamilyConfig (`bots.<role>.displayName`),
+ * per family; never surface a `BotRole` value itself as a display name.
  */
 export type BotRole =
   | 'facilitator'

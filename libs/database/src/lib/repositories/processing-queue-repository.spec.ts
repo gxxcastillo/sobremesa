@@ -126,6 +126,123 @@ describe('ProcessingQueueRepository - enqueue', () => {
       }),
     );
   });
+
+  it('should default to intent "live" when omitted', async () => {
+    const queuedItem = {
+      id: 'q1',
+      family_id: 'fam1',
+      conversation_event_id: 'event-1',
+      status: 'queued',
+      attempts: 0,
+      priority: 5,
+      intent: 'live',
+      queued_at: new Date().toISOString(),
+    };
+
+    const chain = createChainableMock({ data: queuedItem, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await queueRepo.enqueue('fam1', 'event-1');
+
+    expect(chain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ intent: 'live' }),
+    );
+  });
+
+  it('should support a custom intent (e.g. "triage" for a scoped import drain)', async () => {
+    const queuedItem = {
+      id: 'q1',
+      family_id: 'fam1',
+      conversation_event_id: 'event-1',
+      status: 'queued',
+      attempts: 0,
+      priority: 5,
+      intent: 'triage',
+      queued_at: new Date().toISOString(),
+    };
+
+    const chain = createChainableMock({ data: queuedItem, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await queueRepo.enqueue('fam1', 'event-1', { intent: 'triage' });
+
+    expect(chain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ intent: 'triage' }),
+    );
+  });
+
+  it('retags the existing row with the new intent on unique constraint violation when the intent differs', async () => {
+    // Regression test: the unique constraint is on (family_id,
+    // conversation_event_id) only, with no `intent` component, so
+    // re-enqueuing an event under a new intent (e.g. import's extraction
+    // drain enqueuing intent 'extract' for an event a prior triage phase
+    // already enqueued with intent 'triage') must not silently keep the
+    // stale intent from the first phase.
+    const existingItem = {
+      id: 'q1',
+      family_id: 'fam1',
+      conversation_event_id: 'event-1',
+      status: 'done',
+      attempts: 0,
+      priority: 5,
+      intent: 'triage',
+      queued_at: new Date().toISOString(),
+    };
+    const updatedItem = { ...existingItem, intent: 'extract' };
+
+    const insertChain = createChainableMock({
+      data: null,
+      error: { code: '23505', message: 'Unique violation' },
+    });
+    const findChain = createChainableMock({ data: existingItem, error: null });
+    const updateChain = createChainableMock({ data: updatedItem, error: null });
+
+    let callCount = 0;
+    mockSupabaseClient.from.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return insertChain;
+      if (callCount === 2) return findChain;
+      return updateChain;
+    });
+
+    const result = await queueRepo.enqueue('fam1', 'event-1', {
+      intent: 'extract',
+    });
+
+    expect(result.intent).toBe('extract');
+    expect(updateChain.update).toHaveBeenCalledWith({ intent: 'extract' });
+  });
+
+  it('returns the existing row unchanged on unique constraint violation when the intent already matches', async () => {
+    const existingItem = {
+      id: 'q1',
+      family_id: 'fam1',
+      conversation_event_id: 'event-1',
+      status: 'queued',
+      attempts: 0,
+      priority: 5,
+      intent: 'live',
+      queued_at: new Date().toISOString(),
+    };
+
+    const insertChain = createChainableMock({
+      data: null,
+      error: { code: '23505', message: 'Unique violation' },
+    });
+    const findChain = createChainableMock({ data: existingItem, error: null });
+
+    let callCount = 0;
+    mockSupabaseClient.from.mockImplementation(() => {
+      callCount++;
+      return callCount === 1 ? insertChain : findChain;
+    });
+
+    const result = await queueRepo.enqueue('fam1', 'event-1');
+
+    expect(result.intent).toBe('live');
+    // No third `from()` call -- no update issued when the intent matches.
+    expect(callCount).toBe(2);
+  });
 });
 
 describe('ProcessingQueueRepository - fail', () => {
@@ -432,6 +549,39 @@ describe('ProcessingQueueRepository - dequeueAny', () => {
 
     await expect(queueRepo.dequeueAny('worker-1')).rejects.toThrow(
       'Failed to dequeue queue item: function failed',
+    );
+  });
+
+  it('should scope dequeue to one family when familyId is given', async () => {
+    mockSupabaseClient.rpc.mockResolvedValue({ data: [], error: null });
+
+    await queueRepo.dequeueAny('worker-1', 300000, 'fam1');
+
+    expect(mockSupabaseClient.rpc).toHaveBeenCalledWith(
+      'dequeue_processing_queue_item',
+      {
+        p_worker_id: 'worker-1',
+        p_lock_timeout_ms: 300000,
+        p_family_id: 'fam1',
+      },
+    );
+  });
+
+  it('should scope dequeue to the given intents when intentFilter is given', async () => {
+    mockSupabaseClient.rpc.mockResolvedValue({ data: [], error: null });
+
+    await queueRepo.dequeueAny('worker-1', 300000, undefined, [
+      'live',
+      'extract',
+    ]);
+
+    expect(mockSupabaseClient.rpc).toHaveBeenCalledWith(
+      'dequeue_processing_queue_item',
+      {
+        p_worker_id: 'worker-1',
+        p_lock_timeout_ms: 300000,
+        p_intent_filter: ['live', 'extract'],
+      },
     );
   });
 

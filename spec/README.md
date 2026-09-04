@@ -9,7 +9,7 @@ Bun + Nx monorepo. This spec is the canonical description of current system beha
   updated in the same change as code, per [`AGENTS.md`](../AGENTS.md).
 - **[`spec/product/`](./product/)** is **normative**: what must be true regardless of
   implementation. It changes only by deliberate product decision, and such a change warrants an
-  ADR (see [`docs/adr/`](../docs/adr/)).
+  ADR (see [`docs/decisions/`](../docs/decisions/)).
 
 ## How to read this spec
 

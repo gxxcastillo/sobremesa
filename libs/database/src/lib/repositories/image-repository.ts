@@ -132,32 +132,17 @@ export class ImageRepository extends BaseRepository<Image> {
     conversationId: string,
     limit = 5,
   ): Promise<Image[]> {
-    // First, get conversation event IDs for this conversation
-    const { data: eventIds, error: eventsError } = await this.client
-      .from('conversation_events')
-      .select('id')
-      .eq('family_id', familyId)
-      .eq('conversation_id', conversationId);
-
-    if (eventsError) {
-      throw new Error(
-        `Failed to find conversation events: ${eventsError.message}`,
-      );
-    }
-
-    if (!eventIds || eventIds.length === 0) {
-      return [];
-    }
-
-    const eventIdList = eventIds.map((e) => e.id);
-
-    // Query images that have conversation_event_id in this conversation
+    // Filter through the images -> conversation_events FK directly (a
+    // PostgREST embedded-resource filter) instead of first fetching every
+    // event ID in the conversation and passing them as an .in() list -- for
+    // a large imported conversation that list can exceed the request's URI
+    // length limit ("URI too long").
     const { data, error } = await this.client
       .from(this.tableName)
-      .select('*')
+      .select('*, conversation_events!inner(conversation_id)')
       .eq('family_id', familyId)
       .eq('redacted', false)
-      .in('conversation_event_id', eventIdList)
+      .eq('conversation_events.conversation_id', conversationId)
       .order('created_at', { ascending: false })
       .limit(limit);
 

@@ -386,6 +386,22 @@ export function scoreScenario(
     };
   }
 
+  if (!run.scenario.golden) {
+    return {
+      scenarioId: run.scenario.id,
+      description: run.scenario.description,
+      score: 0,
+      precision: 0,
+      recall: 0,
+      passed: false,
+      hardFailed: false,
+      categories: [],
+      forbiddenHits: [],
+      grounding: emptyGroundingSummary(),
+      scored: false,
+    };
+  }
+
   const { outputs, grounding } = applyGrounding(run);
   const output = aggregateOutputs(outputs);
   const golden = run.scenario.golden;
@@ -470,17 +486,33 @@ export function buildReport(options: {
   const scenarioScores = options.results.map((result) =>
     scoreScenario(result, options.threshold),
   );
-  const aggregateScore = average(scenarioScores.map((score) => score.score));
-  const aggregatePrecision = average(
-    scenarioScores.map((score) => score.precision),
-  );
-  const aggregateRecall = average(scenarioScores.map((score) => score.recall));
+  // Scenarios with nothing to score against (scored: false — ad hoc text, a
+  // real message) carry placeholder score/precision/recall of 0, not a real
+  // verdict. Excluded here so a mix of graded and ungraded scenarios doesn't
+  // silently drag the aggregate down; they still appear in scenarioScores.
+  const gradedScores = scenarioScores.filter((score) => score.scored !== false);
+  // `average([])` returns 1 (a deliberate "nothing to check, vacuous pass"
+  // default for per-scenario category averages). That default is wrong here:
+  // a report built entirely from ungraded scenarios has no scoring data at
+  // all, so report it as 0 rather than a misleading 100%.
+  const aggregateScore =
+    gradedScores.length === 0
+      ? 0
+      : average(gradedScores.map((score) => score.score));
+  const aggregatePrecision =
+    gradedScores.length === 0
+      ? 0
+      : average(gradedScores.map((score) => score.precision));
+  const aggregateRecall =
+    gradedScores.length === 0
+      ? 0
+      : average(gradedScores.map((score) => score.recall));
 
-  const totalClaims = scenarioScores.reduce(
+  const totalClaims = gradedScores.reduce(
     (sum, score) => sum + score.grounding.totalClaims,
     0,
   );
-  const failedClaims = scenarioScores.reduce(
+  const failedClaims = gradedScores.reduce(
     (sum, score) =>
       sum + score.grounding.contextBleed + score.grounding.unmatched,
     0,
@@ -565,8 +597,13 @@ function calculateCapabilityGaps(
   );
 
   return baselineReport.scenarioScores.flatMap((baselineScore) => {
+    // Ungraded scenarios (scored: false) carry placeholder scores, not a
+    // real verdict -- skip them here the same way buildReport's
+    // gradedScores filter excludes them from the aggregate, so a mix of
+    // graded/ungraded scenarios doesn't produce a spurious 0-vs-0 gap.
+    if (baselineScore.scored === false) return [];
     const candidateScore = candidateByScenario.get(baselineScore.scenarioId);
-    if (!candidateScore) return [];
+    if (!candidateScore || candidateScore.scored === false) return [];
 
     return {
       scenarioId: baselineScore.scenarioId,

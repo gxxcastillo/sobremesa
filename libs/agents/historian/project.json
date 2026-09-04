@@ -13,6 +13,12 @@
       "options": {
         "command": "bun eslint libs/agents/historian"
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun vitest run --config libs/agents/historian/vite.config.ts"
+      }
     }
   }
 }

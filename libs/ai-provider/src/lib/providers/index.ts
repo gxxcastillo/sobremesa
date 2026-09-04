@@ -14,3 +14,6 @@ export type {
   MockResponse,
   RecordedRequest,
 } from './mock';
+
+export { CachingProvider, hashCompletionRequest } from './caching';
+export type { DevResponseCacheStore } from './caching';

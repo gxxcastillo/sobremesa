@@ -1,4 +1,6 @@
 import pino from 'pino';
+import { join } from 'node:path';
+import { recordSessionLogEntry } from './session-log-store';
 
 /**
  * Log levels supported by the logger.
@@ -14,6 +16,83 @@ export interface LoggerOptions {
   familyId?: string;
   /** Enable pretty printing (colorized, human-readable output) */
   pretty?: boolean;
+}
+
+/**
+ * SQLite database capturing every warn+ log across this process, gated by
+ * SESSION_LOG so it stays opt-in and is never enabled in production
+ * regardless of that flag. Resolved once per process (not per
+ * `createLogger` call) so every logger in a session shares one database.
+ */
+const SESSION_LOG_PATH = resolveSessionLogPath();
+
+export function resolveSessionLogPath(): string | undefined {
+  if (process.env['NODE_ENV'] === 'production') return undefined;
+  const enabled = process.env['SESSION_LOG'];
+  if (!enabled || /^(0|false)$/i.test(enabled)) return undefined;
+  if (process.env['SESSION_LOG_PATH']) return process.env['SESSION_LOG_PATH'];
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return join(
+    process.cwd(),
+    'tmp',
+    'session-logs',
+    `session-${stamp}-${process.pid}.db`,
+  );
+}
+
+/**
+ * `JSON.stringify` serializes a bare `Error` to `{}` (its message/stack/name
+ * are all non-enumerable), so replace any `Error` values found as direct
+ * properties of the merging object with a plain, serializable shape before
+ * it reaches `recordSessionLogEntry`'s `JSON.stringify`. Covers the common
+ * `logger.error({ error }, msg)` / `logger.warn({ err }, msg)` call shape,
+ * not just an `Error` passed as pino's first positional argument.
+ */
+function serializeErrorValues(
+  obj: Record<string, unknown>,
+): Record<string, unknown> {
+  let out: Record<string, unknown> | undefined;
+  for (const [key, value] of Object.entries(obj)) {
+    if (value instanceof Error) {
+      out ??= { ...obj };
+      out[key] = {
+        name: value.name,
+        message: value.message,
+        stack: value.stack,
+      };
+    }
+  }
+  return out ?? obj;
+}
+
+/**
+ * Pulls the merging object and message out of a pino call's raw arguments —
+ * `logger.warn(msg)`, `logger.warn(obj, msg)`, and `logger.warn(error, msg)`
+ * are all valid call shapes.
+ */
+function extractLogFields(args: readonly unknown[]): {
+  mergingObject: Record<string, unknown>;
+  msg?: string;
+} {
+  const [first, second] = args;
+  if (typeof first === 'string') {
+    return { mergingObject: {}, msg: first };
+  }
+  if (first instanceof Error) {
+    return {
+      mergingObject: {
+        err: { name: first.name, message: first.message, stack: first.stack },
+      },
+      msg: typeof second === 'string' ? second : undefined,
+    };
+  }
+  if (first && typeof first === 'object') {
+    return {
+      mergingObject: serializeErrorValues(first as Record<string, unknown>),
+      msg: typeof second === 'string' ? second : undefined,
+    };
+  }
+  return { mergingObject: {} };
 }
 
 /**
@@ -51,6 +130,30 @@ export function createLogger(options: LoggerOptions): pino.Logger {
         colorize: true,
         translateTime: 'SYS:standard',
         ignore: 'pid,hostname',
+      },
+    };
+  }
+
+  if (SESSION_LOG_PATH) {
+    const sessionLogPath = SESSION_LOG_PATH;
+    baseConfig.hooks = {
+      logMethod(args, method, methodLevel) {
+        if (methodLevel >= pino.levels.values['warn']) {
+          const bindings = this.bindings();
+          const { mergingObject, msg } = extractLogFields(args);
+          recordSessionLogEntry(sessionLogPath, {
+            time: Date.now(),
+            level: methodLevel,
+            levelLabel: pino.levels.labels[methodLevel] ?? String(methodLevel),
+            loggerName: name,
+            familyId:
+              (bindings['familyId'] as string | undefined) ??
+              (mergingObject['familyId'] as string | undefined),
+            msg,
+            data: { ...bindings, ...mergingObject },
+          });
+        }
+        return method.apply(this, args);
       },
     };
   }

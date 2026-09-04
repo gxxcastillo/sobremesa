@@ -22,3 +22,5 @@ export {
   getOnboardingMessages,
   type OnboardingMessages,
 } from './lib/onboarding-messages';
+
+export { formatMemberJoinPluralMessage } from './lib/messages';

@@ -4,6 +4,17 @@
 export type QueueItemStatus = 'queued' | 'processing' | 'done' | 'error';
 
 /**
+ * What a queued row is queued *for*: 'live' (the always-on production
+ * poller, full stage set), 'triage' (a scoped drain running only
+ * router+filter, e.g. import's phase-1 Intern review), or 'extract' (a
+ * scoped drain running only scribe+registrar, e.g. import's phase-2
+ * submission after human review). See `dequeue_processing_queue_item`'s own
+ * `p_intent_filter` parameter -- this is what lets a scoped drain and the
+ * live poller avoid competing for the same row.
+ */
+export type QueueIntent = 'live' | 'triage' | 'extract';
+
+/**
  * Queue priority levels.
  * Lower number = higher priority (processed first).
  */
@@ -57,6 +68,7 @@ export interface QueueItem {
   attempts: number;
   lastError?: string;
   priority: QueuePriorityLevel;
+  intent: QueueIntent;
 }
 
 /**
@@ -67,6 +79,8 @@ export interface EnqueueOptions {
   priority?: QueuePriorityLevel;
   /** Delay processing until this time (for debouncing) */
   processAfter?: Date;
+  /** What this row is queued for. Default: 'live'. */
+  intent?: QueueIntent;
 }
 
 /**
@@ -76,6 +90,15 @@ export interface QueueOptions {
   maxRetries: number;
   retryDelayMs: number;
   lockTimeoutMs: number;
+  /**
+   * Restrict dequeue to rows whose intent is in this list. Default:
+   * undefined (no restriction -- matches every intent, today's behavior).
+   * The always-on live poller (`apps/chatbots`) sets this explicitly to
+   * `['live']` so it can never claim a 'triage'-only row before a human has
+   * reviewed it, or an 'extract' row owned by import's scoped extraction
+   * drain.
+   */
+  intentFilter?: QueueIntent[];
 }
 
 /**

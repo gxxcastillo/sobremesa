@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildUserPrompt, buildSystemPrompt } from './prompt-builder';
+import {
+  buildUserPrompt,
+  buildSystemPrompt,
+  buildResponseSystemPrompt,
+} from './prompt-builder';
 import type { Question, FamilyConfig } from '@sobremesa/shared-types';
 
 describe('buildUserPrompt', () => {
@@ -161,6 +165,13 @@ describe('buildSystemPrompt', () => {
     expect(typeof prompt).toBe('string');
   });
 
+  it('defaults the persona name to Carmencita, never the internal role name, when a family has not customized it', () => {
+    const prompt = buildSystemPrompt(baseConfig);
+
+    expect(prompt).toContain('Carmencita');
+    expect(prompt).not.toContain('Facilitator');
+  });
+
   it('uses configured personality values', () => {
     const config: FamilyConfig = {
       ...baseConfig,
@@ -182,6 +193,7 @@ describe('buildSystemPrompt', () => {
 
     // The prompt should be generated without errors
     expect(prompt).toBeTruthy();
+    expect(prompt).toContain('Abuelita');
   });
 
   it('includes cultural terms when provided', () => {
@@ -193,5 +205,29 @@ describe('buildSystemPrompt', () => {
     // This just verifies the config is processed - actual template usage depends on prompt file
     const prompt = buildSystemPrompt(config);
     expect(prompt).toBeTruthy();
+  });
+});
+
+describe('buildResponseSystemPrompt', () => {
+  const baseConfig: FamilyConfig = {
+    languages: { primary: 'en' },
+  };
+
+  it('defaults the persona name to Carmencita, never the internal role name, when a family has not customized it', () => {
+    const prompt = buildResponseSystemPrompt(baseConfig, 'en');
+
+    expect(prompt).toContain('Carmencita');
+    expect(prompt).not.toContain('Facilitator');
+  });
+
+  it('uses the family-configured display name when set', () => {
+    const config: FamilyConfig = {
+      ...baseConfig,
+      bots: { facilitator: { displayName: 'Abuelita' } },
+    };
+
+    const prompt = buildResponseSystemPrompt(config, 'en');
+
+    expect(prompt).toContain('Abuelita');
   });
 });

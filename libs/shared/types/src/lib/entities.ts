@@ -282,6 +282,8 @@ export interface Question {
   priority: number;
   sourceMessageId?: string;
   askedByIdentityId?: string;
+  /** Facilitator persona display name at the time this question was asked */
+  askedByName?: string;
   askedAt?: Date;
   answeredAt?: Date;
   answerMessageId?: string;

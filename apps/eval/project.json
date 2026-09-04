@@ -1,0 +1,38 @@
+{
+  "name": "eval",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/eval/src",
+  "tags": ["scope:app"],
+  "targets": {
+    "types": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun tsc --noEmit -p apps/eval/tsconfig.server.json && bun tsc --noEmit -p apps/eval/tsconfig.app.json"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun eslint apps/eval"
+      }
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun run --watch apps/eval/src/server/main.ts",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "dev": {
+      "continuous": true,
+      "dependsOn": ["serve"],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun vite",
+        "cwd": "apps/eval"
+      }
+    }
+  }
+}

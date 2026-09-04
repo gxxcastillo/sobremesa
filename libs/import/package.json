@@ -16,8 +16,12 @@
   "dependencies": {
     "@sobremesa/shared-types": "workspace:*",
     "@sobremesa/shared-utils": "workspace:*",
+    "@sobremesa/agents-intern": "workspace:*",
+    "@sobremesa/ai-provider": "workspace:*",
     "@sobremesa/database": "workspace:*",
     "@sobremesa/import-utils": "workspace:*",
+    "@sobremesa/pipeline": "workspace:*",
+    "@sobremesa/queue": "workspace:*",
     "@sobremesa/auth": "workspace:*"
   }
 }

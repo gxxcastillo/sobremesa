@@ -3,6 +3,7 @@ import type {
   QueueItem,
   QueueItemStatus,
   EnqueueOptions,
+  QueueIntent,
 } from '@sobremesa/shared-types';
 import { QueuePriority } from '@sobremesa/shared-types';
 import { mapRowToCamelCase } from '../base-repository.js';
@@ -31,6 +32,7 @@ export class ProcessingQueueRepository {
     options: EnqueueOptions = {},
   ): Promise<QueueItem> {
     const priority = options.priority ?? QueuePriority.NORMAL;
+    const intent = options.intent ?? 'live';
     const processAfter =
       options.processAfter?.toISOString() ?? new Date().toISOString();
 
@@ -42,21 +44,66 @@ export class ProcessingQueueRepository {
         status: 'queued',
         attempts: 0,
         priority,
+        intent,
         process_after: processAfter,
       })
       .select()
       .single();
 
     if (error) {
-      // Handle unique constraint violation (already queued)
+      // Handle unique constraint violation (already queued). The unique
+      // constraint is on (family_id, conversation_event_id) only -- it has
+      // no `intent` component -- so this also fires when a later phase
+      // re-enqueues the same event under a different intent (e.g. import's
+      // extraction drain enqueuing with intent 'extract' for an event a
+      // prior triage phase already enqueued with intent 'triage'). Retag
+      // the existing row with the new intent so bookkeeping/observability
+      // reflects which phase is actually using it now; the row's status is
+      // left untouched (it's already 'done'/'error' from the prior phase,
+      // so this update doesn't change dequeue eligibility for the live
+      // poller, which only leases 'queued' rows).
       if (error.code === '23505') {
         const existing = await this.findByEventId(
           familyId,
           conversationEventId,
         );
-        if (existing) return existing;
+        if (existing) {
+          if (existing.intent !== intent) {
+            return await this.updateIntent(
+              familyId,
+              conversationEventId,
+              intent,
+            );
+          }
+          return existing;
+        }
       }
       throw new Error(`Failed to enqueue event: ${error.message}`);
+    }
+
+    return mapRowToCamelCase<QueueItem>(data);
+  }
+
+  /**
+   * Retag an existing queue row with a new intent, without touching status
+   * or any other field. Used by `enqueue()` when a later phase re-enqueues
+   * an event a prior phase already has a row for.
+   */
+  private async updateIntent(
+    familyId: string,
+    conversationEventId: string,
+    intent: QueueIntent,
+  ): Promise<QueueItem> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .update({ intent })
+      .eq('family_id', familyId)
+      .eq('conversation_event_id', conversationEventId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update queue item intent: ${error.message}`);
     }
 
     return mapRowToCamelCase<QueueItem>(data);
@@ -87,19 +134,32 @@ export class ProcessingQueueRepository {
   }
 
   /**
-   * Dequeue the next ready item from any family for processing. The
-   * database function enforces one in-flight item per family, so this
-   * never returns an item for a family that already has one processing.
+   * Dequeue the next ready item from any family for processing, or -- when
+   * `familyId` is given -- the next ready item for that family only, never
+   * claiming another family's queued work. The database function enforces
+   * one in-flight item per family, so this never returns an item for a
+   * family that already has one processing.
+   *
+   * `intentFilter`, when given, restricts leasing to rows whose `intent` is
+   * in the list (e.g. the always-on live poller passes `['live']` so it can
+   * never claim a `'triage'`-only row before a human has reviewed it, or an
+   * `'extract'` row a scoped drain owns; a scoped triage/extract drain
+   * passes exactly its own intent). Omitted, every intent is eligible --
+   * today's behavior.
    */
   async dequeueAny(
     workerId: string,
     lockTimeoutMs = 300000,
+    familyId?: string,
+    intentFilter?: QueueIntent[],
   ): Promise<QueueItem | null> {
     const { data, error } = await this.client.rpc(
       'dequeue_processing_queue_item',
       {
         p_worker_id: workerId,
         p_lock_timeout_ms: lockTimeoutMs,
+        ...(familyId ? { p_family_id: familyId } : {}),
+        ...(intentFilter ? { p_intent_filter: intentFilter } : {}),
       },
     );
 

@@ -101,6 +101,34 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   }
 
   /**
+   * Find every (non-redacted) event id in a conversation, oldest first.
+   * Unlike `findRecent`, this has no limit -- it's meant for enumerating a
+   * bounded, known set of events to process (e.g. import triage), not for
+   * context windows. Excludes redacted events using the same LEFT JOIN
+   * pattern as `findRecent`/`findUnprocessed`.
+   */
+  async findAllIdsInConversation(
+    familyId: string,
+    conversationId: string,
+  ): Promise<string[]> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('id, redacted:conversation_redactions(id)')
+      .eq('family_id', familyId)
+      .eq('conversation_id', conversationId)
+      .is('redacted.id', null)
+      .order('occurred_at', { ascending: true });
+
+    if (error) {
+      throw new Error(
+        `Failed to find conversation event ids: ${error.message}`,
+      );
+    }
+
+    return (data || []).map((row) => row['id'] as string);
+  }
+
+  /**
    * Find by external event ID (for deduplication).
    * When `visibleOnly` is true, excludes redacted events (for prompt context).
    */

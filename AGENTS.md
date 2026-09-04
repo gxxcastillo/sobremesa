@@ -14,8 +14,8 @@ This file is for AI coding agents and contributors working in this repository.
   decision).
 - `docs/` contains onboarding material and historical ADRs. Nothing in `docs/` is canonical.
 - If `docs/` conflicts with `spec/`, update or trust `spec/`.
-- ADRs in `docs/adr/` are historical decisions. Do not rewrite them to match current behavior; add a
-  new ADR if a new architectural decision needs to be recorded.
+- ADRs in `docs/decisions/` are historical decisions. Do not rewrite them to match current
+  behavior; add a new ADR if a new architectural decision needs to be recorded.
 
 ## First Reads
 
@@ -37,11 +37,21 @@ Before changing behavior, read the relevant spec file:
   - `apps/api`: Elysia REST API for Studio.
   - `apps/studio`: Solid.js web app.
   - `apps/db`: Supabase migrations/config.
+  - `apps/eval`: local-only web app for comparing Scribe extraction across
+    LLMs/models (side-by-side diffing, run history, annotation). Reuses
+    `libs/evals`'s Tier-1 runner/scorer; writes nothing to canonical tables.
+  - `apps/cli`: local dev CLI (`sbm import` / `sbm process`), run directly with `bun` (no build
+    step) or installed globally via `bun link` (see `apps/cli/README.md`). Imports a chat export
+    (format via `--source` or auto-detected; WhatsApp is the only one with a parser today) and
+    drains the processing queue through the live pipeline via `libs/pipeline`.
 - Core libraries:
   - `libs/agents/*`: Intern, Scribe, Registrar, Historian, Facilitator, Admin, Curator.
   - `libs/database`: Supabase repositories and data services.
   - `libs/import` and `libs/import-utils`: WhatsApp import workflow.
   - `libs/queue`: ordered processing queue and `MessageProcessor`.
+  - `libs/pipeline`: `buildMessagePipeline()` — the one shared way to wire agents onto a
+    `MessageProcessor` by explicit stage selection; used by `apps/chatbots`, `libs/evals`'s
+    pipeline-snapshot runner, and `apps/cli`.
   - `libs/ai-provider`: provider abstraction.
   - `libs/prompts`: prompt templates.
 

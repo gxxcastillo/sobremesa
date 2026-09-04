@@ -65,6 +65,8 @@ export {
   AnthropicProvider,
   OpenAICompatibleProvider,
   MockProvider,
+  CachingProvider,
+  hashCompletionRequest,
 } from './lib/providers';
 export type {
   AnthropicProviderOptions,
@@ -72,4 +74,22 @@ export type {
   MockProviderOptions,
   MockResponse,
   RecordedRequest,
+  DevResponseCacheStore,
 } from './lib/providers';
+
+// Dev response cache storage (see CachingProvider)
+export { SqliteDevResponseCacheStore } from './lib/dev-response-cache-store';
+
+// Anthropic Batch API support for seeding the dev response cache
+export { submitAnthropicBatchAndWait } from './lib/anthropic-batch';
+export type {
+  BatchSeedItem,
+  BatchSeedResult,
+  BatchRequestCounts,
+  SubmitAnthropicBatchOptions,
+} from './lib/anthropic-batch';
+export type { AnthropicRequestBuild } from './lib/providers/anthropic';
+export {
+  buildAnthropicRequestParams,
+  mapAnthropicResponse,
+} from './lib/providers/anthropic';

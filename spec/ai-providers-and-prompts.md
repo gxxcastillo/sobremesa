@@ -51,7 +51,8 @@ recorded for audit/cost tracking.
 Scribe requests pin sampling temperature (default `0`, set in `ScribeConfig`) rather than inheriting
 the provider default, so identical messages extract identically and eval run-to-run spread measures
 the pipeline rather than the sampler. The same pinned value applies in production and in Tier-1
-evals — scored sampling behavior is production sampling behavior.
+evals — scored sampling behavior is production sampling behavior. Intern's filter call pins
+`temperature: 0` the same way, so a message's relevance verdict doesn't vary by re-run.
 
 ## 5.5 Evaluation
 
@@ -71,3 +72,28 @@ Extraction quality is evaluated outside normal tests through `libs/evals`.
 
 Live LLM evals are never part of `bun run test:all` or CI. CI-safe evaluation must use deterministic
 fixtures, mock providers, or recorded/canned responses only.
+
+## 5.6 Replacing LLM Calls With Recorded Responses (Dev Only)
+
+`CachingProvider` (`libs/ai-provider`) is a dev-only `AIProvider` decorator: it hashes a request's
+model + rendered system/messages + sampling/format params and, on a repeat of that same hash,
+substitutes the previously stored `AICompletionResponse` instead of calling the wrapped provider;
+on a miss it calls through and stores the result (backed by `SqliteDevResponseCacheStore`, a local
+sqlite file). Errors are never stored, so a failed call is retried for real next time. Since the
+lookup key is a hash of the fully rendered request, a prompt or model change is simply not found
+and calls through for real — no separate invalidation step.
+
+This is explicitly not normal request behavior — it makes output depend on local disk state rather
+than the live model — so it is opt-in only and never wired into the live pipeline:
+`apps/cli`'s `sbm process --response-replay` (re-processing the same queued fixture at no cost
+once prompts/models stop changing) and `apps/eval` (`LLM_RESPONSE_REPLAY=1`, see
+`apps/eval/README.md`).
+
+`sbm process --response-replay-batch` seeds the cache in bulk instead of one live call per
+message: it builds every currently-queued message's exact Scribe request
+(`buildScribeCompletionRequest`, the same construction `ScribeAgent.process()` itself uses, so a
+batch-seeded entry can't drift from what a live call would actually send), submits them all as one
+Anthropic Message Batch (`submitAnthropicBatchAndWait`, `libs/ai-provider`; half the per-token price,
+no per-message round trip), polls until Anthropic finishes, and writes each result into the same
+store a live `--response-replay` recording would. `--model=<id>` overrides the Scribe model for a run
+(both the batch submission and the run that replays it, since model is part of the cache key).

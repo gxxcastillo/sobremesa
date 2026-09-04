@@ -89,8 +89,13 @@ Runtime behaviour is configured **per family**, primarily via a JSONB `config` c
 family record (languages, bot display names, personality levers, cultural terms). A separate
 `family_config` table stores optional JSONB config snapshots. Agent personas and tone are therefore
 not hard-coded — prompts contain placeholders (`{SCRIBE_NAME}`, `{FACILITATOR_NAME}`,
-`{CULTURAL_TERMS}`, `{FORMALITY}`, …) filled from family config at runtime. The Historian's default
-name is `Clio` (`libs/agents/historian/src/lib/types.ts`).
+`{CULTURAL_TERMS}`, `{FORMALITY}`, …) filled from family config at runtime, falling back to
+`DEFAULT_FACILITATOR_NAME` (`Carmencita`, `libs/shared/types/src/lib/conversation.ts`) when a
+family hasn't set `bots.facilitator.displayName` — never the internal role name (`'facilitator'`).
+The name used to ask a question is stamped onto `questions.asked_by_name` at ask time, so a later
+reply's `IN REPLY TO QUESTION` context (into Scribe's extraction prompt) reads back the name
+actually used instead of a separately hardcoded value. The Historian's default name is `Clio`
+(`libs/agents/historian/src/lib/types.ts`).
 
 ## 1.7 Cross-cutting invariants
 

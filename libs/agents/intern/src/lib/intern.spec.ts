@@ -83,20 +83,6 @@ describe('InternAgent', () => {
         expect(mockLogger.warn).toHaveBeenCalled();
       });
 
-      it('should return relevant=true for non-message event types', async () => {
-        mockEventRepo.findById.mockResolvedValue({
-          id: 'event-123',
-          eventType: 'photo',
-          contentOriginal: 'Photo caption',
-        });
-
-        const result = await intern.filter('event-123', 'family-abc');
-
-        expect(result.relevant).toBe(true);
-        expect(result.reason).toContain('Non-text event type');
-        expect(mockProviderComplete).not.toHaveBeenCalled();
-      });
-
       it('should return relevant=false for empty messages', async () => {
         mockEventRepo.findById.mockResolvedValue({
           id: 'event-123',
@@ -139,91 +125,60 @@ describe('InternAgent', () => {
       });
     });
 
-    describe('continuation messages (fast path)', () => {
-      it('should return relevant=true for messages starting with "and"', async () => {
+    describe('media caption-awareness (fast path)', () => {
+      it('should return relevant=false for a media event with no caption', async () => {
         mockEventRepo.findById.mockResolvedValue({
           id: 'event-123',
-          eventType: 'message',
-          contentOriginal: 'And then she moved to California',
+          eventType: 'photo',
+          contentOriginal: 'image omitted',
         });
 
         const result = await intern.filter('event-123', 'family-abc');
 
-        expect(result.relevant).toBe(true);
-        expect(result.reason).toBe('Continuation (starts with conjunction)');
+        expect(result.relevant).toBe(false);
+        expect(result.reason).toContain('Media with no caption');
         expect(mockProviderComplete).not.toHaveBeenCalled();
       });
 
-      it('should return relevant=true for messages starting with "but"', async () => {
+      it('should strip WhatsApp invisible marks around the placeholder', async () => {
         mockEventRepo.findById.mockResolvedValue({
           id: 'event-123',
-          eventType: 'message',
-          contentOriginal: 'But that was before the war',
+          eventType: 'video',
+          contentOriginal: '‎video omitted',
         });
 
         const result = await intern.filter('event-123', 'family-abc');
 
-        expect(result.relevant).toBe(true);
-        expect(result.reason).toBe('Continuation (starts with conjunction)');
+        expect(result.relevant).toBe(false);
+        expect(result.reason).toContain('Media with no caption');
         expect(mockProviderComplete).not.toHaveBeenCalled();
       });
 
-      it('should return relevant=true for messages starting with "or"', async () => {
+      it('should recognize the <Media omitted> placeholder form', async () => {
         mockEventRepo.findById.mockResolvedValue({
           id: 'event-123',
-          eventType: 'message',
-          contentOriginal: 'Or maybe it was 1952',
+          eventType: 'photo',
+          contentOriginal: '<Media omitted>',
         });
 
         const result = await intern.filter('event-123', 'family-abc');
 
-        expect(result.relevant).toBe(true);
-        expect(result.reason).toBe('Continuation (starts with conjunction)');
+        expect(result.relevant).toBe(false);
+        expect(result.reason).toContain('Media with no caption');
         expect(mockProviderComplete).not.toHaveBeenCalled();
       });
 
-      it('should return relevant=true for messages starting with "also"', async () => {
+      it('should fall through to the LLM for media with a real caption', async () => {
         mockEventRepo.findById.mockResolvedValue({
           id: 'event-123',
-          eventType: 'message',
-          contentOriginal: 'Also uncle Bob was there',
+          eventType: 'photo',
+          contentOriginal: "image omitted\nGrandma's 80th birthday party!",
           conversationId: 'conv-123',
         });
         mockEventRepo.findRecent.mockResolvedValue([]);
-
-        const result = await intern.filter('event-123', 'family-abc');
-
-        expect(result.relevant).toBe(true);
-        expect(result.reason).toBe('Continuation (starts with conjunction)');
-        expect(mockProviderComplete).not.toHaveBeenCalled();
-      });
-
-      it('should be case-insensitive for conjunction detection', async () => {
-        mockEventRepo.findById.mockResolvedValue({
-          id: 'event-123',
-          eventType: 'message',
-          contentOriginal: 'AND THEN HE LEFT',
-        });
-
-        const result = await intern.filter('event-123', 'family-abc');
-
-        expect(result.relevant).toBe(true);
-        expect(result.reason).toBe('Continuation (starts with conjunction)');
-        expect(mockProviderComplete).not.toHaveBeenCalled();
-      });
-
-      it('should not trigger on "and" in the middle of the message', async () => {
-        mockEventRepo.findById.mockResolvedValue({
-          id: 'event-123',
-          eventType: 'message',
-          contentOriginal: 'My grandma and grandpa lived together',
-          conversationId: 'conv-123',
-        });
-        mockEventRepo.findRecent.mockResolvedValue([]);
-
         mockProviderComplete.mockResolvedValue(
           createMockResponse(
-            '{"relevant": true, "reason": "Family history"}',
+            '{"relevant": true, "reason": "Birthday celebration"}',
             100,
             20,
           ),
@@ -231,9 +186,223 @@ describe('InternAgent', () => {
 
         const result = await intern.filter('event-123', 'family-abc');
 
-        // Should call LLM since "and" is not at the start
         expect(mockProviderComplete).toHaveBeenCalled();
-        expect(result.tokensUsed).toBe(120);
+        expect(result.relevant).toBe(true);
+      });
+
+      it('should fall through to the LLM for a media caption that is only an acknowledgement', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'photo',
+          contentOriginal: 'image omitted\nThanks!',
+          conversationId: 'conv-123',
+        });
+        mockEventRepo.findRecent.mockResolvedValue([]);
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": false, "reason": "Acknowledgement"}',
+            100,
+            20,
+          ),
+        );
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        expect(mockProviderComplete).toHaveBeenCalled();
+        expect(result.relevant).toBe(false);
+      });
+    });
+
+    describe('emoji-only messages (fast path)', () => {
+      it('should return relevant=false for emoji-only messages', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '😂😂😂',
+        });
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        expect(result.relevant).toBe(false);
+        expect(result.reason).toBe('Emoji-only message');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
+      });
+
+      it('should not treat a bare year as emoji-only', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '1920',
+          conversationId: 'conv-123',
+        });
+        mockEventRepo.findRecent.mockResolvedValue([]);
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Possible date"}',
+            100,
+            20,
+          ),
+        );
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        // Digits are Unicode "Emoji" property members (keycap sequences),
+        // so a naive \p{Emoji} test would wrongly treat this as emoji-only.
+        expect(mockProviderComplete).toHaveBeenCalled();
+        expect(result.relevant).toBe(true);
+      });
+
+      it('should not treat a real message merely containing an emoji as emoji-only', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'Grandma made the best tamales 😂',
+          conversationId: 'conv-123',
+        });
+        mockEventRepo.findRecent.mockResolvedValue([]);
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Family story"}',
+            100,
+            20,
+          ),
+        );
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        expect(mockProviderComplete).toHaveBeenCalled();
+      });
+    });
+
+    describe('acknowledgements and continuations fall through to the LLM (no hardcoded word lists)', () => {
+      it.each([
+        ['okay!', 'okay with punctuation'],
+        ['Thanks', 'thanks'],
+        ['gracias.', 'Spanish gracias with period'],
+        ['jaja', 'Spanish laughter'],
+        ['Sure?', 'sure with question mark'],
+        ['sim', 'Portuguese yes -- never had a hardcoded rule to begin with'],
+      ])(
+        'should call the LLM for "%s" (%s) instead of auto-rejecting',
+        async (text: string) => {
+          mockEventRepo.findById.mockResolvedValue({
+            id: 'event-123',
+            eventType: 'message',
+            contentOriginal: text,
+            conversationId: 'conv-123',
+          });
+          mockEventRepo.findRecent.mockResolvedValue([]);
+          mockProviderComplete.mockResolvedValue(
+            createMockResponse(
+              '{"relevant": false, "reason": "Acknowledgement"}',
+              100,
+              20,
+            ),
+          );
+
+          const result = await intern.filter('event-123', 'family-abc');
+
+          expect(mockProviderComplete).toHaveBeenCalled();
+          expect(result.relevant).toBe(false);
+        },
+      );
+
+      it('should call the LLM for a continuation fragment instead of auto-accepting', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'and beets',
+          conversationId: 'conv-123',
+        });
+        mockEventRepo.findRecent.mockResolvedValue([
+          {
+            id: 'event-122',
+            contentOriginal: 'Grandma always made rice, chicken...',
+            actorDisplayName: 'Mom',
+          },
+        ]);
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Continuation of recipe list"}',
+            100,
+            20,
+          ),
+        );
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        expect(mockProviderComplete).toHaveBeenCalled();
+        expect(result.relevant).toBe(true);
+      });
+    });
+
+    describe('answering a tracked question overrides the fast path', () => {
+      const answeredQuestionContext = {
+        recentMessages: [],
+        recentImages: [],
+        answeredQuestion: {
+          id: 'question-1',
+          content: 'Is John married to Kathy now?',
+          askedByName: 'Sobremesa',
+        },
+      };
+
+      it.each([
+        ['no', 'too-short acknowledgement'],
+        ['👍', 'emoji-only reaction'],
+        [
+          'sí',
+          'Spanish too-short reply -- the length check is language-agnostic',
+        ],
+      ])(
+        'should return relevant=true for "%s" (%s) replying to a tracked question, without calling the LLM',
+        async (text: string) => {
+          mockEventRepo.findById.mockResolvedValue({
+            id: 'event-123',
+            eventType: 'message',
+            contentOriginal: text,
+          });
+
+          const result = await intern.filter(
+            'event-123',
+            'family-abc',
+            answeredQuestionContext as any,
+          );
+
+          expect(result.relevant).toBe(true);
+          expect(result.reason).toContain('Answer to tracked question');
+          expect(mockProviderComplete).not.toHaveBeenCalled();
+        },
+      );
+
+      it('should still return relevant=false for an empty message replying to a tracked question', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: '   ',
+        });
+
+        const result = await intern.filter(
+          'event-123',
+          'family-abc',
+          answeredQuestionContext as any,
+        );
+
+        expect(result.relevant).toBe(false);
+        expect(result.reason).toBe('Empty message');
+      });
+
+      it('should not override the fast path when there is no answered-question context', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'no',
+        });
+
+        const result = await intern.filter('event-123', 'family-abc');
+
+        expect(result.relevant).toBe(false);
+        expect(result.reason).toBe('Message too short');
       });
     });
 
@@ -264,6 +433,22 @@ describe('InternAgent', () => {
             model: 'claude-3-5-haiku-20241022',
             maxTokens: DEFAULT_INTERN_CONFIG.maxTokens,
           }),
+        );
+      });
+
+      it('pins sampling temperature to 0 rather than the provider default', async () => {
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse(
+            '{"relevant": true, "reason": "Family history"}',
+            100,
+            20,
+          ),
+        );
+
+        await intern.filter('event-123', 'family-abc');
+
+        expect(mockProviderComplete).toHaveBeenCalledWith(
+          expect.objectContaining({ temperature: 0 }),
         );
       });
 
@@ -635,6 +820,42 @@ describe('InternAgent', () => {
         // Should go through filter since no @ mention
         expect(mockProviderComplete).toHaveBeenCalled();
         expect(result.action).toBe('scribe');
+      });
+
+      it.each([
+        ['@familybot hello!', true, 'mention at start'],
+        ['Hey @familybot can you help', true, 'mention in middle'],
+        ['Thanks @familybot', true, 'mention at end'],
+        ['@FAMILYBOT uppercase', true, 'case insensitive'],
+        ['(@familybot)', true, 'mention in parens'],
+        ['"@familybot"', true, 'mention in quotes'],
+        ['Hello everyone!', false, 'no mention'],
+        ['@otherbot hello', false, 'different bot'],
+        ['email@familybot.com', false, 'email-like, no space before @'],
+        ['user123@familybot', false, 'alphanumeric before @'],
+        [
+          '@familybotextra',
+          false,
+          'username with extra chars past word boundary',
+        ],
+      ])('detects "%s" as mentioned=%s (%s)', async (text, mentioned) => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: text,
+          conversationId: 'conv-123',
+        });
+        mockEventRepo.findRecent.mockResolvedValue([]);
+        mockProviderComplete.mockResolvedValue(
+          createMockResponse('{"relevant": false, "reason": "n/a"}', 100, 20),
+        );
+
+        await internWithBotname.route('event-123', 'family-abc');
+
+        // A detected mention is routed deterministically (historian/admin)
+        // without ever consulting the relevance filter; a non-mention falls
+        // through to the filter, which is what calls the provider.
+        expect(mockProviderComplete).toHaveBeenCalledTimes(mentioned ? 0 : 1);
       });
     });
 

@@ -51,6 +51,17 @@ export class InternDecisionRepository {
 
   /**
    * Create or update a decision for a message.
+   *
+   * Preserves a prior human override across re-triage: if the event was
+   * already reviewed and overridden, a fresh Intern verdict must not
+   * silently discard that correction (re-running Intern triage -- e.g. via
+   * `POST /import/:jobId/run-intern` re-entering from `intern_complete` --
+   * would otherwise reset `overridden`/`original_decision` on every
+   * previously-corrected row). The guard runs inside the DB function's own
+   * `INSERT ... ON CONFLICT` statement (`upsert_intern_decision`) rather
+   * than as a TypeScript-side read-then-write, so a concurrent
+   * `PATCH /decisions/:eventId` override can't land in the window between
+   * a check and a write that were never atomic to begin with.
    */
   async upsert(
     familyId: string,
@@ -59,30 +70,20 @@ export class InternDecisionRepository {
     decision: InternDecisionType,
     reason: string | null,
   ): Promise<InternDecision> {
-    const { data, error } = await this.dbClient
-      .from('intern_decisions')
-      .upsert(
-        {
-          family_id: familyId,
-          import_job_id: importJobId,
-          conversation_event_id: conversationEventId,
-          decision,
-          reason,
-          overridden: false,
-          original_decision: null,
-        },
-        {
-          onConflict: 'import_job_id,conversation_event_id',
-        },
-      )
-      .select()
-      .single();
+    const { data, error } = await this.dbClient.rpc('upsert_intern_decision', {
+      p_family_id: familyId,
+      p_import_job_id: importJobId,
+      p_conversation_event_id: conversationEventId,
+      p_decision: decision,
+      p_reason: reason,
+    });
 
     if (error) {
       throw new Error(`Failed to upsert intern decision: ${error.message}`);
     }
 
-    return mapRowToDecision(data as InternDecisionRow);
+    const row = Array.isArray(data) ? data[0] : data;
+    return mapRowToDecision(row as InternDecisionRow);
   }
 
   /**

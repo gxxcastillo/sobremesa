@@ -10,7 +10,8 @@
       "vitest"
     ],
     "module": "esnext",
-    "moduleResolution": "bundler"
+    "moduleResolution": "bundler",
+    "rootDir": "."
   },
   "include": [
     "vite.config.ts",

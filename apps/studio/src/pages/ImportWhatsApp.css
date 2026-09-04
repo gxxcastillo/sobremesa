@@ -734,6 +734,13 @@
   cursor: not-allowed;
 }
 
+.intern-progress-hint {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: #95a5a6;
+  text-align: center;
+}
+
 .intern-stats {
   display: flex;
   gap: 1rem;

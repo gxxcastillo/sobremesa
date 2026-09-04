@@ -10,11 +10,15 @@
     "preview": "bun dist/main.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
     "@elysiajs/cors": "^1.1.9",
     "@elysiajs/swagger": "^1.1.9",
+    "@sobremesa/ai-provider": "workspace:*",
     "@sobremesa/auth": "workspace:*",
     "@sobremesa/database": "workspace:*",
     "@sobremesa/import": "workspace:*",
+    "@sobremesa/import-utils": "workspace:*",
+    "@sobremesa/pipeline": "workspace:*",
     "@sobremesa/shared-types": "workspace:*",
     "@sobremesa/shared-utils": "workspace:*",
     "elysia": "^1.1.9"

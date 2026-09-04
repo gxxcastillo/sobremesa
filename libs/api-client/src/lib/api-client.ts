@@ -793,17 +793,18 @@ export class StudioApiClient {
   // ============================================================================
 
   /**
-   * Run Intern classification on all messages for a job
-   * @param jobId The import job ID
-   * @returns Stats on how many messages will be processed/skipped
+   * Start Intern classification on all messages for a job. Runs in the
+   * background (a real LLM call per unresolved message) -- poll
+   * `getImportStatus(jobId)` until `status` is `'intern_complete'` (done) or
+   * reverts to `'awaiting_intern'` with `.error` set (failed).
    */
   async runIntern(jobId: string): Promise<{
     success: boolean;
-    stats: { toProcess: number; toSkip: number; overridden: number };
+    status: 'running_intern';
   }> {
     return this.request<{
       success: boolean;
-      stats: { toProcess: number; toSkip: number; overridden: number };
+      status: 'running_intern';
     }>(`/import/${jobId}/run-intern`, {
       method: 'POST',
     });
@@ -855,18 +856,20 @@ export class StudioApiClient {
   }
 
   /**
-   * Submit selected messages to Scribe for processing
-   * @param jobId The import job ID
+   * Start submitting the human-approved messages to Scribe. Runs in the
+   * background (a real Scribe LLM call per message) -- poll
+   * `getImportStatus(jobId)` until `status` is `'complete'` (done) or
+   * reverts to `'intern_complete'` with `.error` set (failed).
    */
   async submitToScribe(jobId: string): Promise<{
     success: boolean;
-    processed: number;
-    skipped: number;
+    status: 'processing_scribe';
+    submitted: number;
   }> {
     return this.request<{
       success: boolean;
-      processed: number;
-      skipped: number;
+      status: 'processing_scribe';
+      submitted: number;
     }>(`/import/${jobId}/submit-scribe`, {
       method: 'POST',
     });

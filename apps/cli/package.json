@@ -1,0 +1,20 @@
+{
+  "name": "@sobremesa/cli",
+  "version": "0.0.1",
+  "private": true,
+  "bin": {
+    "sbm": "./src/main.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "@sobremesa/agents-scribe": "workspace:*",
+    "@sobremesa/ai-provider": "workspace:*",
+    "@sobremesa/database": "workspace:*",
+    "@sobremesa/import": "workspace:*",
+    "@sobremesa/import-utils": "workspace:*",
+    "@sobremesa/pipeline": "workspace:*",
+    "@sobremesa/shared-types": "workspace:*",
+    "citty": "^0.2.2",
+    "dotenv": "^17.2.3"
+  }
+}

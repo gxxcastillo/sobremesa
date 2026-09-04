@@ -10,12 +10,14 @@
       "vitest",
       "@types/bun"
     ],
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "."
   },
   "include": [
     "vite.config.ts",
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
-    "src/test-support/**/*.ts"
+    "src/test-support/**/*.ts",
+    "../../types/global/index.d.ts"
   ]
 }

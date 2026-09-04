@@ -26,6 +26,10 @@ node_modules
 !.vscode/extensions.json
 
 # misc
+# Supabase CLI state, in case a `supabase` command ever runs from the repo root
+# by mistake instead of apps/db (where the real config lives)
+/supabase
+/fixtures
 /.sass-cache
 /connect.lock
 /coverage
@@ -52,3 +56,8 @@ snapshots
 
 vite.config.*.timestamp*
 vitest.config.*.timestamp*
+.claude/worktrees
+.claude/settings.local.json
+.nx/polygraph
+.nx/self-healing
+.nx/migrate-runs

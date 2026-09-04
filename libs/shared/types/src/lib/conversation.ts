@@ -258,6 +258,13 @@ export interface FamilyConfig {
 }
 
 /**
+ * Default Facilitator display name used when a family hasn't set
+ * `bots.facilitator.displayName`. Never fall back to the internal role name
+ * ('facilitator') for family-visible text or for Scribe's extraction prompt.
+ */
+export const DEFAULT_FACILITATOR_NAME = 'Carmencita';
+
+/**
  * A family space (tenant).
  */
 export interface Family {

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist-app",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "types": ["vite/client"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "rootDir": "src/app"
+  },
+  "include": ["src/app/**/*.ts", "src/app/**/*.tsx"],
+  "exclude": ["node_modules", "dist-app"]
+}

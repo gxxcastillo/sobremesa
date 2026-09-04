@@ -1,5 +1,6 @@
 export {
   InternAgent,
+  internFilterHeuristic,
   type InternAgentOptions,
   type FilterResult,
   type ImageLinkResult,

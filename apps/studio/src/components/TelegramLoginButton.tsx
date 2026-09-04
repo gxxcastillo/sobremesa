@@ -36,6 +36,7 @@ declare global {
 export const TelegramLoginButton: Component<TelegramLoginButtonProps> = (
   props,
 ) => {
+  // eslint-disable-next-line no-unassigned-vars -- assigned by Solid's `ref={containerRef}` compiler macro below, invisible to static analysis
   let containerRef: HTMLDivElement | undefined;
   const [isLoading, setIsLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);

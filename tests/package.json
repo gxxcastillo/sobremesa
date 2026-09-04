@@ -1,0 +1,15 @@
+{
+  "name": "@sobremesa/tests",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@sobremesa/agents-admin": "workspace:*",
+    "@sobremesa/agents-registrar": "workspace:*",
+    "@sobremesa/database": "workspace:*",
+    "@sobremesa/ingester": "workspace:*",
+    "@sobremesa/shared-types": "workspace:*",
+    "dotenv": "^17.2.3",
+    "telegraf": "^4.16.3"
+  }
+}

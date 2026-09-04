@@ -158,6 +158,7 @@ export class QuestionRepository {
     id: string,
     askedByIdentityId?: string,
     externalMessageId?: string | number,
+    askedByName?: string,
   ): Promise<Question> {
     const updates: Record<string, unknown> = {
       status: 'asked',
@@ -170,6 +171,10 @@ export class QuestionRepository {
 
     if (externalMessageId) {
       updates['asked_external_message_id'] = String(externalMessageId);
+    }
+
+    if (askedByName) {
+      updates['asked_by_name'] = askedByName;
     }
 
     const { data, error } = await this.client

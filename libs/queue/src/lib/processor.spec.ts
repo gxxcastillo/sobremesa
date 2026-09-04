@@ -324,6 +324,53 @@ describe('MessageProcessor', () => {
     expect(mockQueueRepo.complete).not.toHaveBeenCalled();
   });
 
+  it('runs the filter only once when both a router and a filter are registered', async () => {
+    const processor = createProcessor();
+    processor.setRouter(async () => ({
+      action: 'scribe',
+      reason: 'relevant',
+      language: 'es',
+    }));
+    // Intern's route() already calls filter() internally, and a router-
+    // decided 'ignore' already short-circuits before processTextContent
+    // runs -- so this separately registered filter must not be invoked
+    // again for a 'scribe' routing outcome.
+    const filter = vi.fn().mockResolvedValue({ relevant: true, reason: 'ok' });
+    processor.setFilter(filter);
+    const domainModel = createBaseDomainModel();
+    const scribe = vi.fn().mockResolvedValue(domainModel);
+    processor.setScribe(scribe);
+    processor.setRegistrar(vi.fn().mockResolvedValue(undefined));
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(true);
+    expect(filter).not.toHaveBeenCalled();
+    expect(scribe).toHaveBeenCalled();
+  });
+
+  it('still persists detected-language drift when the router (not a second filter call) is the only source of it', async () => {
+    const processor = createProcessor();
+    processor.setRouter(async () => ({
+      action: 'scribe',
+      reason: 'relevant',
+      language: 'es',
+    }));
+    processor.setFilter(vi.fn());
+    processor.setScribe(vi.fn().mockResolvedValue(createBaseDomainModel()));
+    processor.setRegistrar(vi.fn().mockResolvedValue(undefined));
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(true);
+    expect(mockProcessingRepo.upsert).toHaveBeenCalledWith({
+      conversationEventId: EVENT_ID,
+      familyId: FAMILY_ID,
+      detectedLanguage: 'es',
+      processedBy: 'intern',
+    });
+  });
+
   it('passes context message contents (recent + replied-to, not bot question) to the registrar for grounding', async () => {
     mockEventRepo.findById.mockResolvedValue({
       ...baseEvent,
@@ -358,7 +405,7 @@ describe('MessageProcessor', () => {
     ]);
   });
 
-  it('passes answered bot-question context to Scribe', async () => {
+  it('falls back to the default persona name when the persisted question has none (legacy row)', async () => {
     mockEventRepo.findById.mockResolvedValue({
       ...baseEvent,
       externalReplyToId: 'bot-question-42',
@@ -387,7 +434,34 @@ describe('MessageProcessor', () => {
     expect(scribe.mock.calls[0][2].answeredQuestion).toEqual({
       id: 'question-1',
       content: 'What year did your grandmother arrive?',
-      askedByName: 'Facilitator',
+      askedByName: 'Carmencita',
+    });
+  });
+
+  it('passes the persisted persona name through to Scribe unchanged', async () => {
+    mockEventRepo.findById.mockResolvedValue({
+      ...baseEvent,
+      externalReplyToId: 'bot-question-42',
+      contentOriginal: '1943',
+    });
+    mockQuestionRepo.findByExternalMessageId.mockResolvedValue({
+      id: 'question-1',
+      status: 'asked',
+      contentOriginal: 'What year did your grandmother arrive?',
+      askedByName: 'Abuelita',
+    });
+    const processor = createProcessor();
+    const domainModel = createBaseDomainModel();
+    const scribe = vi.fn().mockResolvedValue(domainModel);
+    processor.setScribe(scribe);
+    processor.setRegistrar(vi.fn().mockResolvedValue(undefined));
+
+    await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(scribe.mock.calls[0][2].answeredQuestion).toEqual({
+      id: 'question-1',
+      content: 'What year did your grandmother arrive?',
+      askedByName: 'Abuelita',
     });
   });
 
@@ -405,6 +479,150 @@ describe('MessageProcessor', () => {
     expect(result.error).toBe('scribe blew up');
     expect(registrar).not.toHaveBeenCalled();
     expect(mockQueueRepo.complete).not.toHaveBeenCalled();
+  });
+
+  it('invokes onFilterDecision when the router itself decides to ignore, even though processTextContent never runs', async () => {
+    const processor = createProcessor();
+    processor.setRouter(async () => ({
+      action: 'ignore',
+      reason: 'Off-topic banter',
+      language: 'es',
+      tokensUsed: 42,
+    }));
+    const filter = vi.fn();
+    processor.setFilter(filter);
+    const onFilterDecision = vi.fn().mockResolvedValue(undefined);
+    processor.setOnFilterDecision(onFilterDecision);
+    const scribe = vi.fn();
+    processor.setScribe(scribe);
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(true);
+    expect(onFilterDecision).toHaveBeenCalledWith(EVENT_ID, FAMILY_ID, {
+      relevant: false,
+      reason: 'Off-topic banter',
+      language: 'es',
+      tokensUsed: 42,
+    });
+    // The separate registered filter is never reached -- process() returns
+    // for 'ignore' before processTextContent runs.
+    expect(filter).not.toHaveBeenCalled();
+    expect(scribe).not.toHaveBeenCalled();
+  });
+
+  it('invokes onFilterDecision as relevant when both router and filter are set and the router routes to scribe', async () => {
+    // Regression test: with both stages wired (the real import-triage
+    // configuration -- see libs/import/src/lib/intern-triage.ts), the
+    // registered `filter` stage's own onFilterDecision call is skipped
+    // (`!this.router` guard in processTextContent) since the router already
+    // called filter() internally. Without a synthesized call for the
+    // 'scribe' outcome, onFilterDecision would only ever fire for 'ignore'
+    // verdicts and never for relevant ones.
+    const processor = createProcessor();
+    processor.setRouter(async () => ({
+      action: 'scribe',
+      reason: 'Family story',
+      language: 'en',
+      tokensUsed: 17,
+    }));
+    const filter = vi.fn();
+    processor.setFilter(filter);
+    const onFilterDecision = vi.fn().mockResolvedValue(undefined);
+    processor.setOnFilterDecision(onFilterDecision);
+    const scribe = vi.fn().mockResolvedValue(createBaseDomainModel());
+    processor.setScribe(scribe);
+    const registrar = vi.fn();
+    processor.setRegistrar(registrar);
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(true);
+    expect(onFilterDecision).toHaveBeenCalledWith(EVENT_ID, FAMILY_ID, {
+      relevant: true,
+      reason: 'Family story',
+      language: 'en',
+      tokensUsed: 17,
+    });
+    // The separate registered filter is never reached -- the router already
+    // decided relevance internally.
+    expect(filter).not.toHaveBeenCalled();
+    expect(scribe).toHaveBeenCalled();
+  });
+
+  it('does not invoke onFilterDecision when the router routes to admin', async () => {
+    const processor = createProcessor();
+    processor.setRouter(async () => ({
+      action: 'admin',
+      adminSubtype: 'status' as const,
+      reason: 'Command: /status',
+    }));
+    const onFilterDecision = vi.fn().mockResolvedValue(undefined);
+    processor.setOnFilterDecision(onFilterDecision);
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(true);
+    expect(onFilterDecision).not.toHaveBeenCalled();
+  });
+
+  it('invokes onFilterDecision for every filter verdict, relevant or not', async () => {
+    const processor = createProcessor();
+    const filterResults: Record<string, { relevant: boolean; reason: string }> =
+      {
+        'event-relevant': { relevant: true, reason: 'Family story' },
+        'event-not-relevant': { relevant: false, reason: 'Off-topic' },
+      };
+    mockEventRepo.findById.mockImplementation(
+      async (_familyId: string, eventId: string) => ({
+        ...baseEvent,
+        id: eventId,
+      }),
+    );
+    mockQueueRepo.findByEventId.mockImplementation(
+      async (_familyId: string, eventId: string) => ({
+        ...baseQueueItem,
+        conversationEventId: eventId,
+      }),
+    );
+    processor.setFilter(async (eventId: string) => filterResults[eventId]);
+    const scribe = vi.fn().mockResolvedValue(createBaseDomainModel());
+    processor.setScribe(scribe);
+    const onFilterDecision = vi.fn().mockResolvedValue(undefined);
+    processor.setOnFilterDecision(onFilterDecision);
+
+    await processor.process('event-relevant', FAMILY_ID);
+    await processor.process('event-not-relevant', FAMILY_ID);
+
+    expect(onFilterDecision).toHaveBeenCalledWith(
+      'event-relevant',
+      FAMILY_ID,
+      filterResults['event-relevant'],
+    );
+    expect(onFilterDecision).toHaveBeenCalledWith(
+      'event-not-relevant',
+      FAMILY_ID,
+      filterResults['event-not-relevant'],
+    );
+    // Only the relevant verdict lets scribe run -- confirms the callback
+    // firing doesn't itself change the shouldProcess decision.
+    expect(scribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates an onFilterDecision error as processing failure (unlike onImageCreated, not swallowed)', async () => {
+    const processor = createProcessor();
+    processor.setFilter(async () => ({ relevant: true, reason: 'ok' }));
+    processor.setOnFilterDecision(async () => {
+      throw new Error('db write failed');
+    });
+    const scribe = vi.fn();
+    processor.setScribe(scribe);
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('db write failed');
+    expect(scribe).not.toHaveBeenCalled();
   });
 
   it('creates an image record and invokes onImageCreated for media events', async () => {

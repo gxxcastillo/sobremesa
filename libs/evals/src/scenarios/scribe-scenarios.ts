@@ -1,3 +1,4 @@
+import { DEFAULT_FACILITATOR_NAME } from '@sobremesa/shared-types';
 import type { EvalSender, ScribeEvalScenario } from '../lib/scenario';
 
 const senders = {
@@ -403,7 +404,7 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
       {
         sender: 'daisy',
         answeredQuestion: {
-          askedByName: 'Carmencita',
+          askedByName: DEFAULT_FACILITATOR_NAME,
           content:
             'If you happen to remember, what year did Rosa move to Guadalajara?',
         },
@@ -422,8 +423,8 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
         },
       ],
       forbidden: {
-        people: ['Carmencita', 'Sobremesa'],
-        claimSubjects: ['Carmencita'],
+        people: [DEFAULT_FACILITATOR_NAME, 'Sobremesa'],
+        claimSubjects: [DEFAULT_FACILITATOR_NAME],
       },
     },
   },
@@ -436,7 +437,7 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
       {
         sender: 'minnie',
         answeredQuestion: {
-          askedByName: 'Carmencita',
+          askedByName: DEFAULT_FACILITATOR_NAME,
           content: "Was Sofia's wedding in Puerto Vallarta in June 2022?",
         },
         text: 'Yes, that is right.',
@@ -456,7 +457,7 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
         },
       ],
       forbidden: {
-        people: ['Carmencita', 'Sobremesa'],
+        people: [DEFAULT_FACILITATOR_NAME, 'Sobremesa'],
       },
     },
   },

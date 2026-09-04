@@ -86,6 +86,213 @@ export interface AnthropicProviderOptions {
 }
 
 /**
+ * Beta header required for native structured outputs (`output_format`).
+ * Shared with `anthropic-batch.ts` so the live and batch submission paths
+ * can never drift on the flag value.
+ */
+export const STRUCTURED_OUTPUTS_BETA = 'structured-outputs-2025-11-13';
+
+// Models that support native structured outputs (output_format parameter)
+const STRUCTURED_OUTPUT_MODELS = [
+  'claude-sonnet-4-5',
+  'claude-opus-4-1',
+  'claude-opus-4-5',
+  'claude-haiku-4-5',
+];
+
+function supportsStructuredOutputs(model: string): boolean {
+  return STRUCTURED_OUTPUT_MODELS.some(
+    (supported) => model.includes(supported) || model.startsWith(supported),
+  );
+}
+
+/**
+ * Convert our message format to Anthropic format.
+ */
+function convertMessages(
+  messages: AICompletionRequest['messages'],
+): AnthropicMessage[] {
+  return messages.map((msg) => ({
+    role: msg.role,
+    content:
+      typeof msg.content === 'string'
+        ? msg.content
+        : convertContent(msg.content),
+  }));
+}
+
+/**
+ * Convert content blocks to Anthropic format.
+ */
+function convertContent(content: AIMessageContent[]): AnthropicContentBlock[] {
+  return content.map((block) => {
+    if (block.type === 'text') {
+      return { type: 'text', text: block.text };
+    }
+
+    if (block.type === 'image') {
+      return {
+        type: 'image',
+        source: {
+          type: block.source.type,
+          media_type: block.source.mediaType || 'image/jpeg',
+          ...(block.source.data && { data: block.source.data }),
+          ...(block.source.url && { url: block.source.url }),
+        },
+      };
+    }
+
+    // Fallback for unknown types
+    return { type: 'text', text: '' };
+  });
+}
+
+/**
+ * Map Anthropic stop reasons to our format.
+ */
+function mapStopReason(reason?: string): AICompletionResponse['stopReason'] {
+  switch (reason) {
+    case 'end_turn':
+      return 'end_turn';
+    case 'max_tokens':
+      return 'max_tokens';
+    case 'stop_sequence':
+      return 'stop_sequence';
+    default:
+      return reason;
+  }
+}
+
+/**
+ * The Anthropic API request body for a completion request, plus whether it
+ * needs the beta structured-outputs endpoint/header. Pure and side-effect
+ * free (besides a debug log) so it can back both a live `complete()` call
+ * and a Batch API submission (`libs/ai-provider`'s dev response cache
+ * batch-seeding) from the exact same logic -- the two must never drift, or a
+ * batch-seeded cache entry would silently misrepresent what a live call
+ * actually sends.
+ */
+export interface AnthropicRequestBuild {
+  /** Body for `client.messages.create` / a batch request's `params`. */
+  params: Record<string, unknown>;
+  /** True if this must go through `client.beta.messages.create` (or the
+   * beta batches endpoint with a matching `betas` entry) for native
+   * structured outputs. */
+  useBeta: boolean;
+}
+
+export function buildAnthropicRequestParams(
+  request: AICompletionRequest,
+  defaultModel: string,
+): AnthropicRequestBuild {
+  const model = request.model || defaultModel;
+  const responseFormat = request.responseFormat;
+
+  const messages = convertMessages(request.messages);
+
+  const hasJsonSchemaFormat = isJsonSchemaFormat(responseFormat);
+  const useNativeStructuredOutputs =
+    isJsonSchemaFormat(responseFormat) &&
+    supportsStructuredOutputs(model) &&
+    responseFormat.json_schema.strict !== false;
+
+  if (hasJsonSchemaFormat) {
+    logger.debug(
+      { model, useNativeStructuredOutputs },
+      'Structured output mode',
+    );
+  }
+
+  let systemPrompt = request.system || '';
+  if (isJsonSchemaFormat(responseFormat) && !useNativeStructuredOutputs) {
+    const schemaJson = JSON.stringify(
+      responseFormat.json_schema.schema,
+      null,
+      2,
+    );
+    logger.debug(
+      { schemaLength: schemaJson.length },
+      'Embedding schema in system prompt',
+    );
+    systemPrompt = systemPrompt
+      ? `${systemPrompt}\n\n## Required JSON Schema\n\nYou MUST respond with valid JSON that conforms exactly to this schema. Use these exact field names:\n\n\`\`\`json\n${schemaJson}\n\`\`\`\n\nRespond ONLY with the JSON object, no additional text.`
+      : `Respond with valid JSON conforming to this schema:\n\n\`\`\`json\n${schemaJson}\n\`\`\``;
+  }
+
+  const params: Record<string, unknown> = {
+    model,
+    max_tokens: request.maxTokens,
+    messages,
+  };
+
+  const finalSystemPrompt = systemPrompt || request.system;
+  if (finalSystemPrompt) {
+    if (request.enablePromptCache) {
+      params['system'] = [
+        {
+          type: 'text',
+          text: finalSystemPrompt,
+          cache_control: { type: 'ephemeral' },
+        },
+      ];
+    } else {
+      params['system'] = finalSystemPrompt;
+    }
+  }
+
+  if (useNativeStructuredOutputs && isJsonSchemaFormat(responseFormat)) {
+    params['output_format'] = {
+      type: 'json_schema',
+      schema: responseFormat.json_schema.schema,
+    };
+  }
+
+  if (request.temperature !== undefined) {
+    params['temperature'] = request.temperature;
+  }
+
+  if (request.stopSequences && request.stopSequences.length > 0) {
+    params['stop_sequences'] = request.stopSequences;
+  }
+
+  if (useNativeStructuredOutputs) {
+    params['betas'] = [STRUCTURED_OUTPUTS_BETA];
+  }
+
+  return { params, useBeta: useNativeStructuredOutputs };
+}
+
+/**
+ * Map a raw Anthropic message response into our provider-agnostic shape.
+ * Shared by the live `complete()` path and batch-result processing.
+ */
+export function mapAnthropicResponse(
+  response: AnthropicResponse,
+): AICompletionResponse {
+  const textContent = response.content.find(
+    (c): c is { type: 'text'; text: string } =>
+      c.type === 'text' && typeof c.text === 'string',
+  );
+
+  if (!textContent) {
+    throw new Error('No text content in Anthropic response');
+  }
+
+  return {
+    content: textContent.text,
+    usage: {
+      inputTokens: response.usage?.input_tokens || 0,
+      outputTokens: response.usage?.output_tokens || 0,
+      totalTokens:
+        (response.usage?.input_tokens || 0) +
+        (response.usage?.output_tokens || 0),
+    },
+    model: response.model,
+    stopReason: mapStopReason(response.stop_reason),
+  };
+}
+
+/**
  * Anthropic provider implementation.
  */
 export class AnthropicProvider implements AIProvider {
@@ -126,125 +333,16 @@ export class AnthropicProvider implements AIProvider {
     });
   }
 
-  // Models that support native structured outputs (output_format parameter)
-  private static STRUCTURED_OUTPUT_MODELS = [
-    'claude-sonnet-4-5',
-    'claude-opus-4-1',
-    'claude-opus-4-5',
-    'claude-haiku-4-5',
-  ];
-
-  /**
-   * Check if a model supports native structured outputs.
-   */
-  private supportsStructuredOutputs(model: string): boolean {
-    return AnthropicProvider.STRUCTURED_OUTPUT_MODELS.some(
-      (supported) => model.includes(supported) || model.startsWith(supported),
-    );
-  }
-
   async complete(request: AICompletionRequest): Promise<AICompletionResponse> {
-    const model = request.model || this.defaultModel;
-    const responseFormat = request.responseFormat;
-
-    // Convert messages to Anthropic format
-    const messages = this.convertMessages(request.messages);
-
-    // Check if using JSON schema output format
-    const hasJsonSchemaFormat = isJsonSchemaFormat(responseFormat);
-
-    // Only use native structured outputs if the model supports it
-    const useNativeStructuredOutputs =
-      isJsonSchemaFormat(responseFormat) &&
-      this.supportsStructuredOutputs(model) &&
-      responseFormat.json_schema.strict !== false;
-
-    // Log structured output mode for debugging
-    if (hasJsonSchemaFormat) {
-      logger.debug(
-        { model, useNativeStructuredOutputs },
-        'Structured output mode',
-      );
-    }
-
-    // Build system prompt, potentially with JSON schema for unsupported models
-    let systemPrompt = request.system || '';
-    if (isJsonSchemaFormat(responseFormat) && !useNativeStructuredOutputs) {
-      // Model doesn't support native structured outputs - include schema in prompt
-      const schemaJson = JSON.stringify(
-        responseFormat.json_schema.schema,
-        null,
-        2,
-      );
-      logger.debug(
-        { schemaLength: schemaJson.length },
-        'Embedding schema in system prompt',
-      );
-      systemPrompt = systemPrompt
-        ? `${systemPrompt}\n\n## Required JSON Schema\n\nYou MUST respond with valid JSON that conforms exactly to this schema. Use these exact field names:\n\n\`\`\`json\n${schemaJson}\n\`\`\`\n\nRespond ONLY with the JSON object, no additional text.`
-        : `Respond with valid JSON conforming to this schema:\n\n\`\`\`json\n${schemaJson}\n\`\`\``;
-    }
-
-    // Build request
-    const anthropicRequest: Record<string, unknown> = {
-      model,
-      max_tokens: request.maxTokens,
-      messages,
-    };
-
-    // Add system prompt with optional prompt caching
-    const finalSystemPrompt = systemPrompt || request.system;
-    if (finalSystemPrompt) {
-      if (request.enablePromptCache) {
-        // Use prompt caching format (array with cache_control)
-        anthropicRequest['system'] = [
-          {
-            type: 'text',
-            text: finalSystemPrompt,
-            cache_control: { type: 'ephemeral' },
-          },
-        ];
-      } else {
-        // Standard string format
-        anthropicRequest['system'] = finalSystemPrompt;
-      }
-    }
-
-    // Add output_format for native structured outputs (supported models only)
-    if (useNativeStructuredOutputs && isJsonSchemaFormat(responseFormat)) {
-      anthropicRequest['output_format'] = {
-        type: 'json_schema',
-        schema: responseFormat.json_schema.schema,
-      };
-    }
-
-    if (request.temperature !== undefined) {
-      anthropicRequest['temperature'] = request.temperature;
-    }
-
-    if (request.stopSequences && request.stopSequences.length > 0) {
-      anthropicRequest['stop_sequences'] = request.stopSequences;
-    }
-
-    // Call Anthropic API
-    // Use beta endpoint only for native structured outputs on supported models
-    let response: AnthropicResponse;
-    if (useNativeStructuredOutputs) {
-      anthropicRequest['betas'] = ['structured-outputs-2025-11-13'];
-      response = await this.client.beta.messages.create(anthropicRequest);
-    } else {
-      response = await this.client.messages.create(anthropicRequest);
-    }
-
-    // Extract text content
-    const textContent = response.content.find(
-      (c): c is { type: 'text'; text: string } =>
-        c.type === 'text' && typeof c.text === 'string',
+    const { params, useBeta } = buildAnthropicRequestParams(
+      request,
+      this.defaultModel,
     );
 
-    if (!textContent) {
-      throw new Error('No text content in Anthropic response');
-    }
+    // Use beta endpoint only for native structured outputs on supported models
+    const response: AnthropicResponse = useBeta
+      ? await this.client.beta.messages.create(params)
+      : await this.client.messages.create(params);
 
     // Log cache performance if prompt caching was enabled
     if (request.enablePromptCache && response.usage) {
@@ -255,18 +353,7 @@ export class AnthropicProvider implements AIProvider {
       }
     }
 
-    return {
-      content: textContent.text,
-      usage: {
-        inputTokens: response.usage?.input_tokens || 0,
-        outputTokens: response.usage?.output_tokens || 0,
-        totalTokens:
-          (response.usage?.input_tokens || 0) +
-          (response.usage?.output_tokens || 0),
-      },
-      model: response.model,
-      stopReason: this.mapStopReason(response.stop_reason),
-    };
+    return mapAnthropicResponse(response);
   }
 
   supportsVision(): boolean {
@@ -284,63 +371,6 @@ export class AnthropicProvider implements AIProvider {
       return true;
     } catch {
       return false;
-    }
-  }
-
-  /**
-   * Convert our message format to Anthropic format.
-   */
-  private convertMessages(
-    messages: AICompletionRequest['messages'],
-  ): AnthropicMessage[] {
-    return messages.map((msg) => ({
-      role: msg.role,
-      content:
-        typeof msg.content === 'string'
-          ? msg.content
-          : this.convertContent(msg.content),
-    }));
-  }
-
-  /**
-   * Convert content blocks to Anthropic format.
-   */
-  private convertContent(content: AIMessageContent[]): AnthropicContentBlock[] {
-    return content.map((block) => {
-      if (block.type === 'text') {
-        return { type: 'text', text: block.text };
-      }
-
-      if (block.type === 'image') {
-        return {
-          type: 'image',
-          source: {
-            type: block.source.type,
-            media_type: block.source.mediaType || 'image/jpeg',
-            ...(block.source.data && { data: block.source.data }),
-            ...(block.source.url && { url: block.source.url }),
-          },
-        };
-      }
-
-      // Fallback for unknown types
-      return { type: 'text', text: '' };
-    });
-  }
-
-  /**
-   * Map Anthropic stop reasons to our format.
-   */
-  private mapStopReason(reason?: string): AICompletionResponse['stopReason'] {
-    switch (reason) {
-      case 'end_turn':
-        return 'end_turn';
-      case 'max_tokens':
-        return 'max_tokens';
-      case 'stop_sequence':
-        return 'stop_sequence';
-      default:
-        return reason;
     }
   }
 }

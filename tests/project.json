@@ -1,0 +1,13 @@
+{
+  "name": "tests",
+  "tags": ["scope:app"],
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun tests/{args.file}",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

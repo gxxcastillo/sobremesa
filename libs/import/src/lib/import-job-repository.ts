@@ -9,6 +9,7 @@ import type {
   ImportJob,
   ImportJobStatus,
   ImportConfig,
+  ImportSource,
 } from '@sobremesa/shared-types';
 
 /**
@@ -16,7 +17,7 @@ import type {
  */
 export interface CreateImportJobOptions {
   createdBy: string;
-  source: 'whatsapp' | 'telegram' | 'other';
+  source: ImportSource;
   config: ImportConfig;
   rawFileContent: string;
   messageCount: number;
@@ -201,7 +202,7 @@ export class ImportJobRepository {
       id: row.id as string,
       createdBy: row.created_by as string,
       status: row.status as ImportJobStatus,
-      source: row.source as 'whatsapp' | 'telegram' | 'other',
+      source: row.source as ImportSource,
       config: row.config as ImportConfig,
       progress: row.progress as ImportJob['progress'],
       batchIds: (row.batch_ids as string[]) || [],

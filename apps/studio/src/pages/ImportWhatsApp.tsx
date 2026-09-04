@@ -512,6 +512,40 @@ export const ImportWhatsApp: Component = () => {
     }
   };
 
+  /**
+   * Polls GET /api/import/:jobId every 1.5s, updating `importStatus` along
+   * the way, until `isDone` returns true. `run-intern` and `submit-scribe`
+   * both now kick off a real LLM-backed drain in the background (see
+   * import-filter-convergence-plan.md) instead of completing synchronously,
+   * so their callers poll for the result the same way the initial import
+   * phase already does. Shares the `pollInterval` signal (and its existing
+   * `onCleanup`/cancel-import teardown) with that same phase -- only one
+   * polling loop is ever active at a time.
+   */
+  const pollJobStatus = (
+    jobId: string,
+    isDone: (status: ImportStatus) => boolean,
+  ): Promise<ImportStatus> => {
+    return new Promise((resolve, reject) => {
+      const interval = setInterval(async () => {
+        try {
+          const latest = await client.getImportStatus(jobId);
+          setImportStatus(latest);
+          if (isDone(latest)) {
+            clearInterval(interval);
+            setPollInterval(null);
+            resolve(latest);
+          }
+        } catch (err) {
+          clearInterval(interval);
+          setPollInterval(null);
+          reject(err);
+        }
+      }, 1500);
+      setPollInterval(interval);
+    });
+  };
+
   // Intern review functions
   const runInternAnalysis = async () => {
     const status = importStatus();
@@ -520,8 +554,17 @@ export const ImportWhatsApp: Component = () => {
     setIsRunningIntern(true);
 
     try {
-      const result = await client.runIntern(status.jobId);
-      setInternStats(result.stats);
+      await client.runIntern(status.jobId);
+
+      const finalStatus = await pollJobStatus(
+        status.jobId,
+        (s) => s.status === 'intern_complete' || s.status === 'awaiting_intern',
+      );
+
+      if (finalStatus.status === 'awaiting_intern') {
+        toast.error(finalStatus.error || 'Failed to run Intern');
+        return;
+      }
 
       // Load the decisions
       await loadInternDecisions();
@@ -591,10 +634,20 @@ export const ImportWhatsApp: Component = () => {
 
     try {
       await client.submitToScribe(status.jobId);
-      toast.success('Queued messages for Scribe processing');
-      // Refresh status
-      const newStatus = await client.getImportStatus(status.jobId);
-      setImportStatus(newStatus);
+
+      const finalStatus = await pollJobStatus(
+        status.jobId,
+        (s) => s.status === 'complete' || s.status === 'intern_complete',
+      );
+
+      if (finalStatus.status === 'intern_complete') {
+        // Reverted -- extraction failed partway; decisions/review state is
+        // still intact, so the user can retry.
+        toast.error(finalStatus.error || 'Failed to process with Scribe');
+        return;
+      }
+
+      toast.success('Messages processed');
     } catch (err) {
       toast.error(
         `Failed to submit to Scribe: ${err instanceof Error ? err.message : 'Unknown error'}`,
@@ -1149,6 +1202,11 @@ export const ImportWhatsApp: Component = () => {
                         ? 'Running Intern...'
                         : 'Run Intern Analysis'}
                     </button>
+                    <Show when={isRunningIntern()}>
+                      <p class="intern-progress-hint">
+                        {importStatus()?.stage}
+                      </p>
+                    </Show>
                   </Show>
                 </div>
 
@@ -1304,6 +1362,11 @@ export const ImportWhatsApp: Component = () => {
                         ? 'Submitting...'
                         : `Submit ${internStats()!.toProcess} Messages to Scribe`}
                     </button>
+                    <Show when={isSubmittingScribe()}>
+                      <p class="intern-progress-hint">
+                        {importStatus()?.stage}
+                      </p>
+                    </Show>
                   </div>
                 </Show>
               </Show>

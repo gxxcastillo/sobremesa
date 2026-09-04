@@ -8,36 +8,18 @@ import {
   type AIConfig,
   type AIProvider,
 } from '@sobremesa/ai-provider';
-import { DEFAULT_SCRIBE_CONFIG, ScribeAgent } from '@sobremesa/agents-scribe';
-import type {
-  ConversationEventRepository,
-  FamilyRepository,
-  ImageRepository,
-} from '@sobremesa/database';
-import type { MessageContext } from '@sobremesa/queue';
-import { createLogger } from '@sobremesa/shared-utils';
-import type {
-  ChatProvider,
-  ConversationEvent,
-  Family,
-  Image,
-  ScribeDomainModel,
-} from '@sobremesa/shared-types';
+import { DEFAULT_SCRIBE_CONFIG } from '@sobremesa/agents-scribe';
 import { buildReport, buildSuiteReport } from '../lib/scorer';
 import {
-  DEFAULT_CONTEXT_WINDOW,
   selectScenarios,
-  type EvalMessage,
-  type EvalSender,
   type EvalReport,
   type EvalSuiteReport,
   type ScenarioRunResult,
-  type ScribeEvalScenario,
 } from '../lib/scenario';
+import { runScenario } from '../lib/run-scenario';
 import { scribeEvalScenarios } from '../scenarios/scribe-scenarios';
 
 const DEFAULT_THRESHOLD = 0.8;
-const DEFAULT_BASE_TIME = new Date('2026-01-15T18:00:00.000Z');
 
 interface CliOptions {
   threshold: number;
@@ -52,54 +34,6 @@ interface ProviderSetup {
   id: string;
   provider: AIProvider;
   model: string;
-}
-
-class InMemoryEventRepository {
-  constructor(private readonly events: ConversationEvent[]) {}
-
-  async findById(
-    familyId: string,
-    id: string,
-  ): Promise<ConversationEvent | null> {
-    return (
-      this.events.find(
-        (event) => event.familyId === familyId && event.id === id,
-      ) ?? null
-    );
-  }
-
-  async findRecent(
-    familyId: string,
-    conversationId: string,
-    limit = DEFAULT_CONTEXT_WINDOW,
-    beforeSequenceNumber?: number,
-  ): Promise<ConversationEvent[]> {
-    return this.events
-      .filter(
-        (event) =>
-          event.familyId === familyId &&
-          event.conversationId === conversationId &&
-          event.contentOriginal &&
-          (beforeSequenceNumber === undefined ||
-            (event.sequenceNumber ?? 0) < beforeSequenceNumber),
-      )
-      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
-      .slice(0, limit);
-  }
-}
-
-class InMemoryFamilyRepository {
-  constructor(private readonly family: Family) {}
-
-  async findById(id: string): Promise<Family | null> {
-    return id === this.family.id ? this.family : null;
-  }
-}
-
-class EmptyImageRepository {
-  async findRecentInConversation(): Promise<Image[]> {
-    return [];
-  }
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -218,208 +152,6 @@ function getScribeModel(config: AIConfig, providerName: string): string {
   }
 
   return 'unknown';
-}
-
-function makeFamily(scenario: ScribeEvalScenario): Family {
-  const now = new Date(DEFAULT_BASE_TIME);
-  return {
-    id: `eval-family-${scenario.id}`,
-    name: `Eval Family ${scenario.id}`,
-    config: {
-      culturalTerms: scenario.familyConfig?.culturalTerms ?? [],
-      ...(scenario.familyConfig?.timezone
-        ? { timezone: scenario.familyConfig.timezone }
-        : {}),
-    },
-    chatId: `eval-chat-${scenario.id}`,
-    isActive: true,
-    createdAt: now,
-    updatedAt: now,
-  } as Family;
-}
-
-function createEvent(options: {
-  scenario: ScribeEvalScenario;
-  message: EvalMessage;
-  sender: EvalSender;
-  sequenceNumber: number;
-  occurredAt: Date;
-  externalReplyToId?: string;
-}): ConversationEvent {
-  return {
-    id: `${options.scenario.id}-${options.sequenceNumber}`,
-    familyId: `eval-family-${options.scenario.id}`,
-    sequenceNumber: options.sequenceNumber,
-    source: 'telegram' satisfies ChatProvider,
-    conversationId: `eval-chat-${options.scenario.id}`,
-    externalEventId: `eval-message-${options.sequenceNumber}`,
-    externalReplyToId: options.externalReplyToId,
-    actorExternalId: options.sender.id,
-    actorDisplayName: options.sender.displayName,
-    actorUsername: options.sender.username,
-    eventType: 'message',
-    contentOriginal: options.message.text,
-    languageOriginal: 'unknown',
-    metadata: {},
-    sourcePayload: {},
-    occurredAt: options.message.occurredAt ?? options.occurredAt,
-    ingestedAt: options.message.occurredAt ?? options.occurredAt,
-  };
-}
-
-function makeContext(
-  events: ConversationEvent[],
-  current: ConversationEvent,
-  windowSize: number,
-  currentMessage: EvalMessage,
-): MessageContext {
-  const recentMessages = events
-    .filter(
-      (event) =>
-        event.conversationId === current.conversationId &&
-        event.sequenceNumber !== undefined &&
-        current.sequenceNumber !== undefined &&
-        event.sequenceNumber < current.sequenceNumber &&
-        event.contentOriginal,
-    )
-    .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
-    .slice(0, windowSize)
-    .reverse()
-    .map((event) => ({
-      id: event.id,
-      content: event.contentOriginal ?? '',
-      senderName: event.actorDisplayName ?? event.actorUsername ?? 'Unknown',
-      occurredAt: event.occurredAt,
-    }));
-
-  const replyToEvent = current.externalReplyToId
-    ? events.find(
-        (event) =>
-          event.conversationId === current.conversationId &&
-          event.externalEventId === current.externalReplyToId &&
-          event.contentOriginal,
-      )
-    : undefined;
-
-  return {
-    recentMessages,
-    replyToMessage: replyToEvent
-      ? {
-          id: replyToEvent.id,
-          content: replyToEvent.contentOriginal ?? '',
-          senderName:
-            replyToEvent.actorDisplayName ||
-            replyToEvent.actorUsername ||
-            'Unknown',
-          occurredAt: replyToEvent.occurredAt,
-        }
-      : undefined,
-    answeredQuestion: currentMessage.answeredQuestion
-      ? {
-          id: `${current.id}-question`,
-          content: currentMessage.answeredQuestion.content,
-          askedByName:
-            currentMessage.answeredQuestion.askedByName ?? 'Facilitator',
-        }
-      : undefined,
-    recentImages: [],
-  };
-}
-
-async function runScenario(
-  scenario: ScribeEvalScenario,
-  provider: AIProvider,
-  model: string,
-): Promise<ScenarioRunResult> {
-  const family = makeFamily(scenario);
-  const events: ConversationEvent[] = [];
-  const eventRepo = new InMemoryEventRepository(events);
-  const familyRepo = new InMemoryFamilyRepository(family);
-  const imageRepo = new EmptyImageRepository();
-  const logger = createLogger({
-    name: `evals-scribe-${scenario.id}`,
-    level: 'warn',
-    pretty: false,
-  });
-
-  const scribe = new ScribeAgent({
-    provider,
-    model,
-    eventRepo: eventRepo as unknown as ConversationEventRepository,
-    familyRepo: familyRepo as unknown as FamilyRepository,
-    imageRepo: imageRepo as unknown as ImageRepository,
-    logger,
-  });
-
-  let sequenceNumber = 1;
-  for (const message of scenario.initialContext ?? []) {
-    events.push(
-      createEvent({
-        scenario,
-        message,
-        sender: getSender(scenario, message.sender),
-        sequenceNumber,
-        occurredAt: offsetTime(sequenceNumber),
-      }),
-    );
-    sequenceNumber++;
-  }
-
-  const outputs: ScribeDomainModel[] = [];
-  try {
-    for (const message of scenario.messages) {
-      const event = createEvent({
-        scenario,
-        message,
-        sender: getSender(scenario, message.sender),
-        sequenceNumber,
-        occurredAt: offsetTime(sequenceNumber),
-        externalReplyToId:
-          message.replyTo !== undefined
-            ? `eval-message-${message.replyTo + 1}`
-            : undefined,
-      });
-      events.push(event);
-
-      const context = makeContext(
-        events,
-        event,
-        scenario.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
-        message,
-      );
-      const output = await scribe.process(event.id, family.id, context);
-      outputs.push(output);
-      sequenceNumber++;
-    }
-  } catch (error) {
-    return {
-      scenario,
-      outputs,
-      error: toError(error),
-    };
-  }
-
-  return {
-    scenario,
-    outputs,
-  };
-}
-
-function getSender(
-  scenario: ScribeEvalScenario,
-  senderKey: string,
-): EvalSender {
-  const sender = scenario.senders[senderKey];
-  if (!sender) {
-    throw new Error(
-      `Scenario ${scenario.id} references unknown sender ${senderKey}`,
-    );
-  }
-  return sender;
-}
-
-function offsetTime(sequenceNumber: number): Date {
-  return new Date(DEFAULT_BASE_TIME.getTime() + sequenceNumber * 2_000);
 }
 
 function toError(error: unknown): Error {

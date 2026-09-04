@@ -122,6 +122,8 @@ export class MessageQueue {
     const item = await this.repository.dequeueAny(
       this.workerId,
       this.options.lockTimeoutMs,
+      undefined,
+      this.options.intentFilter,
     );
 
     if (!item) {

@@ -1,14 +1,12 @@
 #!/usr/bin/env bun
 import 'dotenv/config';
 import { MockProvider } from '@sobremesa/ai-provider';
-import { ScribeAgent } from '@sobremesa/agents-scribe';
-import { RegistrarAgent } from '@sobremesa/agents-registrar';
 import {
   ProcessingQueueRepository,
   createDatabaseClient,
   type DatabaseClient,
 } from '@sobremesa/database';
-import { MessageProcessor } from '@sobremesa/queue';
+import { buildMessagePipeline } from '@sobremesa/pipeline';
 import { createLogger } from '@sobremesa/shared-utils';
 import { selectScenarios, type EvalSender } from '../lib/scenario';
 import {
@@ -149,24 +147,13 @@ async function runScenario(
       level: 'warn',
       pretty: false,
     });
-    const scribe = new ScribeAgent({
+    const processor = buildMessagePipeline({
       dbClient: client,
-      provider,
-      model: 'mock-canned-scribe',
+      stages: new Set(['scribe', 'registrar']),
+      providers: { scribe: provider },
+      models: { scribe: 'mock-canned-scribe' },
       logger,
     });
-    const registrar = new RegistrarAgent({
-      dbClient: client,
-      logger,
-    });
-    const processor = new MessageProcessor({ dbClient: client });
-    processor.setScribe((eventId, familyId, context, preprocessed) =>
-      scribe.process(eventId, familyId, context, preprocessed),
-    );
-    processor.setRegistrar((domainModel, familyId, versions, contextContents) =>
-      registrar.persist(domainModel, familyId, versions, contextContents),
-    );
-    processor.setPipelineVersions({ scribeVersion: 'canned' });
 
     const queueRepo = new ProcessingQueueRepository(client);
     for (let index = 0; index < scenario.messages.length; index++) {

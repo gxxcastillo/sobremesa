@@ -98,6 +98,25 @@ describe('MessageQueue', () => {
       expect(mockRepository.dequeueAny).toHaveBeenCalledWith(
         expect.any(String),
         45000,
+        undefined,
+        undefined,
+      );
+    });
+
+    it('forwards the configured intentFilter to dequeueAny (e.g. the live poller excluding triage-only rows)', async () => {
+      mockRepository.dequeueAny.mockResolvedValue(null);
+      const queue = createQueue({
+        queueOptions: { intentFilter: ['live', 'extract'] },
+      });
+      queue.setHandler(vi.fn());
+
+      await queue.processOne();
+
+      expect(mockRepository.dequeueAny).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Number),
+        undefined,
+        ['live', 'extract'],
       );
     });
 

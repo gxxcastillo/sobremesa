@@ -12,7 +12,7 @@ import {
   type DatabaseClient,
 } from '@sobremesa/database';
 import { createLogger } from '@sobremesa/shared-utils';
-import type { AIProvider } from '@sobremesa/ai-provider';
+import type { AICompletionRequest, AIProvider } from '@sobremesa/ai-provider';
 import type { MessageContext } from '@sobremesa/queue';
 import type pino from 'pino';
 import { buildSystemPrompt, buildUserMessage } from './prompt-builder';
@@ -46,6 +46,60 @@ export interface ScribeAgentOptions {
 }
 
 /**
+ * Options for `ScribeAgent.forEval` — an eval/debug-only construction path.
+ * Adds `systemPromptOverride`, a raw system prompt sent verbatim instead of
+ * the one `buildPrompt` would generate from `config` (e.g. `apps/eval`'s
+ * hand-edited prompt preview). Kept out of `ScribeAgentOptions` so `new
+ * ScribeAgent()` — what the live pipeline uses — has no way to set it.
+ */
+export interface ScribeAgentEvalOptions extends ScribeAgentOptions {
+  systemPromptOverride?: string;
+}
+
+/**
+ * The system/user prompt `process()` would send for one message, without
+ * actually calling the provider. `process()` builds one of these internally
+ * and either sends it or, for a contentless event, returns an empty model
+ * without building a prompt at all (`empty: true`).
+ */
+export type ScribePromptBuild =
+  | {
+      empty: true;
+      detectedLanguage?: LanguageCode;
+    }
+  | {
+      empty: false;
+      systemPrompt: string;
+      userMessage: string;
+      config: ScribeConfig;
+      detectedLanguage?: LanguageCode;
+    };
+
+/**
+ * The exact `AICompletionRequest` `process()` sends for a built (non-empty)
+ * prompt. Exposed so tooling that must reproduce `process()`'s request
+ * exactly -- e.g. seeding the dev response cache via the Anthropic Batch
+ * API -- can't drift from what a live call actually sends.
+ */
+export function buildScribeCompletionRequest(
+  model: string,
+  built: Extract<ScribePromptBuild, { empty: false }>,
+): AICompletionRequest {
+  return {
+    model,
+    maxTokens: built.config.maxTokens,
+    temperature: built.config.temperature,
+    system: built.systemPrompt,
+    enablePromptCache: true,
+    messages: [{ role: 'user', content: built.userMessage }],
+    responseFormat: {
+      type: 'json_schema',
+      json_schema: SCRIBE_JSON_SCHEMA,
+    },
+  };
+}
+
+/**
  * The Scribe agent extracts entities and claims from messages.
  * It processes one message at a time and outputs a domain model.
  * Note: Entity matching is handled by Registrar. Question generation is handled downstream.
@@ -59,6 +113,7 @@ export class ScribeAgent {
   private imageRepo: ImageRepository;
   private logger: pino.Logger;
   private config: ScribeConfig;
+  private systemPromptOverride?: string;
 
   constructor(options: ScribeAgentOptions) {
     const { dbClient } = options;
@@ -101,6 +156,16 @@ export class ScribeAgent {
   }
 
   /**
+   * Construct a ScribeAgent with `systemPromptOverride` available. Eval/debug
+   * only — never call this from the live pipeline.
+   */
+  static forEval(options: ScribeAgentEvalOptions): ScribeAgent {
+    const agent = new ScribeAgent(options);
+    agent.systemPromptOverride = options.systemPromptOverride;
+    return agent;
+  }
+
+  /**
    * Process a conversation event and extract a domain model.
    * This is the ScribeProcessor function for MessageProcessor.
    * Optional preloadedContext allows sharing pre-fetched context from MessageProcessor.
@@ -117,6 +182,89 @@ export class ScribeAgent {
   ): Promise<ScribeDomainModel> {
     this.logger.info({ eventId, familyId }, 'Scribe processing started');
 
+    const built = await this.buildPrompt(
+      eventId,
+      familyId,
+      preloadedContext,
+      preprocessed,
+    );
+
+    if (built.empty) {
+      this.logger.debug(
+        { eventId },
+        'Event has no content, returning empty model',
+      );
+      return this.createEmptyModel(eventId, familyId, built.detectedLanguage);
+    }
+
+    const { systemPrompt, userMessage, detectedLanguage } = built;
+
+    // Call AI provider
+    this.logger.debug(
+      {
+        eventId,
+        model: this.model,
+        systemPromptLength: systemPrompt.length,
+        userMessageLength: userMessage.length,
+      },
+      'Calling AI provider',
+    );
+    const startTime = Date.now();
+
+    try {
+      const response = await this.provider.complete(
+        buildScribeCompletionRequest(this.model, built),
+      );
+
+      const duration = Date.now() - startTime;
+      this.logger.info(
+        {
+          eventId,
+          duration,
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+          totalTokens: response.usage.totalTokens,
+        },
+        'AI provider response received',
+      );
+
+      // Parse response into domain model
+      const domainModel = parseScribeResponse(
+        response.content,
+        eventId,
+        familyId,
+        {
+          detectedLanguage,
+          imageReferences: preprocessed?.imageReferences,
+        },
+      );
+
+      return domainModel;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.error(
+        { eventId, error, duration },
+        'Scribe processing failed',
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Build the exact system/user prompt `process()` would send for this
+   * event, without calling the provider. `process()` calls this internally;
+   * it's also exposed so callers (e.g. `apps/eval`'s run preview) can show
+   * or capture a prompt without spending an LLM call.
+   */
+  async buildPrompt(
+    eventId: string,
+    familyId: string,
+    preloadedContext?: MessageContext,
+    preprocessed?: {
+      detectedLanguage?: LanguageCode;
+      imageReferences?: RawImageReference[];
+    },
+  ): Promise<ScribePromptBuild> {
     // Load the conversation event
     const event = await this.eventRepo.findById(familyId, eventId);
     if (!event) {
@@ -131,11 +279,7 @@ export class ScribeAgent {
       preprocessed?.detectedLanguage || event.languageOriginal;
 
     if (!contentToProcess) {
-      this.logger.debug(
-        { eventId },
-        'Event has no content, returning empty model',
-      );
-      return this.createEmptyModel(eventId, familyId, detectedLanguage);
+      return { empty: true, detectedLanguage };
     }
 
     // Load family config for cultural terms
@@ -177,7 +321,7 @@ export class ScribeAgent {
     );
 
     // Build prompts (use processed content)
-    const systemPrompt = buildSystemPrompt(config);
+    const systemPrompt = this.systemPromptOverride ?? buildSystemPrompt(config);
     const userMessage = buildUserMessage(
       contentToProcess,
       event.actorDisplayName || event.actorUsername || 'Unknown',
@@ -186,64 +330,13 @@ export class ScribeAgent {
       senderTimezone,
     );
 
-    // Call AI provider
-    this.logger.debug(
-      {
-        eventId,
-        model: this.model,
-        systemPromptLength: systemPrompt.length,
-        userMessageLength: userMessage.length,
-      },
-      'Calling AI provider',
-    );
-    const startTime = Date.now();
-
-    try {
-      const response = await this.provider.complete({
-        model: this.model,
-        maxTokens: config.maxTokens,
-        temperature: config.temperature,
-        system: systemPrompt,
-        enablePromptCache: true, // Cache system prompt (90% cost savings on reuse)
-        messages: [{ role: 'user', content: userMessage }],
-        responseFormat: {
-          type: 'json_schema',
-          json_schema: SCRIBE_JSON_SCHEMA,
-        },
-      });
-
-      const duration = Date.now() - startTime;
-      this.logger.info(
-        {
-          eventId,
-          duration,
-          inputTokens: response.usage.inputTokens,
-          outputTokens: response.usage.outputTokens,
-          totalTokens: response.usage.totalTokens,
-        },
-        'AI provider response received',
-      );
-
-      // Parse response into domain model
-      const domainModel = parseScribeResponse(
-        response.content,
-        eventId,
-        familyId,
-        {
-          detectedLanguage,
-          imageReferences: preprocessed?.imageReferences,
-        },
-      );
-
-      return domainModel;
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      this.logger.error(
-        { eventId, error, duration },
-        'Scribe processing failed',
-      );
-      throw error;
-    }
+    return {
+      empty: false,
+      systemPrompt,
+      userMessage,
+      config,
+      detectedLanguage,
+    };
   }
 
   /**

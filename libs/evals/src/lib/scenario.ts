@@ -97,7 +97,12 @@ export interface ScribeEvalScenario {
     timezone?: string;
     culturalTerms?: string[];
   };
-  golden: GoldenExpectation;
+  /**
+   * Absent for ad hoc text and real-message input, which have nothing to
+   * score against — `scoreScenario` short-circuits rather than reporting a
+   * misleading vacuous pass. Always present for the curated scenario bank.
+   */
+  golden?: GoldenExpectation;
 }
 
 export interface ScenarioRunResult {
@@ -148,6 +153,14 @@ export interface ScenarioScore {
   categories: CategoryScore[];
   forbiddenHits: ForbiddenHit[];
   grounding: GroundingSummary;
+  /**
+   * False when the scenario had no golden to score against at all (ad hoc
+   * text, a real message) — `score`/`precision`/`recall`/`passed` are then
+   * placeholders, not a real verdict. Omitted (implicitly true) for every
+   * normal graded scenario, so existing report/aggregate consumers don't
+   * need to touch this field.
+   */
+  scored?: boolean;
 }
 
 export interface EvalReport {
