@@ -74,6 +74,15 @@ function pipelineExplanation(trace: MessageTraceResult): string {
   if (trace.event.eventType !== 'message') {
     return `Non-text event ("${trace.event.eventType}") — Intern's filter skips these deterministically ("let Scribe handle those"), and the processor only runs Scribe when there's text content. Nothing here called an LLM.`;
   }
+  if (trace.intern) {
+    const override = trace.intern.overridden
+      ? ` A human overrode Intern's original ${trace.intern.originalDecision ?? 'unknown'} decision.`
+      : '';
+    if (trace.intern.decision === 'skip') {
+      return `Intern skipped this imported message before Scribe ran: ${trace.intern.reason}.${override}`;
+    }
+    return `Intern approved this imported message for extraction: ${trace.intern.reason}.${override} Scribe ${registrarSummary ? 'ran and recorded a persist summary.' : 'has no recorded persist summary.'}${rejectionNote}${groundingNote}`;
+  }
   if (filtered) {
     const reason = filtered.eventData?.['reason'] ?? 'no reason recorded';
     return `Intern's filter call rejected this before Scribe ran: ${reason}. No extraction call was made.`;
@@ -85,7 +94,7 @@ function pipelineExplanation(trace: MessageTraceResult): string {
     }. Scribe then ran${registrarSummary ? '.' : ' — no persist summary was recorded, though.'}${rejectionNote}${groundingNote}`;
   }
   if (registrarSummary) {
-    return `No Intern routing/filter decision was recorded for this message — this pipeline run didn't have Intern wired in at all (this is the case for every message that came in through the WhatsApp import path, which calls Scribe directly with its own separate skip/process heuristic, never the live Intern). Scribe ran unconditionally.${rejectionNote}${groundingNote}`;
+    return `No Intern decision was recorded. This family was imported before the real Intern review path, or this message did not pass through that import flow. Scribe ran unconditionally.${rejectionNote}${groundingNote}`;
   }
   return 'No routing decision and no Scribe/Registrar summary recorded — this message may never have reached the queue processor.';
 }
@@ -262,6 +271,43 @@ function TraceCard(props: {
       <Show when={queue?.lastError}>
         <div class="error-message">last error: {queue?.lastError}</div>
       </Show>
+
+      <div class="trace-intern">
+        <h3>Intern review</h3>
+        <Show
+          when={props.trace.intern}
+          fallback={
+            <p class="hint">
+              No persisted Intern decision — this family may predate the
+              two-phase import review, or the message did not enter through it.
+            </p>
+          }
+        >
+          {(decision) => (
+            <div>
+              <span
+                class="category-tag"
+                classList={{
+                  'severity-warning-tag': decision().decision === 'skip',
+                }}
+              >
+                {decision().decision}
+              </span>{' '}
+              {decision().reason}
+              <Show when={decision().overridden}>
+                <div class="hint">
+                  Human override · original:{' '}
+                  {decision().originalDecision ?? 'unknown'}
+                </div>
+              </Show>
+              <div class="hint">
+                Updated {fmt(decision().updatedAt)} · import job{' '}
+                {decision().importJobId}
+              </div>
+            </div>
+          )}
+        </Show>
+      </div>
 
       <Show when={redaction}>
         {(r) => (

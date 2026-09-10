@@ -6,6 +6,7 @@ import { RunHistory } from './pages/RunHistory';
 import { RunResult } from './pages/RunResult';
 import { MessageTrace, currentTraceFamilyId } from './pages/MessageTrace';
 import { FamilyCompare } from './pages/FamilyCompare';
+import { ImportVerification } from './pages/ImportVerification';
 import { ConnectionBanner } from './components/ConnectionBanner';
 import './styles.css';
 
@@ -30,6 +31,7 @@ function Shell(props: { children?: JSX.Element }) {
             Message Trace
           </A>
           <A href="/compare">Family Compare</A>
+          <A href="/import-verification">Import Verification</A>
         </nav>
       </header>
       <main class="shell-main">{props.children}</main>
@@ -47,6 +49,7 @@ if (root) {
         <Route path="/runs/:id" component={RunResult} />
         <Route path="/trace/:familyId?/:eventId?" component={MessageTrace} />
         <Route path="/compare" component={FamilyCompare} />
+        <Route path="/import-verification" component={ImportVerification} />
       </Router>
     ),
     root,

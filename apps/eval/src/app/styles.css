@@ -158,6 +158,78 @@ textarea {
   margin-bottom: 1rem;
 }
 
+.trace-intern {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  border-left: 3px solid #78716c;
+  background: #fafaf9;
+}
+
+.trace-intern h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.verification-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.verification-picker label {
+  margin: 0;
+}
+
+.verification-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.verification-summary .card {
+  margin: 0;
+}
+
+.verification-summary strong {
+  font-size: 1.5rem;
+}
+
+.verification-table-wrap {
+  overflow-x: auto;
+}
+
+.verification-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.verification-table th,
+.verification-table td {
+  padding: 0.75rem;
+  vertical-align: top;
+  text-align: left;
+  border-bottom: 1px solid #e7e5e4;
+}
+
+.verification-message {
+  margin-top: 0.3rem;
+  white-space: pre-wrap;
+}
+
+.verification-reason {
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 760px) {
+  .verification-picker,
+  .verification-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
 .connection-banner {
   color: #7c2d12;
   background: #fef3c7;

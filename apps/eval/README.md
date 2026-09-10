@@ -82,10 +82,10 @@ default, override with `LLM_RESPONSE_REPLAY_DB`; gitignored, same as `eval.db`).
 run regardless of input mode; a substituted call still shows up in "LLM calls" via
 `RecordingProvider` (see above), just with a near-zero `durationMs`.
 
-Message Trace also surfaces _why_ a message did or didn't reach an LLM at all — e.g. the WhatsApp
-import path calls Scribe unconditionally on every text message and never runs Intern's live
-filter/route step (it has its own separate, deterministic process/skip heuristic at import time
-instead), which the raw `event_log` rows don't say outright but the trace now states plainly.
+Message Trace also surfaces _why_ a message did or didn't reach an LLM at all. For imports using the
+two-phase review path, it shows the persisted Intern decision, reason, override state, and import
+job alongside the downstream queue and extraction record. A missing decision means the family
+predates that path or the message did not enter through it.
 
 ## Message Trace
 
@@ -159,6 +159,15 @@ The draft is saved per unordered family pair in `EvalStore`'s SQLite (survives a
 doesn't matter) as you edit, no explicit save step. Long families are capped to 40 visible rows per
 source column with a client-side filter, since a family can have 300+ active claims.
 
+## Import Verification
+
+`/import-verification` is the focused before/after view for a fresh import. Choose the original and
+re-imported families; it verifies source inputs by sequence number, text, and event type; counts the
+fresh Intern `process`/`skip` decisions; and lists every original message that produced active claims.
+For each row it shows the matching fresh event, persisted Intern reason/override, and fresh active
+claim count, with direct links to Message Trace. It is read-only and does not contain any hard-coded
+family message text.
+
 ## API
 
 - `GET /api/scenarios` — the curated scenario bank.
@@ -189,6 +198,8 @@ source column with a client-side filter, since a family can have 300+ active cla
   event id (found ones only), sorted by `sequenceNumber`. Capped at 25 ids per request. Each claim
   carries its `claim_analysis` (strength/grounding) and the other side of any `claim_conflicts` it's
   in; `produced.merges` lists `entity_merges` triggered by that event.
+- `GET /api/import-verification?baselineFamilyId=&candidateFamilyId=` — read-only before/after
+  input, Intern-decision, and claim-output report for a fresh import.
 - `GET /api/providers` — Anthropic configured status plus each Ollama source's base URL and live
   model list (see "Local model sources" above).
 - `POST /api/runs` — `{ input, configs: [{provider, model}] }` → runs the input through each

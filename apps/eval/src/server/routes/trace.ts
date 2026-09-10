@@ -155,6 +155,7 @@ async function buildEventTrace(
     peopleRes,
     placesRes,
     redactionRes,
+    internDecisionRes,
   ] = await Promise.all([
     queueRepo.findByEventId(familyId, eventId),
     processingRepo.findByEventId(familyId, eventId),
@@ -200,6 +201,16 @@ async function buildEventTrace(
       .eq('family_id', familyId)
       .eq('conversation_event_id', eventId)
       .maybeSingle(),
+    dbClient
+      .from('intern_decisions')
+      .select(
+        'decision, reason, overridden, original_decision, import_job_id, updated_at',
+      )
+      .eq('family_id', familyId)
+      .eq('conversation_event_id', eventId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   for (const [label, res] of [
@@ -209,6 +220,7 @@ async function buildEventTrace(
     ['people', peopleRes],
     ['places', placesRes],
     ['conversation_redactions', redactionRes],
+    ['intern_decisions', internDecisionRes],
   ] as const) {
     if (res.error) {
       throw new Error(
@@ -403,6 +415,9 @@ async function buildEventTrace(
       : null,
     eventLog: (eventLogRes.data ?? []).map((row) => mapRowToCamelCase(row)),
     redaction: redactionRes.data ? mapRowToCamelCase(redactionRes.data) : null,
+    intern: internDecisionRes.data
+      ? mapRowToCamelCase(internDecisionRes.data)
+      : null,
     produced: {
       claims: claimRows.map((row) => {
         const analysis = analysisByClaimId.get(row.id);

@@ -422,6 +422,14 @@ export interface MessageTraceResult {
   };
   queue: QueueTrace | null;
   processing: ProcessingTrace | null;
+  intern: {
+    decision: 'process' | 'skip';
+    reason: string;
+    overridden: boolean;
+    originalDecision: 'process' | 'skip' | null;
+    importJobId: string;
+    updatedAt: string;
+  } | null;
   eventLog: EventLogEntry[];
   redaction: { redactedAt: string; redactionReason: string } | null;
   produced: {
@@ -484,6 +492,32 @@ export interface MessageTraceResult {
       mergeReason: string | null;
     }>;
   };
+}
+
+export interface ImportVerificationRow {
+  baselineEvent: FamilyEvent;
+  candidateEvent: FamilyEvent | null;
+  inputMatches: boolean;
+  baselineActiveClaims: number;
+  candidateActiveClaims: number;
+  intern: {
+    decision: 'process' | 'skip';
+    reason: string;
+    overridden: boolean;
+  } | null;
+}
+
+export interface ImportVerificationReport {
+  baseline: { id: string; name: string; eventCount: number };
+  candidate: { id: string; name: string; eventCount: number };
+  input: { matched: number; missing: number; mismatched: number };
+  intern: {
+    process: number;
+    skip: number;
+    missing: number;
+    overridden: number;
+  };
+  rows: ImportVerificationRow[];
 }
 
 export interface Annotation {
@@ -632,6 +666,13 @@ export const api = {
   getTrace: (familyId: string, eventIds: string[]) =>
     request<MessageTraceResult[]>(
       `/families/${familyId}/trace?eventIds=${eventIds.join(',')}`,
+    ),
+  getImportVerification: (
+    baselineFamilyId: string,
+    candidateFamilyId: string,
+  ) =>
+    request<ImportVerificationReport>(
+      `/import-verification?baselineFamilyId=${encodeURIComponent(baselineFamilyId)}&candidateFamilyId=${encodeURIComponent(candidateFamilyId)}`,
     ),
   getMessagePreview: (
     familyId: string,
