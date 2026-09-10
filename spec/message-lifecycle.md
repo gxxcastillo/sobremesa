@@ -87,11 +87,12 @@ Facilitator asks the highest-priority eligible question, records the external me
 adds the original question as an explicit Scribe context block, and then flows through normal
 extraction. Intern's deterministic filter (§3.2 of [`agent-pipeline.md`](./agent-pipeline.md))
 normally discards an empty, too-short, or emoji-only message without ever calling Scribe or the LLM
-filter; when the message is a reply to a tracked question, that discard is skipped instead (except
-for a truly empty body), since a bare "no" or a thumbs-up emoji is exactly how a real answer to a
-yes/no question looks. Word-based judgments — is this an acknowledgement, a continuation of the
-previous message — are not hardcoded by word list (that doesn't scale across languages); they always
-fall through to the filter LLM, which already gets the recent conversation for context.
+filter. A non-empty reply to a tracked question bypasses filtering entirely: it may be a bare "no",
+a thumbs-up emoji, or a fuller confirmation, and the explicit question block gives Scribe the context
+to extract it safely. A truly empty body is still discarded. Word-based judgments — is this an
+acknowledgement, a continuation of the previous message — are not hardcoded by word list (that
+doesn't scale across languages); outside tracked answers they fall through to the filter LLM, which
+already gets the recent conversation for context.
 
 ## 4.5 Family Activation
 

@@ -14,6 +14,7 @@
     }
   },
   "dependencies": {
+    "@sobremesa/agents-intern": "workspace:*",
     "@sobremesa/agents-scribe": "workspace:*",
     "@sobremesa/agents-registrar": "workspace:*",
     "@sobremesa/ai-provider": "workspace:*",

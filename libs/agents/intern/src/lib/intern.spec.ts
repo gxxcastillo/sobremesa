@@ -336,7 +336,7 @@ describe('InternAgent', () => {
       });
     });
 
-    describe('answering a tracked question overrides the fast path', () => {
+    describe('answering a tracked question bypasses filtering', () => {
       const answeredQuestionContext = {
         recentMessages: [],
         recentImages: [],
@@ -390,6 +390,24 @@ describe('InternAgent', () => {
 
         expect(result.relevant).toBe(false);
         expect(result.reason).toBe('Empty message');
+      });
+
+      it('keeps a full-text answer relevant without calling the LLM', async () => {
+        mockEventRepo.findById.mockResolvedValue({
+          id: 'event-123',
+          eventType: 'message',
+          contentOriginal: 'Yes, that is right.',
+        });
+
+        const result = await intern.filter(
+          'event-123',
+          'family-abc',
+          answeredQuestionContext as any,
+        );
+
+        expect(result.relevant).toBe(true);
+        expect(result.reason).toBe('Answer to tracked question');
+        expect(mockProviderComplete).not.toHaveBeenCalled();
       });
 
       it('should not override the fast path when there is no answered-question context', async () => {

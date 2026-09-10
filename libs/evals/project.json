@@ -26,6 +26,12 @@
         "command": "bun {projectRoot}/src/runners/scribe-evals.ts"
       }
     },
+    "intern": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun {projectRoot}/src/runners/intern-evals.ts"
+      }
+    },
     "pipeline": {
       "executor": "nx:run-commands",
       "options": {

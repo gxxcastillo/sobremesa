@@ -29,7 +29,7 @@ const senders = {
   },
 } satisfies Record<string, EvalSender>;
 
-export const scribeEvalScenarios: ScribeEvalScenario[] = [
+const curatedScribeEvalScenarios: ScribeEvalScenario[] = [
   {
     id: 'pronoun-chain-sister',
     description:
@@ -461,4 +461,52 @@ export const scribeEvalScenarios: ScribeEvalScenario[] = [
       },
     },
   },
+];
+
+const internNegativeScenarios: ScribeEvalScenario[] = [
+  {
+    id: 'intern-off-topic-news',
+    description: 'Off-topic political/news commentary is not family history.',
+    senders,
+    messages: [
+      {
+        sender: 'donald',
+        text: 'Hard to believe that candidate used to be a comedian.',
+      },
+    ],
+    internGolden: [{ action: 'ignore', relevant: false }],
+  },
+  {
+    id: 'intern-bare-acknowledgement',
+    description: 'A bare acknowledgement is ignored by Intern.',
+    senders,
+    messages: [{ sender: 'minnie', text: 'Gracias' }],
+    internGolden: [{ action: 'ignore', relevant: false }],
+  },
+  {
+    id: 'intern-emoji-only',
+    description: 'An emoji-only reply is ignored by Intern’s free rules.',
+    senders,
+    messages: [{ sender: 'daisy', text: '😂' }],
+    internGolden: [{ action: 'ignore', relevant: false }],
+  },
+  {
+    id: 'intern-same-day-logistics',
+    description: 'Same-day logistics are not durable family history.',
+    senders,
+    messages: [{ sender: 'mickey', text: '¿A qué hora llegan hoy?' }],
+    internGolden: [{ action: 'ignore', relevant: false, language: 'es' }],
+  },
+];
+
+export const scribeEvalScenarios: ScribeEvalScenario[] = [
+  ...curatedScribeEvalScenarios.map((scenario) => ({
+    ...scenario,
+    internGolden: scenario.messages.map((_, messageIndex) =>
+      scenario.id === 'context-bleed-trap' && messageIndex === 0
+        ? { action: 'ignore' as const, relevant: false }
+        : { action: 'scribe' as const, relevant: true },
+    ),
+  })),
+  ...internNegativeScenarios,
 ];

@@ -65,6 +65,11 @@ Extraction quality is evaluated outside normal tests through `libs/evals`.
   report Anthropic and local provider columns side by side with a diagnostic capability gap. Reports
   record the sampling temperature alongside provider and model so recorded baselines are comparable
   across runs.
+- **Tier 1: Intern routing/filter evals.** Manual live-provider runs call `InternAgent.route()` once
+  per message with in-memory repositories and production-matching character-budgeted context. Exact
+  expectations cover route, relevance, and language, including off-topic/news, acknowledgements,
+  emoji-only replies, and same-day logistics that must not reach Scribe. Run with `bun nx run
+evals:intern`; it is never part of CI or `bun run test:all`.
 - **Tier 2: pipeline golden snapshots.** Deterministic local-DB runs use canned Scribe JSON/mock
   provider responses to drive `MessageProcessor` through Registrar persistence and compare stable DB
   snapshots while ignoring IDs and timestamps. The local-DB runner must refuse non-local Supabase

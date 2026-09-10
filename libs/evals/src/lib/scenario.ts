@@ -1,7 +1,9 @@
 import type {
   ClaimSourceType,
+  LanguageCode,
   ScribeDomainModel,
 } from '@sobremesa/shared-types';
+import type { RoutingAction } from '@sobremesa/agents-intern';
 
 /**
  * Default recent-message window a scenario run supplies to Scribe, shared by
@@ -85,6 +87,13 @@ export interface GoldenExpectation {
   forbidden?: ForbiddenExtractions;
 }
 
+/** Expected fields from Intern's routing/filter decision for one message. */
+export interface ExpectedInternDecision {
+  action?: RoutingAction;
+  relevant?: boolean;
+  language?: LanguageCode;
+}
+
 export interface ScribeEvalScenario {
   id: string;
   description: string;
@@ -103,6 +112,11 @@ export interface ScribeEvalScenario {
    * misleading vacuous pass. Always present for the curated scenario bank.
    */
   golden?: GoldenExpectation;
+  /**
+   * Optional, index-aligned Intern expectations. Sparse entries intentionally
+   * leave a message unscored, so existing Scribe scenarios remain unchanged.
+   */
+  internGolden?: Array<ExpectedInternDecision | undefined>;
 }
 
 export interface ScenarioRunResult {

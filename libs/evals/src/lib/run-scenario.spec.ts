@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildScenarioPrompt } from './run-scenario';
+import {
+  buildScenarioPrompt,
+  createEvent,
+  InMemoryEventRepository,
+  makeContext,
+  makeProcessorContext,
+  offsetTime,
+} from './run-scenario';
 import type { ScribeEvalScenario } from './scenario';
 
 function makeScenario(
@@ -62,5 +69,56 @@ describe('buildScenarioPrompt', () => {
         }),
       ),
     ).rejects.toThrow(/single-message/);
+  });
+});
+
+describe('InMemoryEventRepository', () => {
+  it('matches the production findRecent signature when filtering by sequence', async () => {
+    const scenario = makeScenario();
+    const events = Array.from({ length: 5 }, (_, index) =>
+      createEvent({
+        scenario,
+        message: scenario.messages[0],
+        sender: scenario.senders.rosa,
+        sequenceNumber: index + 1,
+        occurredAt: offsetTime(index + 1),
+      }),
+    );
+    const repository = new InMemoryEventRepository(events);
+    const recent = await repository.findRecent(
+      'eval-family-preview-test',
+      'eval-chat-preview-test',
+      30,
+      false,
+      3,
+    );
+    expect(recent.map((event) => event.sequenceNumber)).toEqual([2, 1]);
+  });
+});
+
+describe('makeProcessorContext', () => {
+  it('uses the production character budget while makeContext remains count-truncated', () => {
+    const scenario = makeScenario();
+    const longMessage = { sender: 'rosa', text: 'x'.repeat(200) };
+    const events = Array.from({ length: 41 }, (_, index) =>
+      createEvent({
+        scenario,
+        message: longMessage,
+        sender: scenario.senders.rosa,
+        sequenceNumber: index + 1,
+        occurredAt: offsetTime(index + 1),
+      }),
+    );
+    const current = events[40];
+    const context = makeProcessorContext(events, current, scenario.messages[0]);
+    const legacyContext = makeContext(
+      events,
+      current,
+      30,
+      scenario.messages[0],
+    );
+    expect(context.recentMessages).toHaveLength(12);
+    expect(legacyContext.recentMessages).toHaveLength(30);
+    expect(context.recentMessages[0]?.id).toBe('preview-test-29');
   });
 });

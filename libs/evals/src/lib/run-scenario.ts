@@ -52,8 +52,12 @@ export class InMemoryEventRepository {
     familyId: string,
     conversationId: string,
     limit = DEFAULT_CONTEXT_WINDOW,
+    _includeProcessing = false,
     beforeSequenceNumber?: number,
   ): Promise<ConversationEvent[]> {
+    // In-memory eval events do not carry processing joins, but preserve the
+    // production repository's positional API so callers behave identically.
+    void _includeProcessing;
     return this.events
       .filter(
         (event) =>
@@ -135,7 +139,40 @@ export function makeContext(
   windowSize: number,
   currentMessage: EvalMessage,
 ): MessageContext {
-  const recentMessages = events
+  // Deliberately count-truncated for the existing Scribe suite. Its grounding
+  // scorer depends on this exact context; use makeProcessorContext for new
+  // pipeline-faithful evals until the Scribe baseline is formally recorded.
+  return buildContext(
+    events,
+    current,
+    currentMessage,
+    events
+      .filter(
+        (event) =>
+          event.conversationId === current.conversationId &&
+          event.sequenceNumber !== undefined &&
+          current.sequenceNumber !== undefined &&
+          event.sequenceNumber < current.sequenceNumber &&
+          event.contentOriginal,
+      )
+      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+      .slice(0, windowSize)
+      .reverse(),
+  );
+}
+
+/**
+ * Build the same 2,500-character, newest-first-then-reversed context that
+ * MessageProcessor.fetchContext supplies to production Intern.
+ */
+export function makeProcessorContext(
+  events: ConversationEvent[],
+  current: ConversationEvent,
+  currentMessage: EvalMessage,
+  options?: { maxContextChars?: number },
+): MessageContext {
+  const maxContextChars = options?.maxContextChars ?? 2500;
+  const candidates = events
     .filter(
       (event) =>
         event.conversationId === current.conversationId &&
@@ -145,14 +182,34 @@ export function makeContext(
         event.contentOriginal,
     )
     .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
-    .slice(0, windowSize)
-    .reverse()
-    .map((event) => ({
-      id: event.id,
-      content: event.contentOriginal ?? '',
-      senderName: event.actorDisplayName ?? event.actorUsername ?? 'Unknown',
-      occurredAt: event.occurredAt,
-    }));
+    .slice(0, DEFAULT_CONTEXT_WINDOW);
+
+  const selected: ConversationEvent[] = [];
+  let totalChars = 0;
+  for (const event of candidates) {
+    const content = event.contentOriginal ?? '';
+    if (totalChars + content.length > maxContextChars && selected.length > 0) {
+      break;
+    }
+    selected.push(event);
+    totalChars += content.length;
+  }
+
+  return buildContext(events, current, currentMessage, selected.reverse());
+}
+
+function buildContext(
+  events: ConversationEvent[],
+  current: ConversationEvent,
+  currentMessage: EvalMessage,
+  recentEvents: ConversationEvent[],
+): MessageContext {
+  const recentMessages = recentEvents.map((event) => ({
+    id: event.id,
+    content: event.contentOriginal ?? '',
+    senderName: event.actorDisplayName ?? event.actorUsername ?? 'Unknown',
+    occurredAt: event.occurredAt,
+  }));
 
   const replyToEvent = current.externalReplyToId
     ? events.find(

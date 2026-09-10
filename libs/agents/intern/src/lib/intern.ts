@@ -56,20 +56,6 @@ function isEmojiOnly(text: string): boolean {
 }
 
 /**
- * Reject reasons from `evaluateMessageText` that mean "too terse to carry
- * content" in isolation, but are exactly how a real answer to a yes/no or
- * fill-in-the-blank question looks (a bare "no", a bare 👍). `InternAgent.
- * filter()` lifts a reject with one of these reasons back to relevant when
- * the message is a reply to a tracked bot question -- see its use there.
- * `Empty message` is deliberately excluded: an empty reply body has no
- * content to assert regardless of what it's replying to.
- */
-const ANSWER_OVERRIDE_REASONS = new Set([
-  'Message too short',
-  'Emoji-only message',
-]);
-
-/**
  * Deterministic checks shared by both the "is there a caption at all" path
  * (media) and the plain-text path (regular messages): empty/too-short or
  * emoji-only. `null` means neither resolves it -- fall through to the LLM.
@@ -317,21 +303,18 @@ export class InternAgent {
         event.contentOriginal,
         event.eventType,
       );
+      // A message that the processor has already identified as an answer to
+      // one of our tracked questions must reach Scribe. The answer may be a
+      // bare confirmation, but it may also be a sentence the filter would
+      // otherwise mistake for routine acknowledgement. An empty body still
+      // has nothing to extract and remains safely discarded.
+      if (context?.answeredQuestion && event.contentOriginal?.trim()) {
+        return {
+          relevant: true,
+          reason: 'Answer to tracked question',
+        };
+      }
       if (heuristicResult) {
-        if (
-          !heuristicResult.relevant &&
-          context?.answeredQuestion &&
-          ANSWER_OVERRIDE_REASONS.has(heuristicResult.reason)
-        ) {
-          // A reply to a tracked bot question ("Is John married to Kathy
-          // now?") asserts the confirmed fact even when it's just "no" or
-          // a thumbs-up -- Scribe gets the question as explicit context, so
-          // there's no need for (or benefit to) discarding it here.
-          return {
-            relevant: true,
-            reason: `Answer to tracked question (${heuristicResult.reason})`,
-          };
-        }
         return heuristicResult;
       }
 
