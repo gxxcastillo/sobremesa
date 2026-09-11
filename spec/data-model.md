@@ -71,11 +71,12 @@ Queues:
 
 - `processing_queue`: ordered retryable event pipeline, with priority, leases, attempts, and
   stale-lock recovery. Items that exhaust retries dead-letter (`status = 'error'`); admins can list and
-  requeue dead-lettered items per family. `intent` (`'live' | 'triage' | 'extract'`, default `'live'`)
-  marks what a row is queued _for_; the dequeue function takes an optional intent filter so the
-  always-on live poller (`['live', 'extract']`) never claims a `'triage'`-intent row an import's
-  human-review phase hasn't cleared yet (§4.6 of
-  [`message-lifecycle.md`](./message-lifecycle.md)).
+  requeue dead-lettered items per family. `intent` (`'live' | 'import'`, default `'live'`) marks what
+  a row is queued _for_; the dequeue function takes an optional intent filter so the always-on live
+  poller (`['live']`) never claims an `'import'`-owned row (§4.6 of
+  [`message-lifecycle.md`](./message-lifecycle.md)) — import deliberately never wires
+  `admin`/`historian`/`facilitatorNudge`, so a historical message must never be processed by the live
+  pipeline instead.
 - `llm_evaluation_queue`: async review queue for uncertain claim strength, entity matches, or
   conflict resolution. Claims can be enqueued today; no live worker drains it.
 
@@ -89,11 +90,11 @@ Imports:
   the others are reserved and fail clearly rather than being mis-parsed as WhatsApp (Studio's wizard
   is WhatsApp-only and always sends `source: 'whatsapp'` explicitly). The implemented path parses
   the export, creates/reuses family and participant records, inserts immutable `conversation_events`,
-  then pauses for review.
-- `intern_decisions`: per-import-event `process|skip` decisions with optional user override, populated
-  from Intern's real router+filter verdicts (a triage-only queue drain, `intent: 'triage'` — see §4.6
-  of [`message-lifecycle.md`](./message-lifecycle.md)), not a free-standing heuristic guess. Selected
-  messages are re-enqueued (`intent: 'extract'`) into the Scribe/Registrar-only path.
+  then automatically runs the shared import drain through to `complete`/`failed` — no pre-extraction
+  review checkpoint and no separate decision table (§4.6 of
+  [`message-lifecycle.md`](./message-lifecycle.md)). Intern's per-event routing result for an import,
+  like every other ingress, is recorded only as an `intern_evaluated` `event_log` entry (§2.5) — never
+  a mutable per-import table.
 
 ## 2.5 Media, Questions, Audit, and Integrity
 
@@ -102,7 +103,11 @@ Imports:
 - `questions`: Facilitator question lifecycle: `proposed → asked → answered`, with `retired` as an
   exit state.
 - `event_log`: audit trail for ingestion, filtering/routing, redaction, questions, conflicts, imports,
-  and errors.
+  and errors. `intern_evaluated` is the canonical, append-only record of every `InternAgent.route()`
+  resolution (action, relevance, reason, language, deterministic-vs-model provenance), written exactly
+  once per call for every ingress (live chat, Studio import, CLI import) alike. It is derived
+  processing history, never read back as pipeline input, and is the only durable record of Intern's
+  per-message decision -- there is no separate decision table.
 - `integrity_checkpoints`: schema support for tamper-evident checkpoints; no application code writes
   them today.
 
@@ -142,14 +147,14 @@ Redaction is non-destructive:
 
 ## 2.7 Table Catalogue
 
-The current migration defines 41 tables:
+The current migration defines 40 tables:
 
 - Tenancy/config: `families`, `family_config`, `sequence_counters`
 - Ingestion/queue: `ingestion_batches`, `conversation_events`, `conversation_event_processing`,
   `conversation_redactions`, `processing_queue`
 - Identity/access: `users`, `identities`, `family_access`, `access_passes`, `chat_admins`,
   `allowed_chats`
-- Imports: `import_jobs`, `intern_decisions`
+- Imports: `import_jobs`
 - Entities/joins: `people`, `places`, `events`, `stories`, event/story join tables
 - Relationships: `relationships`
 - Claims: `claims`, `claim_analysis`, `claim_conflicts`, `claim_entities`, `claim_relationships`,

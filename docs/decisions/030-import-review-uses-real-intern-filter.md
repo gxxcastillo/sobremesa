@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Superseded (2026-09-10) — see [ADR-032](./032-unified-import-pipeline-retires-review.md). The
+finding that import must use Intern's real filter, not a free heuristic, stands and is carried
+forward. The **workflow shape** this ADR describes — a two-phase triage/human-review/extract drain
+backed by `intern_decisions` — is retired; every ingress now runs one immediate
+Intern → Scribe → Registrar pass with no pre-extraction review checkpoint. This ADR is kept
+unmodified below as the historical record of the decision it made.
 
 ## Date
 

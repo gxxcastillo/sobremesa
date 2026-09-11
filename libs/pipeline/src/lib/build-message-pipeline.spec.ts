@@ -24,7 +24,6 @@ describe('buildMessagePipeline', () => {
   let setRegistrar: ReturnType<typeof vi.spyOn>;
   let setAdminProcessor: ReturnType<typeof vi.spyOn>;
   let setHistorianProcessor: ReturnType<typeof vi.spyOn>;
-  let setOnFilterDecision: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     setRouter = vi.spyOn(MessageProcessor.prototype, 'setRouter');
@@ -39,10 +38,6 @@ describe('buildMessagePipeline', () => {
     setHistorianProcessor = vi.spyOn(
       MessageProcessor.prototype,
       'setHistorianProcessor',
-    );
-    setOnFilterDecision = vi.spyOn(
-      MessageProcessor.prototype,
-      'setOnFilterDecision',
     );
   });
 
@@ -78,43 +73,6 @@ describe('buildMessagePipeline', () => {
     expect(setRouter).toHaveBeenCalledTimes(1);
     expect(setFilter).toHaveBeenCalledTimes(1);
     expect(setImageLinker).toHaveBeenCalledTimes(1);
-  });
-
-  it('wires onFilterDecision when both filter and the callback are given', () => {
-    const onFilterDecision = vi.fn().mockResolvedValue(undefined);
-    buildMessagePipeline({
-      dbClient,
-      stages: stageSet('router', 'filter', 'imageLinker'),
-      providers: { intern: provider },
-      models: { intern: 'mock-model' },
-      onFilterDecision,
-    });
-
-    expect(setOnFilterDecision).toHaveBeenCalledTimes(1);
-    expect(setOnFilterDecision).toHaveBeenCalledWith(onFilterDecision);
-  });
-
-  it('does not wire onFilterDecision when omitted (live, no behavior change)', () => {
-    buildMessagePipeline({
-      dbClient,
-      stages: stageSet('router', 'filter', 'imageLinker'),
-      providers: { intern: provider },
-      models: { intern: 'mock-model' },
-    });
-
-    expect(setOnFilterDecision).not.toHaveBeenCalled();
-  });
-
-  it('does not wire onFilterDecision when the filter stage itself is not requested', () => {
-    buildMessagePipeline({
-      dbClient,
-      stages: stageSet('router'),
-      providers: { intern: provider },
-      models: { intern: 'mock-model' },
-      onFilterDecision: vi.fn(),
-    });
-
-    expect(setOnFilterDecision).not.toHaveBeenCalled();
   });
 
   it('wires admin given a message sender', () => {

@@ -4,6 +4,7 @@ import {
   mapRowToCamelCase,
   type DatabaseClient,
 } from '@sobremesa/database';
+import type { InternEvaluatedEventData } from '@sobremesa/shared-types';
 
 type EventRow = {
   id: string;
@@ -20,6 +21,13 @@ type EventRow = {
  * Read-only before/after report for a re-import. It intentionally derives
  * its review rows from baseline events that produced active claims, rather
  * than embedding any private known-bad message text in source code.
+ *
+ * "Intern activity" below reads the latest `intern_evaluated` `event_log`
+ * entry per conversation event -- an observed pipeline result, not a
+ * reviewable decision (there is no override mechanism; see
+ * `.agents/plans/unified-import-pipeline-plan.md`). A re-run can append a
+ * second `intern_evaluated` row for the same event, so rows are folded down
+ * to the latest by `created_at` before use.
  */
 export function importVerificationRoutes(dbClient: DatabaseClient) {
   const familyRepo = new FamilyRepository(dbClient);
@@ -47,7 +55,7 @@ export function importVerificationRoutes(dbClient: DatabaseClient) {
         candidateEventsRes,
         baselineClaimsRes,
         candidateClaimsRes,
-        decisionsRes,
+        internEvaluatedRes,
       ] = await Promise.all([
         dbClient
           .from('conversation_events')
@@ -74,9 +82,11 @@ export function importVerificationRoutes(dbClient: DatabaseClient) {
           .eq('family_id', candidateFamilyId)
           .eq('status', 'active'),
         dbClient
-          .from('intern_decisions')
-          .select('conversation_event_id, decision, reason, overridden')
-          .eq('family_id', candidateFamilyId),
+          .from('event_log')
+          .select('conversation_event_id, event_data, created_at')
+          .eq('family_id', candidateFamilyId)
+          .eq('event_type', 'intern_evaluated')
+          .order('created_at', { ascending: true }),
       ]);
 
       for (const [label, result] of [
@@ -84,7 +94,7 @@ export function importVerificationRoutes(dbClient: DatabaseClient) {
         ['candidate events', candidateEventsRes],
         ['baseline claims', baselineClaimsRes],
         ['candidate claims', candidateClaimsRes],
-        ['Intern decisions', decisionsRes],
+        ['Intern activity', internEvaluatedRes],
       ] as const) {
         if (result.error) {
           set.status = 500;
@@ -101,12 +111,16 @@ export function importVerificationRoutes(dbClient: DatabaseClient) {
       const candidateClaimsByEvent = countByEvent(
         candidateClaimsRes.data ?? [],
       );
-      const decisionByEvent = new Map(
-        (decisionsRes.data ?? []).map((decision) => [
-          decision.conversation_event_id,
-          decision,
-        ]),
-      );
+      // Ascending order + Map.set() per row means the last write for a given
+      // event id -- the most recent intern_evaluated entry -- wins.
+      const internByEvent = new Map<string, InternEvaluatedEventData>();
+      for (const row of internEvaluatedRes.data ?? []) {
+        if (!row.conversation_event_id) continue;
+        internByEvent.set(
+          row.conversation_event_id,
+          row.event_data as InternEvaluatedEventData,
+        );
+      }
 
       let matched = 0;
       let mismatched = 0;
@@ -119,7 +133,7 @@ export function importVerificationRoutes(dbClient: DatabaseClient) {
         else mismatched++;
       }
 
-      const decisions = [...decisionByEvent.values()];
+      const internActivity = [...internByEvent.values()];
       return {
         baseline: {
           id: baseline.id,
@@ -137,14 +151,12 @@ export function importVerificationRoutes(dbClient: DatabaseClient) {
           missing: baselineEvents.length - matched - mismatched,
         },
         intern: {
-          process: decisions.filter(
-            (decision) => decision.decision === 'process',
-          ).length,
-          skip: decisions.filter((decision) => decision.decision === 'skip')
+          relevant: internActivity.filter((data) => data.relevant === true)
             .length,
-          missing: candidateEvents.length - decisions.length,
-          overridden: decisions.filter((decision) => decision.overridden)
+          notRelevant: internActivity.filter((data) => data.relevant === false)
             .length,
+          admin: internActivity.filter((data) => data.relevant === null).length,
+          missing: candidateEvents.length - internByEvent.size,
         },
         rows: baselineEvents
           .filter((event) => (baselineClaimsByEvent.get(event.id) ?? 0) > 0)
@@ -152,9 +164,9 @@ export function importVerificationRoutes(dbClient: DatabaseClient) {
             const candidateEvent = candidateBySequence.get(
               baselineEvent.sequence_number,
             );
-            const decision = candidateEvent
-              ? decisionByEvent.get(candidateEvent.id)
-              : null;
+            const intern = candidateEvent
+              ? internByEvent.get(candidateEvent.id)
+              : undefined;
             return {
               baselineEvent: mapRowToCamelCase(baselineEvent),
               candidateEvent: candidateEvent
@@ -168,11 +180,12 @@ export function importVerificationRoutes(dbClient: DatabaseClient) {
               candidateActiveClaims: candidateEvent
                 ? (candidateClaimsByEvent.get(candidateEvent.id) ?? 0)
                 : 0,
-              intern: decision
+              intern: intern
                 ? {
-                    decision: decision.decision as 'process' | 'skip',
-                    reason: decision.reason,
-                    overridden: decision.overridden,
+                    action: intern.action,
+                    relevant: intern.relevant,
+                    reason: intern.reason,
+                    method: intern.method,
                   }
                 : null,
             };

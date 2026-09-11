@@ -32,10 +32,11 @@ Each flag accepts either its camelCase form (`--familyName=`) or the kebab-case 
 `--help` (`--family-name=`) -- citty registers both automatically.
 
 `import` parses a chat export -- format given via `--source` or auto-detected (WhatsApp is the
-only one with a parser today; see `src/commands/import.ts`) -- creates the family/import job,
-classifies each message process/skip, and enqueues the "process" ones for Scribe. `process`
-dequeues and processes everything currently queued through the real live pipeline (`@sobremesa/pipeline`'s
-`buildMessagePipeline`) -- Intern router/filter/image-linker, then Scribe, then Registrar. See
+only one with a parser today; see `src/commands/import.ts`) -- creates the family/import job, and
+enqueues every parsed event unconditionally (no pre-queue skip/process decision -- there is no
+separate classification step). `process` dequeues and processes everything currently queued through
+the real live pipeline (`@sobremesa/pipeline`'s `buildMessagePipeline`) -- Intern router/filter/
+image-linker, then Scribe, then Registrar; this is where Intern's real judgment actually runs. See
 each command's own file (`src/commands/import.ts`, `src/commands/process.ts`) for the full flag
 definitions; both are manual-only, not part of `test:all`/CI, and require `bun nx run db:start`
 first.

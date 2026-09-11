@@ -246,7 +246,8 @@ export async function runImport(options: ImportOptions): Promise<void> {
       .from('conversation_events')
       .select('id')
       .eq('family_id', imported.familyId)
-      .eq('conversation_id', imported.conversationId);
+      .eq('conversation_id', imported.conversationId)
+      .order('sequence_number', { ascending: true });
     if (eventsError) {
       throw new Error(
         `Failed to load conversation events: ${eventsError.message}`,

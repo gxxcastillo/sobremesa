@@ -422,13 +422,21 @@ export interface MessageTraceResult {
   };
   queue: QueueTrace | null;
   processing: ProcessingTrace | null;
+  /**
+   * The latest `intern_evaluated` event_log entry for this event -- an
+   * observed pipeline result, not a reviewable decision (no override
+   * mechanism exists). `action`/`relevant` reflect `InternAgent.route()`'s
+   * outcome; `null` when Intern never ran (e.g. filter-only debug configs).
+   */
   intern: {
-    decision: 'process' | 'skip';
+    action: 'ignore' | 'admin' | 'scribe' | 'historian';
+    relevant: boolean | null;
     reason: string;
-    overridden: boolean;
-    originalDecision: 'process' | 'skip' | null;
-    importJobId: string;
-    updatedAt: string;
+    language: string | null;
+    method: 'deterministic' | 'model';
+    model: string | null;
+    tokensUsed: number | null;
+    observedAt: string;
   } | null;
   eventLog: EventLogEntry[];
   redaction: { redactedAt: string; redactionReason: string } | null;
@@ -500,10 +508,12 @@ export interface ImportVerificationRow {
   inputMatches: boolean;
   baselineActiveClaims: number;
   candidateActiveClaims: number;
+  /** Latest observed `intern_evaluated` activity for the candidate event. */
   intern: {
-    decision: 'process' | 'skip';
+    action: 'ignore' | 'admin' | 'scribe' | 'historian';
+    relevant: boolean | null;
     reason: string;
-    overridden: boolean;
+    method: 'deterministic' | 'model';
   } | null;
 }
 
@@ -512,10 +522,10 @@ export interface ImportVerificationReport {
   candidate: { id: string; name: string; eventCount: number };
   input: { matched: number; missing: number; mismatched: number };
   intern: {
-    process: number;
-    skip: number;
+    relevant: number;
+    notRelevant: number;
+    admin: number;
     missing: number;
-    overridden: number;
   };
   rows: ImportVerificationRow[];
 }

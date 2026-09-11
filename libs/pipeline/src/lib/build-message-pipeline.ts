@@ -3,10 +3,7 @@ import type { AIProvider } from '@sobremesa/ai-provider';
 import type { DatabaseClient } from '@sobremesa/database';
 import type { MessageSender } from '@sobremesa/shared-types';
 import { createLogger } from '@sobremesa/shared-utils';
-import {
-  MessageProcessor,
-  type FilterDecisionCallback,
-} from '@sobremesa/queue';
+import { MessageProcessor } from '@sobremesa/queue';
 import { AdminAgent } from '@sobremesa/agents-admin';
 import { InternAgent, INTERN_VERSION } from '@sobremesa/agents-intern';
 import { ScribeAgent, SCRIBE_VERSION } from '@sobremesa/agents-scribe';
@@ -56,13 +53,6 @@ export interface BuildPipelineOptions {
   logger?: pino.Logger;
   /** Facilitator ask-rate throttle; only relevant with 'facilitatorNudge'. */
   minMinutesBetweenQuestions?: number;
-  /**
-   * Invoked for every Filter verdict (relevant or not) when the 'filter'
-   * stage is requested. See `FilterDecisionCallback`'s own doc
-   * (`@sobremesa/queue`) -- import's triage drain supplies one to record
-   * real verdicts into `intern_decisions`; live omits it.
-   */
-  onFilterDecision?: FilterDecisionCallback;
 }
 
 /**
@@ -70,9 +60,9 @@ export interface BuildPipelineOptions {
  * stages. Internals mirror `apps/chatbots/src/main.ts`'s construction
  * exactly. When both `router` and `filter` are requested, `MessageProcessor`
  * skips the registered `filter` stage's own call (the router already calls
- * `intern.filter()` internally) and instead reports the router's outcome
- * through `onFilterDecision` directly, so the callback still fires exactly
- * once per event regardless of which stage combination is requested.
+ * `intern.filter()` internally) and writes the canonical `intern_evaluated`
+ * audit event directly from the router branch, so it fires exactly once per
+ * event regardless of which stage combination is requested.
  *
  * Validates eagerly: a stage that needs a provider/model/message sender
  * that wasn't supplied throws immediately, rather than constructing a
@@ -182,9 +172,6 @@ export function buildMessagePipeline(
     processor.setFilter((eventId, familyId, context) =>
       (intern as InternAgent).filter(eventId, familyId, context),
     );
-    if (options.onFilterDecision) {
-      processor.setOnFilterDecision(options.onFilterDecision);
-    }
   }
   if (wants('imageLinker')) {
     processor.setImageLinker((eventId, familyId, context) =>

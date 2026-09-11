@@ -518,15 +518,16 @@ CREATE TABLE IF NOT EXISTS processing_queue (
   last_error TEXT,
 
   -- What this row is queued *for*: 'live' (the always-on production poller,
-  -- full stage set), 'triage' (a scoped drain running only router+filter,
-  -- e.g. import's phase-1 Intern review), or 'extract' (a scoped drain
-  -- running only scribe+registrar, e.g. import's phase-2 submission after
-  -- human review). Distinguishing these lets a scoped drain claim only the
-  -- rows it's meant for, and lets the live poller refuse to ever claim a
-  -- 'triage' row before a human has reviewed it -- see
+  -- full stage set) or 'import' (a scoped drain owned by a Studio/CLI import
+  -- job, running the same full Intern->Scribe->Registrar stage set directly
+  -- against a bounded, known set of event ids -- never via the live poller's
+  -- own dequeue). Distinguishing these lets the live poller refuse to ever
+  -- claim a row an import drain owns, which matters because import
+  -- deliberately never wires admin/historian/facilitatorNudge -- a
+  -- historical import must never send an outbound message -- see
   -- `dequeue_processing_queue_item`'s own p_intent_filter parameter below.
   intent VARCHAR(20) NOT NULL DEFAULT 'live'
-    CHECK (intent IN ('live','triage','extract')),
+    CHECK (intent IN ('live','import')),
 
   CONSTRAINT uq_processing_queue_event UNIQUE(family_id, conversation_event_id),
 
@@ -610,10 +611,11 @@ CREATE OR REPLACE FUNCTION dequeue_processing_queue_item(
   p_family_id UUID DEFAULT NULL,
   -- Optional intent filter, defaulting to no filter (matches every row's
   -- intent, i.e. today's pre-`intent`-column behavior). A scoped drain
-  -- (e.g. import's triage/extract phases) passes exactly the intent(s) it's
-  -- allowed to claim, e.g. ARRAY['triage']; the always-on live poller passes
-  -- ARRAY['live'] so it can never claim a 'triage' row that hasn't been
-  -- through human review yet, or an 'extract' row a scoped drain owns.
+  -- (e.g. import's own drain) passes exactly the intent(s) it's allowed to
+  -- claim, e.g. ARRAY['import']; the always-on live poller passes
+  -- ARRAY['live'] so it can never claim an 'import'-owned row -- import
+  -- deliberately never wires admin/historian/facilitatorNudge, so a row it
+  -- owns must never be processed by the live pipeline instead.
   p_intent_filter TEXT[] DEFAULT NULL
 )
 RETURNS SETOF processing_queue
@@ -725,7 +727,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION dequeue_processing_queue_item(TEXT, INTEGER, UUID, TEXT[])
-  IS 'Leases one ready processing_queue row while enforcing one in-flight item per family. A family''s stale processing row is always retried before its newer queued rows. Per-family exclusivity is enforced with a transaction-scoped advisory lock plus a fresh-statement in-flight recheck, so a lease that commits mid-scan is never missed. p_family_id, when given, restricts leasing to that family only. p_intent_filter, when given, restricts leasing to rows whose intent is in the array (e.g. the live poller passes ARRAY[''live''] so it never claims a ''triage'' or ''extract'' row owned by a scoped drain); every production call site either omits both or passes only p_intent_filter.';
+  IS 'Leases one ready processing_queue row while enforcing one in-flight item per family. A family''s stale processing row is always retried before its newer queued rows. Per-family exclusivity is enforced with a transaction-scoped advisory lock plus a fresh-statement in-flight recheck, so a lease that commits mid-scan is never missed. p_family_id, when given, restricts leasing to that family only. p_intent_filter, when given, restricts leasing to rows whose intent is in the array (e.g. the live poller passes ARRAY[''live''] so it never claims an ''import''-owned row); every production call site either omits both or passes only p_intent_filter.';
 
 -- REVOKE ... FROM PUBLIC alone does not close this off: Supabase's local/
 -- hosted bootstrap grants EXECUTE on public-schema functions directly to
@@ -3766,18 +3768,17 @@ CREATE TABLE IF NOT EXISTS import_jobs (
   -- Who initiated the import
   created_by UUID REFERENCES identities(id),
 
-  -- Job status (includes Intern review workflow statuses)
+  -- Job status. No pre-extraction review workflow: 'processing' covers both
+  -- the message-insertion phase and the shared Intern -> Scribe -> Registrar
+  -- extraction drain that follows it automatically -- see
+  -- .agents/plans/unified-import-pipeline-plan.md.
   status VARCHAR(30) NOT NULL DEFAULT 'pending'
     CHECK (status IN (
       'pending',
       'creating_family',
       'creating_identities',
       'submitting',
-      'awaiting_intern',      -- Messages in DB, waiting for Intern
-      'running_intern',       -- Intern processing messages
-      'intern_complete',      -- Intern done, awaiting user review
-      'processing_scribe',    -- Scribe Batch API in progress
-      'processing',           -- Legacy status
+      'processing',
       'hydrating',
       'complete',
       'failed',
@@ -3859,132 +3860,6 @@ CREATE POLICY import_jobs_update_super_admin ON import_jobs
 CREATE POLICY import_jobs_delete_super_admin ON import_jobs
   FOR DELETE
   USING (is_super_admin());
-
--- ============================================================================
--- INTERN DECISIONS TABLE
--- Stores Intern's classification decisions for each message during import
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS intern_decisions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-
-  -- Tenant isolation
-  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
-
-  -- Link to import job
-  import_job_id UUID NOT NULL REFERENCES import_jobs(id) ON DELETE CASCADE,
-
-  -- Link to conversation event (uses composite FK for tenant integrity)
-  conversation_event_id UUID NOT NULL,
-
-  -- Intern's decision
-  decision VARCHAR(20) NOT NULL CHECK (decision IN ('process', 'skip')),
-
-  -- Reason for the decision
-  reason VARCHAR(255),
-
-  -- User override
-  overridden BOOLEAN NOT NULL DEFAULT FALSE,
-
-  -- Original decision before override (null if not overridden)
-  original_decision VARCHAR(20) CHECK (original_decision IS NULL OR original_decision IN ('process', 'skip')),
-
-  -- Timestamps
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-
-  -- Ensure one decision per event per job
-  UNIQUE (import_job_id, conversation_event_id),
-
-  -- Composite FK enforces tenant integrity
-  CONSTRAINT fk_intern_decisions_event
-    FOREIGN KEY (family_id, conversation_event_id)
-    REFERENCES conversation_events(family_id, id)
-    ON DELETE CASCADE
-);
-
-COMMENT ON TABLE intern_decisions IS 'Stores Intern classification decisions for import messages';
-COMMENT ON COLUMN intern_decisions.decision IS 'Current decision: process (send to Scribe) or skip';
-COMMENT ON COLUMN intern_decisions.reason IS 'Human-readable reason: emoji-only, media-only, greeting, contains-entities, etc.';
-COMMENT ON COLUMN intern_decisions.overridden IS 'Whether user manually changed the Intern decision';
-COMMENT ON COLUMN intern_decisions.original_decision IS 'Original Intern decision before user override';
-
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_intern_decisions_job
-  ON intern_decisions(import_job_id);
-
-CREATE INDEX IF NOT EXISTS idx_intern_decisions_family
-  ON intern_decisions(family_id);
-
-CREATE INDEX IF NOT EXISTS idx_intern_decisions_decision
-  ON intern_decisions(import_job_id, decision);
-
--- Updated-at trigger
-DROP TRIGGER IF EXISTS update_intern_decisions_updated_at ON intern_decisions;
-CREATE TRIGGER update_intern_decisions_updated_at
-BEFORE UPDATE ON intern_decisions
-FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
--- RLS POLICIES (super_admin only)
-ALTER TABLE intern_decisions ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY intern_decisions_select_super_admin ON intern_decisions
-  FOR SELECT
-  USING (is_super_admin());
-
-CREATE POLICY intern_decisions_insert_super_admin ON intern_decisions
-  FOR INSERT
-  WITH CHECK (is_super_admin());
-
-CREATE POLICY intern_decisions_update_super_admin ON intern_decisions
-  FOR UPDATE
-  USING (is_super_admin());
-
-CREATE POLICY intern_decisions_delete_super_admin ON intern_decisions
-  FOR DELETE
-  USING (is_super_admin());
-
--- ----------------------------------------------------------------------------
--- Intern decision upsert: preserve a human override across re-triage
--- ----------------------------------------------------------------------------
--- A TypeScript-side "SELECT existing, skip the write if overridden" check has
--- a window: a PATCH /decisions/:eventId override can commit between that
--- read and the subsequent upsert write, so a fresh Intern verdict for the
--- same event silently resets the human's correction back to the LLM's
--- decision. Folding the guard into one INSERT ... ON CONFLICT statement
--- closes it: decision/reason are simply left out of the SET clause (so they
--- keep their current values) whenever the existing row is already
--- overridden, and that check-and-write happens as a single atomic statement
--- instead of two round trips a concurrent write can land between.
-CREATE OR REPLACE FUNCTION upsert_intern_decision(
-  p_family_id UUID,
-  p_import_job_id UUID,
-  p_conversation_event_id UUID,
-  p_decision TEXT,
-  p_reason TEXT
-)
-RETURNS SETOF intern_decisions
-LANGUAGE sql
-SET search_path = ''
-AS $$
-  INSERT INTO public.intern_decisions AS t (
-    family_id, import_job_id, conversation_event_id, decision, reason, overridden, original_decision
-  )
-  VALUES (
-    p_family_id, p_import_job_id, p_conversation_event_id, p_decision, p_reason, FALSE, NULL
-  )
-  ON CONFLICT (import_job_id, conversation_event_id) DO UPDATE
-  SET decision = CASE WHEN t.overridden THEN t.decision ELSE excluded.decision END,
-      reason = CASE WHEN t.overridden THEN t.reason ELSE excluded.reason END
-  RETURNING t.*;
-$$;
-
-COMMENT ON FUNCTION upsert_intern_decision(UUID, UUID, UUID, TEXT, TEXT)
-  IS 'Atomically inserts or updates an intern_decisions row for (import_job_id, conversation_event_id). When the existing row is already human-overridden, decision/reason are left untouched -- closes the TOCTOU window a TypeScript-side read-then-write would leave between checking overridden and writing.';
-
-REVOKE ALL ON FUNCTION upsert_intern_decision(UUID, UUID, UUID, TEXT, TEXT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION upsert_intern_decision(UUID, UUID, UUID, TEXT, TEXT) FROM anon, authenticated;
-GRANT EXECUTE ON FUNCTION upsert_intern_decision(UUID, UUID, UUID, TEXT, TEXT) TO service_role;
 
 -- ============================================================================
 -- TABLE PRIVILEGES

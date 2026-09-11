@@ -12,7 +12,6 @@ export {
   type ScribeProcessor,
   type RegistrarProcessor,
   type OnImageCreatedCallback,
-  type FilterDecisionCallback,
   type RouterProcessor,
   type RoutingProcessorResult,
   type RoutingAction,

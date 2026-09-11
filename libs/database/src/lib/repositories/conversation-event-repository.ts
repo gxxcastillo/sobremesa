@@ -103,8 +103,8 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   /**
    * Find every (non-redacted) event id in a conversation, oldest first.
    * Unlike `findRecent`, this has no limit -- it's meant for enumerating a
-   * bounded, known set of events to process (e.g. import triage), not for
-   * context windows. Excludes redacted events using the same LEFT JOIN
+   * bounded, known set of events to process (e.g. the import drain), not
+   * for context windows. Excludes redacted events using the same LEFT JOIN
    * pattern as `findRecent`/`findUnprocessed`.
    */
   async findAllIdsInConversation(

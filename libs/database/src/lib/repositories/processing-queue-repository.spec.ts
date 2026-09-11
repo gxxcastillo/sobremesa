@@ -149,7 +149,7 @@ describe('ProcessingQueueRepository - enqueue', () => {
     );
   });
 
-  it('should support a custom intent (e.g. "triage" for a scoped import drain)', async () => {
+  it('should support a custom intent (e.g. "import" for a scoped import drain)', async () => {
     const queuedItem = {
       id: 'q1',
       family_id: 'fam1',
@@ -157,27 +157,25 @@ describe('ProcessingQueueRepository - enqueue', () => {
       status: 'queued',
       attempts: 0,
       priority: 5,
-      intent: 'triage',
+      intent: 'import',
       queued_at: new Date().toISOString(),
     };
 
     const chain = createChainableMock({ data: queuedItem, error: null });
     mockSupabaseClient.from.mockReturnValue(chain);
 
-    await queueRepo.enqueue('fam1', 'event-1', { intent: 'triage' });
+    await queueRepo.enqueue('fam1', 'event-1', { intent: 'import' });
 
     expect(chain.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ intent: 'triage' }),
+      expect.objectContaining({ intent: 'import' }),
     );
   });
 
   it('retags the existing row with the new intent on unique constraint violation when the intent differs', async () => {
     // Regression test: the unique constraint is on (family_id,
     // conversation_event_id) only, with no `intent` component, so
-    // re-enqueuing an event under a new intent (e.g. import's extraction
-    // drain enqueuing intent 'extract' for an event a prior triage phase
-    // already enqueued with intent 'triage') must not silently keep the
-    // stale intent from the first phase.
+    // re-enqueuing an event that already has a row under a different intent
+    // must not silently keep the stale intent.
     const existingItem = {
       id: 'q1',
       family_id: 'fam1',
@@ -185,10 +183,10 @@ describe('ProcessingQueueRepository - enqueue', () => {
       status: 'done',
       attempts: 0,
       priority: 5,
-      intent: 'triage',
+      intent: 'live',
       queued_at: new Date().toISOString(),
     };
-    const updatedItem = { ...existingItem, intent: 'extract' };
+    const updatedItem = { ...existingItem, intent: 'import' };
 
     const insertChain = createChainableMock({
       data: null,
@@ -206,11 +204,11 @@ describe('ProcessingQueueRepository - enqueue', () => {
     });
 
     const result = await queueRepo.enqueue('fam1', 'event-1', {
-      intent: 'extract',
+      intent: 'import',
     });
 
-    expect(result.intent).toBe('extract');
-    expect(updateChain.update).toHaveBeenCalledWith({ intent: 'extract' });
+    expect(result.intent).toBe('import');
+    expect(updateChain.update).toHaveBeenCalledWith({ intent: 'import' });
   });
 
   it('returns the existing row unchanged on unique constraint violation when the intent already matches', async () => {
@@ -572,7 +570,7 @@ describe('ProcessingQueueRepository - dequeueAny', () => {
 
     await queueRepo.dequeueAny('worker-1', 300000, undefined, [
       'live',
-      'extract',
+      'import',
     ]);
 
     expect(mockSupabaseClient.rpc).toHaveBeenCalledWith(
@@ -580,7 +578,7 @@ describe('ProcessingQueueRepository - dequeueAny', () => {
       {
         p_worker_id: 'worker-1',
         p_lock_timeout_ms: 300000,
-        p_intent_filter: ['live', 'extract'],
+        p_intent_filter: ['live', 'import'],
       },
     );
   });

@@ -89,11 +89,10 @@ function evaluateMessageText(
 
 /**
  * The deterministic fast-path checks from `InternAgent.filter()` that don't
- * need an LLM call or conversation context, extracted so other callers (e.g.
- * the import review step, which classifies messages in bulk before they're
- * ever queued) can reuse the exact same pre-LLM judgment instead of
- * approximating it. Returns a verdict for the "obvious" cases; `null` means
- * `filter()` itself would fall through to the LLM.
+ * need an LLM call or conversation context, extracted so other callers can
+ * reuse the exact same pre-LLM judgment instead of approximating it. Returns
+ * a verdict for the "obvious" cases; `null` means `filter()` itself would
+ * fall through to the LLM.
  *
  * NOTE: `InternAgent.route()` does NOT run non-'message' events through this
  * heuristic (or `filter()` at all) -- it short-circuits straight to
@@ -137,6 +136,15 @@ export function internFilterHeuristic(
 }
 
 /**
+ * How a decision was reached. `'deterministic'` covers every fast-path/
+ * rule-based/fallback-default resolution -- none of these call an LLM.
+ * `'model'` means the AI provider call actually ran and produced the
+ * verdict. Explicit on every result so callers never have to infer it from
+ * `tokensUsed === undefined`, which is an accidental proxy, not a contract.
+ */
+export type DecisionMethod = 'deterministic' | 'model';
+
+/**
  * Result of a message filter task.
  */
 export interface FilterResult {
@@ -146,6 +154,10 @@ export interface FilterResult {
   reason: string;
   /** Detected language of the message (en, es) */
   language?: LanguageCode;
+  /** How this verdict was reached -- see `DecisionMethod`. */
+  method: DecisionMethod;
+  /** Model id, present only when `method === 'model'`. */
+  model?: string;
   /** Tokens used for this call */
   tokensUsed?: number;
 }
@@ -167,6 +179,10 @@ export interface RoutingResult {
   reason: string;
   /** Detected language of the message (en, es) */
   language?: LanguageCode;
+  /** How this decision was reached -- see `DecisionMethod`. */
+  method: DecisionMethod;
+  /** Model id, present only when `method === 'model'`. */
+  model?: string;
   /** Tokens used (if AI was called) */
   tokensUsed?: number;
 }
@@ -296,6 +312,7 @@ export class InternAgent {
         return {
           relevant: true,
           reason: 'Event not found, defaulting to relevant',
+          method: 'deterministic',
         };
       }
 
@@ -312,10 +329,11 @@ export class InternAgent {
         return {
           relevant: true,
           reason: 'Answer to tracked question',
+          method: 'deterministic',
         };
       }
       if (heuristicResult) {
-        return heuristicResult;
+        return { ...heuristicResult, method: 'deterministic' };
       }
 
       // heuristicResult only returns null past the non-text/empty/too-short
@@ -397,7 +415,7 @@ export class InternAgent {
         'Filter result',
       );
 
-      return { ...result, tokensUsed };
+      return { ...result, method: 'model', model: this.model, tokensUsed };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -406,7 +424,11 @@ export class InternAgent {
         'Filter error, defaulting to relevant',
       );
       // Default to relevant on error - don't skip messages due to filter failures
-      return { relevant: true, reason: `Filter error: ${errorMessage}` };
+      return {
+        relevant: true,
+        reason: `Filter error: ${errorMessage}`,
+        method: 'deterministic',
+      };
     }
   }
 
@@ -739,6 +761,7 @@ export class InternAgent {
         return {
           action: 'scribe',
           reason: 'Event not found, defaulting to scribe',
+          method: 'deterministic',
         };
       }
 
@@ -760,6 +783,7 @@ export class InternAgent {
             action: 'admin',
             adminSubtype: 'status', // In registered chat, /sobremesa shows status
             reason: `Command: ${command}`,
+            method: 'deterministic',
           };
         }
 
@@ -772,6 +796,7 @@ export class InternAgent {
             action: 'admin',
             adminSubtype: 'status',
             reason: `Command: ${command}`,
+            method: 'deterministic',
           };
         }
 
@@ -780,6 +805,7 @@ export class InternAgent {
         return {
           action: 'ignore',
           reason: `Unknown command: ${command}`,
+          method: 'deterministic',
         };
       }
 
@@ -797,6 +823,7 @@ export class InternAgent {
               action: 'admin',
               adminSubtype: 'mention',
               reason: 'Meta question about bot behavior',
+              method: 'deterministic',
             };
           }
           // Regular family history questions go to historian
@@ -807,6 +834,7 @@ export class InternAgent {
           return {
             action: 'historian',
             reason: 'Question directed at bot',
+            method: 'deterministic',
           };
         }
         // Non-question mentions go to admin
@@ -815,6 +843,7 @@ export class InternAgent {
           action: 'admin',
           adminSubtype: 'mention',
           reason: 'Bot mentioned directly',
+          method: 'deterministic',
         };
       }
 
@@ -825,6 +854,7 @@ export class InternAgent {
           action: 'admin',
           adminSubtype: 'dm',
           reason: 'Private message (DM)',
+          method: 'deterministic',
         };
       }
 
@@ -838,6 +868,7 @@ export class InternAgent {
           action: 'admin',
           adminSubtype: 'member_event',
           reason: `Member event: ${event.eventType}`,
+          method: 'deterministic',
         };
       }
 
@@ -846,6 +877,7 @@ export class InternAgent {
         return {
           action: 'scribe',
           reason: `Non-text event type: ${event.eventType}`,
+          method: 'deterministic',
         };
       }
 
@@ -857,6 +889,8 @@ export class InternAgent {
           action: 'ignore',
           reason: filterResult.reason,
           language: filterResult.language,
+          method: filterResult.method,
+          model: filterResult.model,
           tokensUsed: filterResult.tokensUsed,
         };
       }
@@ -866,6 +900,8 @@ export class InternAgent {
         action: 'scribe',
         reason: filterResult.reason,
         language: filterResult.language,
+        method: filterResult.method,
+        model: filterResult.model,
         tokensUsed: filterResult.tokensUsed,
       };
     } catch (error) {
@@ -878,6 +914,7 @@ export class InternAgent {
       return {
         action: 'scribe',
         reason: `Routing error: ${errorMessage}`,
+        method: 'deterministic',
       };
     }
   }

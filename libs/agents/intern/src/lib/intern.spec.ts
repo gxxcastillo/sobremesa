@@ -225,6 +225,8 @@ describe('InternAgent', () => {
 
         expect(result.relevant).toBe(false);
         expect(result.reason).toBe('Emoji-only message');
+        expect(result.method).toBe('deterministic');
+        expect(result.model).toBeUndefined();
         expect(mockProviderComplete).not.toHaveBeenCalled();
       });
 
@@ -484,6 +486,8 @@ describe('InternAgent', () => {
         expect(result.relevant).toBe(true);
         expect(result.reason).toBe('Contains family immigration story');
         expect(result.tokensUsed).toBe(120);
+        expect(result.method).toBe('model');
+        expect(result.model).toBe('claude-3-5-haiku-20241022');
       });
 
       it('should return relevant=false when AI determines message is not relevant', async () => {
@@ -679,6 +683,7 @@ describe('InternAgent', () => {
         expect(result.action).toBe('admin');
         expect(result.adminSubtype).toBe('status');
         expect(result.reason).toContain('Command');
+        expect(result.method).toBe('deterministic');
         expect(mockProviderComplete).not.toHaveBeenCalled();
       });
 
@@ -1012,6 +1017,8 @@ describe('InternAgent', () => {
         expect(result.action).toBe('scribe');
         expect(result.reason).toBe('Family history content');
         expect(result.tokensUsed).toBe(120);
+        expect(result.method).toBe('model');
+        expect(result.model).toBe('claude-3-5-haiku-20241022');
         expect(mockProviderComplete).toHaveBeenCalled();
       });
 
@@ -1036,6 +1043,7 @@ describe('InternAgent', () => {
         expect(result.action).toBe('ignore');
         expect(result.reason).toBe('Off-topic question about food');
         expect(result.tokensUsed).toBe(95);
+        expect(result.method).toBe('model');
         expect(mockProviderComplete).toHaveBeenCalled();
       });
 

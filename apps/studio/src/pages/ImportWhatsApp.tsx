@@ -2,7 +2,11 @@
  * WhatsApp Import Wizard
  *
  * Super-admin-only wizard for importing WhatsApp chat exports.
- * Follows a 6-step process: Upload → Family Config → Participants → Preview → Import → Intern Review
+ * Follows a 5-step process: Upload → Family Config → Participants → Preview → Import.
+ * Import itself has no pre-extraction review checkpoint: once messages are inserted, the
+ * API automatically runs them through the shared Intern -> Scribe -> Registrar pipeline and
+ * this page just shows progress through to completion. See
+ * `.agents/plans/unified-import-pipeline-plan.md`.
  */
 
 import {
@@ -32,22 +36,14 @@ import type {
   CostEstimate,
   ImportStatus,
   LanguageCode,
-  MessageWithDecision,
   DuplicateCheckResult,
 } from '@sobremesa/shared-types';
 import './ImportWhatsApp.css';
 
 // Wizard steps
-type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
+type WizardStep = 1 | 2 | 3 | 4 | 5;
 
-const STEP_LABELS = [
-  'Upload',
-  'Family',
-  'Participants',
-  'Preview',
-  'Import',
-  'Review',
-];
+const STEP_LABELS = ['Upload', 'Family', 'Participants', 'Preview', 'Import'];
 
 // Language options
 const LANGUAGE_OPTIONS: { value: LanguageCode; label: string }[] = [
@@ -124,21 +120,6 @@ export const ImportWhatsApp: Component = () => {
   const [pollInterval, setPollInterval] = createSignal<ReturnType<
     typeof setInterval
   > | null>(null);
-
-  // Step 6: Intern review state
-  const [isRunningIntern, setIsRunningIntern] = createSignal(false);
-  const [internMessages, setInternMessages] = createSignal<
-    MessageWithDecision[]
-  >([]);
-  const [internStats, setInternStats] = createSignal<{
-    toProcess: number;
-    toSkip: number;
-    overridden: number;
-  } | null>(null);
-  const [internFilter, setInternFilter] = createSignal<
-    'all' | 'process' | 'skip'
-  >('all');
-  const [isSubmittingScribe, setIsSubmittingScribe] = createSignal(false);
 
   // Sync auth token
   createEffect(() => {
@@ -429,22 +410,15 @@ export const ImportWhatsApp: Component = () => {
 
       setStep(5);
 
-      // Start polling for status
+      // Start polling for status. There is no review checkpoint: the API
+      // runs the insert phase and the shared extraction drain automatically,
+      // so this page just watches progress through to a terminal status.
       const interval = setInterval(async () => {
         try {
           const status = await client.getImportStatus(response.jobId);
           setImportStatus(status);
 
           if (
-            status.status === 'awaiting_intern' ||
-            status.status === 'intern_complete'
-          ) {
-            // Messages imported, transition to Intern review
-            clearInterval(interval);
-            setPollInterval(null);
-            setIsImporting(false);
-            setStep(6);
-          } else if (
             status.status === 'complete' ||
             status.status === 'failed' ||
             status.status === 'cancelled'
@@ -512,160 +486,6 @@ export const ImportWhatsApp: Component = () => {
     }
   };
 
-  /**
-   * Polls GET /api/import/:jobId every 1.5s, updating `importStatus` along
-   * the way, until `isDone` returns true. `run-intern` and `submit-scribe`
-   * both now kick off a real LLM-backed drain in the background (see
-   * import-filter-convergence-plan.md) instead of completing synchronously,
-   * so their callers poll for the result the same way the initial import
-   * phase already does. Shares the `pollInterval` signal (and its existing
-   * `onCleanup`/cancel-import teardown) with that same phase -- only one
-   * polling loop is ever active at a time.
-   */
-  const pollJobStatus = (
-    jobId: string,
-    isDone: (status: ImportStatus) => boolean,
-  ): Promise<ImportStatus> => {
-    return new Promise((resolve, reject) => {
-      const interval = setInterval(async () => {
-        try {
-          const latest = await client.getImportStatus(jobId);
-          setImportStatus(latest);
-          if (isDone(latest)) {
-            clearInterval(interval);
-            setPollInterval(null);
-            resolve(latest);
-          }
-        } catch (err) {
-          clearInterval(interval);
-          setPollInterval(null);
-          reject(err);
-        }
-      }, 1500);
-      setPollInterval(interval);
-    });
-  };
-
-  // Intern review functions
-  const runInternAnalysis = async () => {
-    const status = importStatus();
-    if (!status) return;
-
-    setIsRunningIntern(true);
-
-    try {
-      await client.runIntern(status.jobId);
-
-      const finalStatus = await pollJobStatus(
-        status.jobId,
-        (s) => s.status === 'intern_complete' || s.status === 'awaiting_intern',
-      );
-
-      if (finalStatus.status === 'awaiting_intern') {
-        toast.error(finalStatus.error || 'Failed to run Intern');
-        return;
-      }
-
-      // Load the decisions
-      await loadInternDecisions();
-      toast.success('Intern analysis complete');
-    } catch (err) {
-      toast.error(
-        `Failed to run Intern: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      );
-    } finally {
-      setIsRunningIntern(false);
-    }
-  };
-
-  const loadInternDecisions = async () => {
-    const status = importStatus();
-    if (!status) return;
-
-    try {
-      const result = await client.getInternDecisions(
-        status.jobId,
-        internFilter(),
-      );
-      setInternMessages(result.messages);
-      setInternStats(result.stats);
-    } catch (err) {
-      console.error('Failed to load decisions:', err);
-    }
-  };
-
-  const toggleDecision = async (
-    eventId: string,
-    currentDecision: 'process' | 'skip',
-  ) => {
-    const status = importStatus();
-    if (!status) return;
-
-    const newDecision = currentDecision === 'process' ? 'skip' : 'process';
-
-    try {
-      const result = await client.overrideInternDecision(
-        status.jobId,
-        eventId,
-        newDecision,
-      );
-      setInternStats(result.stats);
-
-      // Update local state
-      setInternMessages((prev) =>
-        prev.map((m) =>
-          m.id === eventId
-            ? { ...m, decision: newDecision, overridden: true }
-            : m,
-        ),
-      );
-    } catch (err) {
-      toast.error(
-        `Failed to update decision: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      );
-    }
-  };
-
-  const submitToScribe = async () => {
-    const status = importStatus();
-    if (!status) return;
-
-    setIsSubmittingScribe(true);
-
-    try {
-      await client.submitToScribe(status.jobId);
-
-      const finalStatus = await pollJobStatus(
-        status.jobId,
-        (s) => s.status === 'complete' || s.status === 'intern_complete',
-      );
-
-      if (finalStatus.status === 'intern_complete') {
-        // Reverted -- extraction failed partway; decisions/review state is
-        // still intact, so the user can retry.
-        toast.error(finalStatus.error || 'Failed to process with Scribe');
-        return;
-      }
-
-      toast.success('Messages processed');
-    } catch (err) {
-      toast.error(
-        `Failed to submit to Scribe: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      );
-    } finally {
-      setIsSubmittingScribe(false);
-    }
-  };
-
-  // Filter messages for display
-  const getFilteredMessages = () => {
-    const filter = internFilter();
-    const messages = internMessages();
-
-    if (filter === 'all') return messages;
-    return messages.filter((m) => m.decision === filter);
-  };
-
   // Render helpers
   const getPreviewMessages = (): ParsedMessage[] => {
     const result = parseResult();
@@ -695,7 +515,7 @@ export const ImportWhatsApp: Component = () => {
     { key: 'creating_family', label: 'Creating family...' },
     { key: 'creating_identities', label: 'Creating identities...' },
     { key: 'submitting', label: 'Inserting messages...' },
-    { key: 'awaiting_intern', label: 'Ready for review!' },
+    { key: 'processing', label: 'Processing messages...' },
   ];
 
   const getStageStatus = (
@@ -1113,262 +933,110 @@ export const ImportWhatsApp: Component = () => {
             </section>
           </Show>
 
-          {/* Step 5: Import Progress */}
+          {/* Step 5: Import Progress / Completion. No review checkpoint --
+              the API runs insertion and the shared extraction drain
+              automatically; this just shows truthful progress through to a
+              terminal status. */}
           <Show when={step() === 5}>
             <section class="step-section">
-              <h2>Importing Messages...</h2>
-
-              <div class="progress-section">
-                <div class="progress-bar-container">
-                  <div class="progress-bar">
-                    <div
-                      class="progress-fill"
-                      style={{
-                        width: `${importStatus()?.progress.percentage || 0}%`,
-                      }}
-                    />
-                  </div>
-                  <div class="progress-text">
-                    <span>
-                      {importStatus()?.progress.current.toLocaleString() || 0} /{' '}
-                      {importStatus()?.progress.total.toLocaleString() || 0}
-                    </span>
-                    <span>{importStatus()?.progress.percentage || 0}%</span>
-                  </div>
-                </div>
-
-                <div class="progress-stages">
-                  <For each={getProgressStages()}>
-                    {(stage) => (
-                      <div
-                        class="progress-stage"
-                        classList={{
-                          active: getStageStatus(stage.key) === 'active',
-                          complete: getStageStatus(stage.key) === 'complete',
-                          error: getStageStatus(stage.key) === 'error',
-                        }}
-                      >
-                        <div class="stage-icon">
-                          <Show when={getStageStatus(stage.key) === 'complete'}>
-                            ✓
-                          </Show>
-                          <Show when={getStageStatus(stage.key) === 'active'}>
-                            ⏳
-                          </Show>
-                          <Show when={getStageStatus(stage.key) === 'error'}>
-                            ✕
-                          </Show>
-                          <Show when={getStageStatus(stage.key) === 'pending'}>
-                            ○
-                          </Show>
-                        </div>
-                        <span class="stage-label">{stage.label}</span>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </div>
-            </section>
-          </Show>
-
-          {/* Step 6: Intern Review */}
-          <Show when={step() === 6}>
-            <section class="step-section intern-review-section">
               <Show when={importStatus()?.status === 'complete'}>
                 <div class="complete-section">
                   <div class="complete-icon">✓</div>
                   <h2>Import Complete!</h2>
-                  <p>Messages are queued for processing in {familyName()}.</p>
+                  <p>
+                    {importStatus()?.progress.total.toLocaleString()} messages
+                    processed into {familyName()}.
+                  </p>
                   <button class="btn-view-family" onClick={viewFamily}>
                     View Family
                   </button>
                 </div>
               </Show>
 
-              <Show when={importStatus()?.status !== 'complete'}>
-                <div class="intern-header">
-                  <h2>Review Messages</h2>
-                  <Show when={!internStats()}>
-                    <p>
-                      Run the Intern to classify which messages should be
-                      processed by Scribe.
-                    </p>
-                    <button
-                      class="btn-run-intern"
-                      onClick={runInternAnalysis}
-                      disabled={isRunningIntern()}
-                    >
-                      {isRunningIntern()
-                        ? 'Running Intern...'
-                        : 'Run Intern Analysis'}
-                    </button>
-                    <Show when={isRunningIntern()}>
-                      <p class="intern-progress-hint">
-                        {importStatus()?.stage}
-                      </p>
-                    </Show>
-                  </Show>
+              <Show when={importStatus()?.status === 'failed'}>
+                <div class="failed-section">
+                  <div class="failed-icon">✕</div>
+                  <h2>Import Failed</h2>
+                  <p>{importStatus()?.error || 'An unknown error occurred.'}</p>
+                  <button class="btn-secondary" onClick={handleBack}>
+                    Back to Families
+                  </button>
                 </div>
+              </Show>
 
-                <Show when={internStats()}>
-                  <div class="intern-stats">
-                    <div class="stat-chip process">
-                      {internStats()!.toProcess} to process
+              <Show when={importStatus()?.status === 'cancelled'}>
+                <div class="failed-section">
+                  <h2>Import Cancelled</h2>
+                  <button class="btn-secondary" onClick={handleBack}>
+                    Back to Families
+                  </button>
+                </div>
+              </Show>
+
+              <Show
+                when={
+                  importStatus() &&
+                  !['complete', 'failed', 'cancelled'].includes(
+                    importStatus()!.status,
+                  )
+                }
+              >
+                <h2>Importing Messages...</h2>
+
+                <div class="progress-section">
+                  <div class="progress-bar-container">
+                    <div class="progress-bar">
+                      <div
+                        class="progress-fill"
+                        style={{
+                          width: `${importStatus()?.progress.percentage || 0}%`,
+                        }}
+                      />
                     </div>
-                    <div class="stat-chip skip">
-                      {internStats()!.toSkip} to skip
+                    <div class="progress-text">
+                      <span>
+                        {importStatus()?.progress.current.toLocaleString() || 0}{' '}
+                        / {importStatus()?.progress.total.toLocaleString() || 0}
+                      </span>
+                      <span>{importStatus()?.progress.percentage || 0}%</span>
                     </div>
-                    <Show when={internStats()!.overridden > 0}>
-                      <div class="stat-chip overridden">
-                        {internStats()!.overridden} overridden
-                      </div>
-                    </Show>
                   </div>
 
-                  <div class="intern-filter-tabs">
-                    <button
-                      classList={{ active: internFilter() === 'all' }}
-                      onClick={() => {
-                        setInternFilter('all');
-                        loadInternDecisions();
-                      }}
-                    >
-                      All ({internStats()!.toProcess + internStats()!.toSkip})
-                    </button>
-                    <button
-                      classList={{ active: internFilter() === 'process' }}
-                      onClick={() => {
-                        setInternFilter('process');
-                        loadInternDecisions();
-                      }}
-                    >
-                      Process ({internStats()!.toProcess})
-                    </button>
-                    <button
-                      classList={{ active: internFilter() === 'skip' }}
-                      onClick={() => {
-                        setInternFilter('skip');
-                        loadInternDecisions();
-                      }}
-                    >
-                      Skip ({internStats()!.toSkip})
-                    </button>
-                  </div>
-
-                  <div class="intern-messages-list">
-                    <For each={getFilteredMessages()}>
-                      {(msg) => (
+                  <div class="progress-stages">
+                    <For each={getProgressStages()}>
+                      {(stage) => (
                         <div
-                          class="intern-message"
+                          class="progress-stage"
                           classList={{
-                            'decision-process': msg.decision === 'process',
-                            'decision-skip': msg.decision === 'skip',
-                            overridden: msg.overridden,
+                            active: getStageStatus(stage.key) === 'active',
+                            complete: getStageStatus(stage.key) === 'complete',
+                            error: getStageStatus(stage.key) === 'error',
                           }}
                         >
-                          <div class="message-checkbox">
-                            <input
-                              type="checkbox"
-                              checked={msg.decision === 'process'}
-                              onChange={() =>
-                                toggleDecision(msg.id, msg.decision)
-                              }
-                            />
+                          <div class="stage-icon">
+                            <Show
+                              when={getStageStatus(stage.key) === 'complete'}
+                            >
+                              ✓
+                            </Show>
+                            <Show when={getStageStatus(stage.key) === 'active'}>
+                              ⏳
+                            </Show>
+                            <Show when={getStageStatus(stage.key) === 'error'}>
+                              ✕
+                            </Show>
+                            <Show
+                              when={getStageStatus(stage.key) === 'pending'}
+                            >
+                              ○
+                            </Show>
                           </div>
-                          <div class="message-content">
-                            <div class="message-header">
-                              <span class="message-sender">
-                                {msg.actorDisplayName}
-                              </span>
-                              <span class="message-time">
-                                {formatDate(new Date(msg.occurredAt))}
-                              </span>
-                            </div>
-                            <div class="message-text">
-                              {msg.eventType === 'message'
-                                ? msg.content
-                                : `[${msg.eventType}]`}
-                            </div>
-                            <div class="message-decision">
-                              <span
-                                class="decision-badge"
-                                classList={{
-                                  process: msg.decision === 'process',
-                                  skip: msg.decision === 'skip',
-                                }}
-                              >
-                                {msg.decision === 'process'
-                                  ? '✓ Process'
-                                  : '○ Skip'}
-                              </span>
-                              <Show when={msg.reason}>
-                                <span class="decision-reason">
-                                  ({msg.reason})
-                                </span>
-                              </Show>
-                              <Show when={msg.overridden}>
-                                <span class="override-badge">Overridden</span>
-                              </Show>
-                            </div>
-                          </div>
+                          <span class="stage-label">{stage.label}</span>
                         </div>
                       )}
                     </For>
                   </div>
-
-                  <div class="intern-cost-estimate">
-                    <Show when={costEstimate()}>
-                      <div class="revised-estimate">
-                        <strong>Revised Estimate:</strong>{' '}
-                        {internStats()!.toProcess} messages to process
-                        <br />
-                        <span class="cost-value">
-                          ~$
-                          {(
-                            (costEstimate()!.totalCost *
-                              internStats()!.toProcess) /
-                            parseResult()!.messages.length
-                          ).toFixed(2)}
-                        </span>
-                        <span class="cost-savings">
-                          (saving $
-                          {(
-                            (costEstimate()!.totalCost *
-                              internStats()!.toSkip) /
-                            parseResult()!.messages.length
-                          ).toFixed(2)}{' '}
-                          by skipping {internStats()!.toSkip} messages)
-                        </span>
-                      </div>
-                    </Show>
-                  </div>
-
-                  <div class="intern-actions">
-                    <button
-                      class="btn-cancel"
-                      onClick={cancelImport}
-                      disabled={isSubmittingScribe()}
-                    >
-                      Cancel Import
-                    </button>
-                    <button
-                      class="btn-submit-scribe"
-                      onClick={submitToScribe}
-                      disabled={
-                        isSubmittingScribe() || internStats()!.toProcess === 0
-                      }
-                    >
-                      {isSubmittingScribe()
-                        ? 'Submitting...'
-                        : `Submit ${internStats()!.toProcess} Messages to Scribe`}
-                    </button>
-                    <Show when={isSubmittingScribe()}>
-                      <p class="intern-progress-hint">
-                        {importStatus()?.stage}
-                      </p>
-                    </Show>
-                  </div>
-                </Show>
+                </div>
               </Show>
             </section>
           </Show>

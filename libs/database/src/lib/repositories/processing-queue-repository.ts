@@ -53,15 +53,12 @@ export class ProcessingQueueRepository {
     if (error) {
       // Handle unique constraint violation (already queued). The unique
       // constraint is on (family_id, conversation_event_id) only -- it has
-      // no `intent` component -- so this also fires when a later phase
-      // re-enqueues the same event under a different intent (e.g. import's
-      // extraction drain enqueuing with intent 'extract' for an event a
-      // prior triage phase already enqueued with intent 'triage'). Retag
-      // the existing row with the new intent so bookkeeping/observability
-      // reflects which phase is actually using it now; the row's status is
-      // left untouched (it's already 'done'/'error' from the prior phase,
-      // so this update doesn't change dequeue eligibility for the live
-      // poller, which only leases 'queued' rows).
+      // no `intent` component -- so this also fires if a caller re-enqueues
+      // an event that already has a row under a different intent. Retag the
+      // existing row with the new intent so bookkeeping/observability
+      // reflects which owner is actually using it now; the row's status is
+      // left untouched (a retag doesn't change dequeue eligibility for the
+      // live poller, which only leases 'queued' rows).
       if (error.code === '23505') {
         const existing = await this.findByEventId(
           familyId,
@@ -142,10 +139,9 @@ export class ProcessingQueueRepository {
    *
    * `intentFilter`, when given, restricts leasing to rows whose `intent` is
    * in the list (e.g. the always-on live poller passes `['live']` so it can
-   * never claim a `'triage'`-only row before a human has reviewed it, or an
-   * `'extract'` row a scoped drain owns; a scoped triage/extract drain
-   * passes exactly its own intent). Omitted, every intent is eligible --
-   * today's behavior.
+   * never claim an `'import'`-owned row; import's own scoped drain passes
+   * exactly its own intent). Omitted, every intent is eligible -- today's
+   * behavior.
    */
   async dequeueAny(
     workerId: string,

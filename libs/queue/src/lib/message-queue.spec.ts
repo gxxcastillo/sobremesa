@@ -103,10 +103,10 @@ describe('MessageQueue', () => {
       );
     });
 
-    it('forwards the configured intentFilter to dequeueAny (e.g. the live poller excluding triage-only rows)', async () => {
+    it('forwards the configured intentFilter to dequeueAny (e.g. the live poller excluding import-owned rows)', async () => {
       mockRepository.dequeueAny.mockResolvedValue(null);
       const queue = createQueue({
-        queueOptions: { intentFilter: ['live', 'extract'] },
+        queueOptions: { intentFilter: ['live'] },
       });
       queue.setHandler(vi.fn());
 
@@ -116,7 +116,7 @@ describe('MessageQueue', () => {
         expect.any(String),
         expect.any(Number),
         undefined,
-        ['live', 'extract'],
+        ['live'],
       );
     });
 

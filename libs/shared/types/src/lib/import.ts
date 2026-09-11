@@ -105,18 +105,19 @@ export interface CostEstimate {
 }
 
 /**
- * Import job status.
+ * Import job status. Every ingress (Studio import, CLI import, live chat)
+ * runs events through the same immediate Intern -> Scribe -> Registrar
+ * pipeline with no pre-extraction review checkpoint -- see
+ * `.agents/plans/unified-import-pipeline-plan.md`. 'processing' covers both
+ * the message-insertion phase and the shared-pipeline extraction drain that
+ * follows it; `stage` (below) carries the human-readable detail.
  */
 export type ImportJobStatus =
   | 'pending'
   | 'creating_family'
   | 'creating_identities'
   | 'submitting'
-  | 'awaiting_intern' // Messages in DB, waiting for Intern
-  | 'running_intern' // Intern processing messages
-  | 'intern_complete' // Intern done, awaiting user review
-  | 'processing_scribe' // Scribe Batch API in progress
-  | 'processing' // Legacy, kept for backwards compatibility
+  | 'processing'
   | 'hydrating'
   | 'complete'
   | 'failed'
@@ -143,54 +144,6 @@ export interface ImportStatus {
   error?: string;
   startedAt: Date;
   completedAt?: Date;
-  /** Intern review stats (when status is intern_complete) */
-  internStats?: {
-    toProcess: number;
-    toSkip: number;
-    overridden: number;
-  };
-}
-
-/**
- * Intern's decision for a single message.
- */
-export type InternDecisionType = 'process' | 'skip';
-
-/**
- * Intern decision record.
- */
-export interface InternDecision {
-  id: string;
-  importJobId: string;
-  conversationEventId: string;
-  decision: InternDecisionType;
-  reason: string | null;
-  overridden: boolean;
-  originalDecision: InternDecisionType | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-/**
- * Message with Intern decision for UI display.
- */
-export interface MessageWithDecision {
-  /** Conversation event ID */
-  id: string;
-  /** Message timestamp */
-  occurredAt: Date;
-  /** Sender display name */
-  actorDisplayName: string;
-  /** Message content */
-  content: string;
-  /** Event type */
-  eventType: string;
-  /** Intern's current decision */
-  decision: InternDecisionType;
-  /** Reason for the decision */
-  reason: string | null;
-  /** Whether user overrode the decision */
-  overridden: boolean;
 }
 
 /**

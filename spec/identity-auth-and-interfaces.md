@@ -66,8 +66,8 @@ Endpoint groups:
   dead-letter queue listing and requeue.
 - **Identity:** view/claim/unclaim current person; list/create/update people for self-identification.
 - **Admin:** allowed-chat management and super-admin family deletion.
-- **Import:** duplicate check, start/poll/cancel/resume WhatsApp import, run Intern review, override
-  decisions, submit selected messages to Scribe.
+- **Import:** duplicate check, start/poll/cancel/resume WhatsApp import. Import runs straight through
+  to `complete`/`failed` automatically -- no separate review/override/submit step.
 
 ## 6.4 Studio
 

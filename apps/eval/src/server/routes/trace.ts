@@ -7,6 +7,7 @@ import {
   mapRowToCamelCase,
   type DatabaseClient,
 } from '@sobremesa/database';
+import type { InternEvaluatedEventData } from '@sobremesa/shared-types';
 
 const MAX_TRACE_EVENTS = 25;
 
@@ -155,7 +156,6 @@ async function buildEventTrace(
     peopleRes,
     placesRes,
     redactionRes,
-    internDecisionRes,
   ] = await Promise.all([
     queueRepo.findByEventId(familyId, eventId),
     processingRepo.findByEventId(familyId, eventId),
@@ -201,16 +201,6 @@ async function buildEventTrace(
       .eq('family_id', familyId)
       .eq('conversation_event_id', eventId)
       .maybeSingle(),
-    dbClient
-      .from('intern_decisions')
-      .select(
-        'decision, reason, overridden, original_decision, import_job_id, updated_at',
-      )
-      .eq('family_id', familyId)
-      .eq('conversation_event_id', eventId)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
   ]);
 
   for (const [label, res] of [
@@ -220,7 +210,6 @@ async function buildEventTrace(
     ['people', peopleRes],
     ['places', placesRes],
     ['conversation_redactions', redactionRes],
-    ['intern_decisions', internDecisionRes],
   ] as const) {
     if (res.error) {
       throw new Error(
@@ -375,6 +364,22 @@ async function buildEventTrace(
     ]),
   );
 
+  // The latest `intern_evaluated` event_log entry for this event -- an
+  // observed pipeline result, not a reviewable decision (there is no
+  // override mechanism). eventLogRes is ordered by created_at ascending, so
+  // the last matching row is the most recent. A re-run can append a second
+  // entry for the same event, which is exactly what "latest" is for.
+  const internEvaluatedEvents = (eventLogRes.data ?? []).filter(
+    (row) => row['event_type'] === 'intern_evaluated',
+  );
+  const latestInternEvaluated =
+    internEvaluatedEvents.length > 0
+      ? (internEvaluatedEvents[internEvaluatedEvents.length - 1] as {
+          event_data: InternEvaluatedEventData;
+          created_at: string;
+        })
+      : null;
+
   return {
     event: {
       id: event.id,
@@ -415,8 +420,17 @@ async function buildEventTrace(
       : null,
     eventLog: (eventLogRes.data ?? []).map((row) => mapRowToCamelCase(row)),
     redaction: redactionRes.data ? mapRowToCamelCase(redactionRes.data) : null,
-    intern: internDecisionRes.data
-      ? mapRowToCamelCase(internDecisionRes.data)
+    intern: latestInternEvaluated
+      ? {
+          action: latestInternEvaluated.event_data.action,
+          relevant: latestInternEvaluated.event_data.relevant,
+          reason: latestInternEvaluated.event_data.reason,
+          language: latestInternEvaluated.event_data.language ?? null,
+          method: latestInternEvaluated.event_data.method,
+          model: latestInternEvaluated.event_data.model ?? null,
+          tokensUsed: latestInternEvaluated.event_data.tokensUsed ?? null,
+          observedAt: latestInternEvaluated.created_at,
+        }
       : null,
     produced: {
       claims: claimRows.map((row) => {

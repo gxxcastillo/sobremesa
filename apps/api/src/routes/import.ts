@@ -13,6 +13,12 @@
  * - POST /api/import/:jobId/resume - Resume failed import
  *
  * All routes require super_admin access.
+ *
+ * There is no pre-extraction review step: `runImportJob` chains
+ * `ImportProcessor.processJob()` (parse + insert events) directly into
+ * `runImportDrain()` (the shared Intern -> Scribe -> Registrar pipeline),
+ * updating the job straight through to `complete`/`failed`. See
+ * `.agents/plans/unified-import-pipeline-plan.md`.
  */
 
 import { Elysia, t } from 'elysia';
@@ -26,17 +32,13 @@ import {
 import {
   ImportJobRepository,
   ImportProcessor,
-  InternDecisionRepository,
-  runInternTriage,
-  runExtractionDrain,
+  runImportDrain,
 } from '@sobremesa/import';
 import { resolveImportSource } from '@sobremesa/import-utils';
 import type {
   ImportConfig,
   ImportSource,
   ImportStatus,
-  MessageWithDecision,
-  InternDecisionType,
   MessageFingerprint,
   DuplicateCheckResult,
 } from '@sobremesa/shared-types';
@@ -51,7 +53,6 @@ import { requireSuperAdmin, getAuth } from '@sobremesa/auth';
 export function importRoutes(dbClient: DatabaseClient) {
   const jobRepo = new ImportJobRepository(dbClient);
   const eventLogRepo = new EventLogRepository(dbClient);
-  const decisionRepo = new InternDecisionRepository(dbClient);
   const queueRepo = new ProcessingQueueRepository(dbClient);
 
   const getProcessor = () => {
@@ -60,10 +61,8 @@ export function importRoutes(dbClient: DatabaseClient) {
     });
   };
 
-  // Built once at startup, reused across requests -- `run-intern` and
-  // `submit-scribe` now make real Intern/Scribe LLM calls (the whole point
-  // of this file's rewire, see import-filter-convergence-plan.md) instead
-  // of a free heuristic guess, so both need a real provider.
+  // Built once at startup, reused across requests -- the extraction drain
+  // makes real Intern/Scribe LLM calls, so it needs a real provider.
   const anthropicApiKey = process.env['ANTHROPIC_API_KEY'];
   const anthropicClient = anthropicApiKey
     ? new Anthropic({ apiKey: anthropicApiKey })
@@ -73,6 +72,115 @@ export function importRoutes(dbClient: DatabaseClient) {
   );
   const aiFactory = createAIProviderFactory(aiConfig, anthropicClient);
   const hasAIProvider = aiConfig.defaultProvider !== 'mock';
+
+  /**
+   * Runs a job's full lifecycle: parse+insert (via `ImportProcessor`), then
+   * -- once events are inserted and the job is in `'processing'` status --
+   * the shared extraction drain, ending in `'complete'`/`'failed'`. Shared
+   * by the initial `POST /api/imports` and `POST /api/import/:jobId/resume`
+   * so both trigger the exact same automatic, no-manual-step pipeline.
+   * Fire-and-forget from both callers; errors are logged by the caller's
+   * own `.catch()` (mirroring `ImportProcessor.processJob()`'s existing
+   * failure handling for the insert phase, which already marks the job
+   * `'failed'` and logs `import_failed` itself before rethrowing).
+   */
+  async function runImportJob(jobId: string): Promise<void> {
+    const processor = getProcessor();
+    await processor.processJob(jobId);
+
+    const job = await jobRepo.findById(jobId);
+    if (!job || job.status !== 'processing') {
+      // processJob() already handled (or short-circuited) a terminal
+      // outcome -- cancelled mid-insert, or already complete/cancelled at
+      // entry. Nothing left for this job to do.
+      return;
+    }
+
+    if (!job.familyId || !job.conversationId) {
+      await jobRepo.update(jobId, {
+        status: 'failed',
+        error: 'Job missing familyId or conversationId',
+      });
+      return;
+    }
+
+    if (!hasAIProvider) {
+      await jobRepo.update(jobId, {
+        status: 'failed',
+        error: 'No AI provider configured (ANTHROPIC_API_KEY missing)',
+      });
+      return;
+    }
+
+    const familyId = job.familyId;
+
+    try {
+      const { total, processed, failed } = await runImportDrain({
+        dbClient,
+        queueRepo,
+        familyId,
+        conversationId: job.conversationId,
+        internProvider: aiFactory.getProviderForAgent('intern'),
+        internModel: aiFactory.getModelForAgent('intern'),
+        scribeProvider: aiFactory.getProviderForAgent('scribe'),
+        scribeModel: aiFactory.getModelForAgent('scribe'),
+        onProgress: async (current, progressTotal) => {
+          await jobRepo.update(jobId, {
+            progress: {
+              current,
+              total: progressTotal,
+              stage: `Processing messages (${current}/${progressTotal})...`,
+            },
+          });
+        },
+      });
+
+      await jobRepo.update(jobId, {
+        status: 'complete',
+        progress: {
+          current: total,
+          total,
+          stage:
+            `Processed ${processed} messages` +
+            (failed > 0 ? ` (${failed} failed)` : ''),
+        },
+        completedAt: new Date(),
+      });
+
+      await eventLogRepo.log({
+        familyId,
+        eventType: 'import_completed',
+        eventCategory: 'system_event',
+        actor: 'system',
+        actorType: 'system',
+        severity: 'info',
+        eventData: {
+          importJobId: jobId,
+          source: job.source,
+          messagesProcessed: processed,
+          messagesFailed: failed,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      await jobRepo.update(jobId, { status: 'failed', error: message });
+      await eventLogRepo.log({
+        familyId,
+        eventType: 'import_failed',
+        eventCategory: 'system_event',
+        actor: 'system',
+        actorType: 'system',
+        severity: 'error',
+        eventData: {
+          importJobId: jobId,
+          source: job.source,
+          error: message,
+          failedAt: 'extraction drain',
+        },
+      });
+      throw error;
+    }
+  }
 
   return (
     new Elysia()
@@ -301,10 +409,9 @@ export function importRoutes(dbClient: DatabaseClient) {
               messageCount: 0, // processor will determine actual count
             });
 
-            // Start processing in background
-            const processor = getProcessor();
-            // Don't await - let it run in background
-            processor.processJob(job.id).catch((error) => {
+            // Start processing (insert events, then the extraction drain)
+            // in the background.
+            runImportJob(job.id).catch((error) => {
               console.error('Import job failed:', error);
             });
 
@@ -467,8 +574,7 @@ export function importRoutes(dbClient: DatabaseClient) {
           });
 
           // Start processing in background
-          const processor = getProcessor();
-          processor.processJob(jobId).catch((error) => {
+          runImportJob(jobId).catch((error) => {
             console.error('Import job failed:', error);
           });
 
@@ -479,425 +585,6 @@ export function importRoutes(dbClient: DatabaseClient) {
           detail: {
             tags: ['Import'],
             description: 'Resume a failed import job (super admin only)',
-          },
-        },
-      )
-      /**
-       * POST /api/import/:jobId/run-intern
-       * Run Intern classification on all messages for a job
-       */
-      .post(
-        '/api/import/:jobId/run-intern',
-        async ({ params: { jobId }, set }) => {
-          // Atomically transition to running_intern — prevents two concurrent
-          // calls from both proceeding past this point.
-          const job = await jobRepo.transitionStatus(
-            jobId,
-            ['awaiting_intern', 'intern_complete'],
-            'running_intern',
-          );
-
-          if (!job) {
-            // Either the job doesn't exist or it wasn't in an expected status
-            const existing = await jobRepo.findById(jobId);
-            if (!existing) {
-              set.status = 404;
-              return { error: 'Import job not found' };
-            }
-            set.status = 409;
-            return {
-              error: `Job is currently ${existing.status}, cannot run Intern`,
-            };
-          }
-
-          if (!job.familyId || !job.conversationId) {
-            set.status = 400;
-            return { error: 'Job missing familyId or conversationId' };
-          }
-
-          if (!hasAIProvider) {
-            await jobRepo.update(jobId, {
-              status: 'awaiting_intern',
-              error: 'No AI provider configured (ANTHROPIC_API_KEY missing)',
-            });
-            set.status = 500;
-            return {
-              error: 'No AI provider configured (ANTHROPIC_API_KEY missing)',
-            };
-          }
-
-          const familyId = job.familyId;
-          const conversationId = job.conversationId;
-
-          // Phase 1 (triage): a real Intern LLM call per unresolved message,
-          // so this runs in the background -- same fire-and-forget shape as
-          // POST /api/imports's own processJob() call -- rather than
-          // blocking this request. The client polls GET /api/import/:jobId
-          // for progress/completion; job.status keeps its current meaning
-          // (a queue-drain in progress, not a synchronous heuristic pass).
-          runInternTriage({
-            dbClient,
-            decisionRepo,
-            queueRepo,
-            familyId,
-            importJobId: jobId,
-            conversationId,
-            internProvider: aiFactory.getProviderForAgent('intern'),
-            internModel: aiFactory.getModelForAgent('intern'),
-            onProgress: async (processed, total) => {
-              await jobRepo.update(jobId, {
-                progress: {
-                  current: processed,
-                  total,
-                  stage: `Classifying messages (${processed}/${total})...`,
-                },
-              });
-            },
-          })
-            .then(async ({ total, failed, counts }) => {
-              await jobRepo.update(jobId, {
-                status: 'intern_complete',
-                progress: {
-                  current: total,
-                  total,
-                  stage:
-                    `Intern complete: ${counts.toProcess} to process, ${counts.toSkip} to skip` +
-                    (failed > 0 ? ` (${failed} failed)` : ''),
-                },
-              });
-
-              await eventLogRepo.log({
-                familyId,
-                eventType: 'import_intern_complete',
-                eventCategory: 'system_event',
-                actor: 'system',
-                actorType: 'system',
-                severity: 'info',
-                eventData: {
-                  importJobId: jobId,
-                  toProcess: counts.toProcess,
-                  toSkip: counts.toSkip,
-                  failed,
-                },
-              });
-            })
-            .catch(async (error) => {
-              const message =
-                error instanceof Error ? error.message : 'Unknown error';
-              console.error('Intern classification failed:', error);
-              await jobRepo.update(jobId, {
-                status: 'awaiting_intern',
-                error: message,
-              });
-            });
-
-          return { success: true, status: 'running_intern' as const };
-        },
-        {
-          params: t.Object({ jobId: t.String() }),
-          detail: {
-            tags: ['Import'],
-            description:
-              'Run Intern classification on imported messages (super admin only)',
-          },
-        },
-      )
-      /**
-       * GET /api/import/:jobId/decisions
-       * Get all Intern decisions with message details
-       */
-      .get(
-        '/api/import/:jobId/decisions',
-        async ({ params: { jobId }, query, set }) => {
-          const job = await jobRepo.findById(jobId);
-          if (!job) {
-            set.status = 404;
-            return { error: 'Import job not found' };
-          }
-
-          if (!job.familyId || !job.conversationId) {
-            set.status = 400;
-            return { error: 'Job missing familyId or conversationId' };
-          }
-
-          // Get decisions
-          const decisions = await decisionRepo.findByJobId(jobId);
-
-          // Get conversation events
-          const { data: events, error: eventsError } = await dbClient
-            .from('conversation_events')
-            .select(
-              'id, content_original, event_type, actor_display_name, occurred_at',
-            )
-            .eq('family_id', job.familyId)
-            .eq('conversation_id', job.conversationId)
-            .order('occurred_at', { ascending: true });
-
-          if (eventsError) {
-            set.status = 500;
-            return { error: `Failed to get events: ${eventsError.message}` };
-          }
-
-          // Build a map of decisions by event ID
-          const decisionMap = new Map(
-            decisions.map((d) => [d.conversationEventId, d]),
-          );
-
-          // Combine events with decisions
-          const messagesWithDecisions: MessageWithDecision[] = (
-            events || []
-          ).map((event) => {
-            const decision = decisionMap.get(event.id);
-            return {
-              id: event.id,
-              occurredAt: new Date(event.occurred_at),
-              actorDisplayName: event.actor_display_name || 'Unknown',
-              content: event.content_original || '',
-              eventType: event.event_type || 'message',
-              decision: decision?.decision || 'process',
-              reason: decision?.reason || null,
-              overridden: decision?.overridden || false,
-            };
-          });
-
-          // Apply filter if provided
-          const filter = (query as { filter?: string }).filter;
-          let filtered = messagesWithDecisions;
-          if (filter === 'process') {
-            filtered = messagesWithDecisions.filter(
-              (m) => m.decision === 'process',
-            );
-          } else if (filter === 'skip') {
-            filtered = messagesWithDecisions.filter(
-              (m) => m.decision === 'skip',
-            );
-          }
-
-          // Get counts
-          const counts = await decisionRepo.getCounts(jobId);
-
-          return {
-            messages: filtered,
-            stats: counts,
-            total: messagesWithDecisions.length,
-          };
-        },
-        {
-          params: t.Object({ jobId: t.String() }),
-          query: t.Object({
-            filter: t.Optional(
-              t.Union([
-                t.Literal('all'),
-                t.Literal('process'),
-                t.Literal('skip'),
-              ]),
-            ),
-          }),
-          detail: {
-            tags: ['Import'],
-            description:
-              'Get Intern decisions for all messages (super admin only)',
-          },
-        },
-      )
-      /**
-       * PATCH /api/import/:jobId/decisions/:eventId
-       * Override an Intern decision
-       */
-      .patch(
-        '/api/import/:jobId/decisions/:eventId',
-        async ({ params: { jobId, eventId }, body, set }) => {
-          const job = await jobRepo.findById(jobId);
-          if (!job) {
-            set.status = 404;
-            return { error: 'Import job not found' };
-          }
-
-          const { decision } = body as { decision: InternDecisionType };
-
-          try {
-            const updated = await decisionRepo.override(
-              jobId,
-              eventId,
-              decision,
-            );
-
-            // Update job progress with new counts
-            const counts = await decisionRepo.getCounts(jobId);
-            await jobRepo.update(jobId, {
-              progress: {
-                ...job.progress,
-                stage: `${counts.toProcess} to process, ${counts.toSkip} to skip (${counts.overridden} overridden)`,
-              },
-            });
-
-            return {
-              success: true,
-              decision: updated,
-              stats: counts,
-            };
-          } catch (error) {
-            set.status = 400;
-            return {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : 'Failed to override decision',
-            };
-          }
-        },
-        {
-          params: t.Object({ jobId: t.String(), eventId: t.String() }),
-          body: t.Object({
-            decision: t.Union([t.Literal('process'), t.Literal('skip')]),
-          }),
-          detail: {
-            tags: ['Import'],
-            description: 'Override an Intern decision (super admin only)',
-          },
-        },
-      )
-      /**
-       * POST /api/import/:jobId/submit-scribe
-       * Submit selected messages to Scribe for processing
-       */
-      .post(
-        '/api/import/:jobId/submit-scribe',
-        async ({ params: { jobId }, set }) => {
-          // Atomically transition to processing_scribe -- prevents two
-          // concurrent submits from both proceeding (each would otherwise
-          // re-enqueue and pay for the same messages twice).
-          const job = await jobRepo.transitionStatus(
-            jobId,
-            ['intern_complete'],
-            'processing_scribe',
-          );
-
-          if (!job) {
-            const existing = await jobRepo.findById(jobId);
-            if (!existing) {
-              set.status = 404;
-              return { error: 'Import job not found' };
-            }
-            set.status = 409;
-            return {
-              error: `Job is currently ${existing.status}, cannot submit to Scribe`,
-            };
-          }
-
-          if (!job.familyId) {
-            set.status = 400;
-            await jobRepo.update(jobId, { status: 'intern_complete' });
-            return { error: 'Job missing familyId' };
-          }
-
-          if (!hasAIProvider) {
-            await jobRepo.update(jobId, {
-              status: 'intern_complete',
-              error: 'No AI provider configured (ANTHROPIC_API_KEY missing)',
-            });
-            set.status = 500;
-            return {
-              error: 'No AI provider configured (ANTHROPIC_API_KEY missing)',
-            };
-          }
-
-          // Get human-reviewed decisions to process
-          const decisions = await decisionRepo.findByJobId(jobId);
-          const eventIds = decisions
-            .filter((d) => d.decision === 'process')
-            .map((d) => d.conversationEventId);
-
-          if (eventIds.length === 0) {
-            await jobRepo.update(jobId, { status: 'intern_complete' });
-            set.status = 400;
-            return { error: 'No messages selected for processing' };
-          }
-
-          await jobRepo.update(jobId, {
-            progress: {
-              current: 0,
-              total: eventIds.length,
-              stage: `Submitting ${eventIds.length} messages to Scribe...`,
-            },
-          });
-
-          const familyId = job.familyId;
-          const skipped = decisions.length - eventIds.length;
-
-          // Phase 2 (extraction): stages: ['scribe', 'registrar'] only --
-          // 'filter' is deliberately excluded (re-running it would both
-          // double-pay for the same judgment and risk silently overriding a
-          // human's override). Real Scribe LLM calls, so this also runs in
-          // the background; the client polls GET /api/import/:jobId.
-          runExtractionDrain({
-            dbClient,
-            queueRepo,
-            familyId,
-            eventIds,
-            scribeProvider: aiFactory.getProviderForAgent('scribe'),
-            scribeModel: aiFactory.getModelForAgent('scribe'),
-            onProgress: async (processed, total) => {
-              await jobRepo.update(jobId, {
-                progress: {
-                  current: processed,
-                  total,
-                  stage: `Processing with Scribe (${processed}/${total})...`,
-                },
-              });
-            },
-          })
-            .then(async ({ total, processed, failed }) => {
-              await jobRepo.update(jobId, {
-                status: 'complete',
-                progress: {
-                  current: total,
-                  total,
-                  stage:
-                    `Processed ${processed} messages` +
-                    (failed > 0 ? ` (${failed} failed)` : ''),
-                },
-                completedAt: new Date(),
-              });
-
-              await eventLogRepo.log({
-                familyId,
-                eventType: 'import_completed',
-                eventCategory: 'system_event',
-                actor: 'system',
-                actorType: 'system',
-                severity: 'info',
-                eventData: {
-                  importJobId: jobId,
-                  source: job.source,
-                  messagesProcessed: processed,
-                  messagesFailed: failed,
-                  messagesSkipped: skipped,
-                },
-              });
-            })
-            .catch(async (error) => {
-              const message =
-                error instanceof Error ? error.message : 'Unknown error';
-              console.error('Scribe extraction failed:', error);
-              await jobRepo.update(jobId, {
-                status: 'intern_complete',
-                error: message,
-              });
-            });
-
-          return {
-            success: true,
-            status: 'processing_scribe' as const,
-            submitted: eventIds.length,
-          };
-        },
-        {
-          params: t.Object({ jobId: t.String() }),
-          detail: {
-            tags: ['Import'],
-            description:
-              'Submit selected messages to Scribe (super admin only)',
           },
         },
       )

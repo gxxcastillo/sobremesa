@@ -167,16 +167,13 @@ async function main() {
     logger.debug('Starting MessageQueue...');
     const queue = new MessageQueue({
       repository: new ProcessingQueueRepository(dbClient),
-      // Never claim a 'triage'- or 'extract'-only row: both belong to
-      // import's scoped drains (libs/import/src/lib/intern-triage.ts), not
-      // this always-on poller. 'triage' means a human hasn't reviewed the
-      // message yet -- claiming it early would run Scribe on it before the
-      // review screen ever sees it, silently defeating the review. 'extract'
-      // means the message is mid-drain through the extraction phase's own
-      // scribe+registrar-only pipeline -- claiming it here would instead run
-      // the full live stage set (Intern/Historian/Facilitator included) on a
-      // bulk-import backfill message, and could race the scoped drain's own
-      // dequeue for the same row.
+      // Never claim an 'import'-owned row: those belong to import's own
+      // scoped drain (libs/import/src/lib/import-drain.ts), not this
+      // always-on poller. Claiming one here would run the full live stage
+      // set (admin/Historian/Facilitator included) on a historical import
+      // message -- import deliberately never wires those stages, so a
+      // historical message must never send an outbound message or answer a
+      // question.
       queueOptions: { intentFilter: ['live'] },
     });
     queue.setHandler(processor.createHandler());

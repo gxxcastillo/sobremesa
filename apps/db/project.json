@@ -11,49 +11,57 @@
     "stop": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "supabase stop"
+        "command": "supabase stop",
+        "cwd": "{projectRoot}"
       }
     },
     "status": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "supabase status"
+        "command": "supabase status",
+        "cwd": "{projectRoot}"
       }
     },
     "reset": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "supabase db reset"
+        "command": "supabase db reset",
+        "cwd": "{projectRoot}"
       }
     },
     "push": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "supabase db push"
+        "command": "supabase db push",
+        "cwd": "{projectRoot}"
       }
     },
     "pull": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "supabase db pull"
+        "command": "supabase db pull",
+        "cwd": "{projectRoot}"
       }
     },
     "diff": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "supabase db diff"
+        "command": "supabase db diff",
+        "cwd": "{projectRoot}"
       }
     },
     "migration-new": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "supabase migration new"
+        "command": "supabase migration new",
+        "cwd": "{projectRoot}"
       }
     },
     "migration-list": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "supabase migration list"
+        "command": "supabase migration list",
+        "cwd": "{projectRoot}"
       }
     },
     "test": {

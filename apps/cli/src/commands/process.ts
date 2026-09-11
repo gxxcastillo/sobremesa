@@ -126,7 +126,7 @@ export interface ProcessOptions {
 }
 
 /** Valid `processing_queue.intent` values -- see `--intent` below. */
-export const ALL_QUEUE_INTENTS: QueueIntent[] = ['live', 'triage', 'extract'];
+export const ALL_QUEUE_INTENTS: QueueIntent[] = ['live', 'import'];
 
 /**
  * Parses `--intent` (comma-separated), defaulting to no filter (claims any
@@ -261,7 +261,7 @@ export const processCommand = defineCommand({
     },
     intent: {
       type: 'string',
-      description: `Comma-separated processing_queue.intent list to claim (${ALL_QUEUE_INTENTS.join(',')}). Default: no restriction (claims any intent, today's behavior). Lets a local run replicate Studio's two-phase drain -- e.g. --intent=triage to drain only a triage-only import scope, or --intent=live to mirror the always-on live poller's own exclusion of triage and extract rows.`,
+      description: `Comma-separated processing_queue.intent list to claim (${ALL_QUEUE_INTENTS.join(',')}). Default: no restriction (claims any intent, today's behavior). --intent=live mirrors the always-on live poller's own exclusion of 'import'-owned rows; --intent=import claims only rows an import drain enqueued.`,
     },
   },
   async run({ args }) {

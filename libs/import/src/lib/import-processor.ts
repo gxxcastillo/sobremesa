@@ -408,27 +408,31 @@ export class ImportProcessor {
       'Conversation events inserted',
     );
 
-    // Step 4: Pause for Intern review. Transition atomically so a cancel
-    // after the last batch cannot be overwritten by this final status update.
-    const reviewJob = await this.jobRepo.transitionStatus(
+    // Step 4: Events are inserted; the caller (apps/api) chains the shared
+    // Intern -> Scribe -> Registrar drain immediately once processJob()
+    // resolves -- no pre-extraction review checkpoint. Transition
+    // atomically so a cancel after the last batch cannot be overwritten by
+    // this final status update.
+    const drainReadyJob = await this.jobRepo.transitionStatus(
       job.id,
       ['submitting'],
-      'awaiting_intern',
+      'processing',
       {
         current: messages.length,
         total: messages.length,
-        stage: 'Messages imported. Ready for Intern review.',
+        stage: 'Messages imported. Starting extraction...',
       },
     );
 
-    if (!reviewJob) {
+    if (!drainReadyJob) {
       await this.checkCancelled(job.id);
       throw new Error(
-        'Import job status changed before Intern review transition',
+        'Import job status changed before the extraction-drain transition',
       );
     }
 
-    // Log that messages are imported (not complete - Intern/Scribe still pending)
+    // Log that messages are imported (not complete - the extraction drain
+    // still runs after this).
     await this.eventLogRepo.log({
       familyId,
       eventType: 'import_messages_inserted',
@@ -447,7 +451,7 @@ export class ImportProcessor {
 
     this.logger.info(
       { jobId: job.id, messagesInserted: messages.length },
-      'Messages inserted, awaiting Intern review',
+      'Messages inserted, starting extraction drain',
     );
   }
 }

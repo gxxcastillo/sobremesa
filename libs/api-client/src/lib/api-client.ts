@@ -38,15 +38,19 @@ export interface ImportConfig {
   participants: ParticipantConfig[];
 }
 
+/**
+ * Every ingress (Studio import, CLI import, live chat) runs events through
+ * the same immediate Intern -> Scribe -> Registrar pipeline with no
+ * pre-extraction review checkpoint -- see
+ * `.agents/plans/unified-import-pipeline-plan.md`. 'processing' covers both
+ * the message-insertion phase and the shared-pipeline extraction drain that
+ * follows it; `stage` (below) carries the human-readable detail.
+ */
 export type ImportJobStatus =
   | 'pending'
   | 'creating_family'
   | 'creating_identities'
   | 'submitting'
-  | 'awaiting_intern'
-  | 'running_intern'
-  | 'intern_complete'
-  | 'processing_scribe'
   | 'processing'
   | 'hydrating'
   | 'complete'
@@ -67,24 +71,6 @@ export interface ImportStatus {
   error?: string;
   startedAt: Date;
   completedAt?: Date;
-  internStats?: {
-    toProcess: number;
-    toSkip: number;
-    overridden: number;
-  };
-}
-
-export type InternDecisionType = 'process' | 'skip';
-
-export interface MessageWithDecision {
-  id: string;
-  occurredAt: Date;
-  actorDisplayName: string;
-  content: string;
-  eventType: string;
-  decision: InternDecisionType;
-  reason: string | null;
-  overridden: boolean;
 }
 
 export interface MessageFingerprint {
@@ -779,98 +765,14 @@ export class StudioApiClient {
   }
 
   /**
-   * Resume a failed import job
+   * Resume a failed import job. There is no separate review/submit step:
+   * the API automatically continues straight through insertion and the
+   * shared extraction drain to `complete`/`failed` -- poll
+   * `getImportStatus(jobId)`.
    * @param jobId The job ID to resume
    */
   async resumeImport(jobId: string): Promise<void> {
     await this.request<void>(`/import/${jobId}/resume`, {
-      method: 'POST',
-    });
-  }
-
-  // ============================================================================
-  // Intern Review Methods (Super Admin only)
-  // ============================================================================
-
-  /**
-   * Start Intern classification on all messages for a job. Runs in the
-   * background (a real LLM call per unresolved message) -- poll
-   * `getImportStatus(jobId)` until `status` is `'intern_complete'` (done) or
-   * reverts to `'awaiting_intern'` with `.error` set (failed).
-   */
-  async runIntern(jobId: string): Promise<{
-    success: boolean;
-    status: 'running_intern';
-  }> {
-    return this.request<{
-      success: boolean;
-      status: 'running_intern';
-    }>(`/import/${jobId}/run-intern`, {
-      method: 'POST',
-    });
-  }
-
-  /**
-   * Get Intern decisions for all messages
-   * @param jobId The import job ID
-   * @param filter Optional filter: 'all', 'process', or 'skip'
-   * @returns Messages with their Intern decisions
-   */
-  async getInternDecisions(
-    jobId: string,
-    filter?: 'all' | 'process' | 'skip',
-  ): Promise<{
-    messages: MessageWithDecision[];
-    stats: { toProcess: number; toSkip: number; overridden: number };
-    total: number;
-  }> {
-    const params = filter ? `?filter=${filter}` : '';
-    return this.request<{
-      messages: MessageWithDecision[];
-      stats: { toProcess: number; toSkip: number; overridden: number };
-      total: number;
-    }>(`/import/${jobId}/decisions${params}`);
-  }
-
-  /**
-   * Override an Intern decision for a specific message
-   * @param jobId The import job ID
-   * @param eventId The conversation event ID
-   * @param decision The new decision: 'process' or 'skip'
-   */
-  async overrideInternDecision(
-    jobId: string,
-    eventId: string,
-    decision: InternDecisionType,
-  ): Promise<{
-    success: boolean;
-    stats: { toProcess: number; toSkip: number; overridden: number };
-  }> {
-    return this.request<{
-      success: boolean;
-      stats: { toProcess: number; toSkip: number; overridden: number };
-    }>(`/import/${jobId}/decisions/${eventId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ decision }),
-    });
-  }
-
-  /**
-   * Start submitting the human-approved messages to Scribe. Runs in the
-   * background (a real Scribe LLM call per message) -- poll
-   * `getImportStatus(jobId)` until `status` is `'complete'` (done) or
-   * reverts to `'intern_complete'` with `.error` set (failed).
-   */
-  async submitToScribe(jobId: string): Promise<{
-    success: boolean;
-    status: 'processing_scribe';
-    submitted: number;
-  }> {
-    return this.request<{
-      success: boolean;
-      status: 'processing_scribe';
-      submitted: number;
-    }>(`/import/${jobId}/submit-scribe`, {
       method: 'POST',
     });
   }

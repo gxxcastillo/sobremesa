@@ -5,14 +5,15 @@ export type QueueItemStatus = 'queued' | 'processing' | 'done' | 'error';
 
 /**
  * What a queued row is queued *for*: 'live' (the always-on production
- * poller, full stage set), 'triage' (a scoped drain running only
- * router+filter, e.g. import's phase-1 Intern review), or 'extract' (a
- * scoped drain running only scribe+registrar, e.g. import's phase-2
- * submission after human review). See `dequeue_processing_queue_item`'s own
- * `p_intent_filter` parameter -- this is what lets a scoped drain and the
- * live poller avoid competing for the same row.
+ * poller, full stage set) or 'import' (a scoped drain owned by a Studio/CLI
+ * import job, running the same full Intern->Scribe->Registrar stage set
+ * directly against a bounded, known set of event ids). Distinguishing these
+ * lets the live poller refuse to ever claim a row an import drain owns --
+ * import deliberately never wires admin/historian/facilitatorNudge, so a
+ * historical import must never be processed by the live pipeline instead.
+ * See `dequeue_processing_queue_item`'s own `p_intent_filter` parameter.
  */
-export type QueueIntent = 'live' | 'triage' | 'extract';
+export type QueueIntent = 'live' | 'import';
 
 /**
  * Queue priority levels.
@@ -94,9 +95,7 @@ export interface QueueOptions {
    * Restrict dequeue to rows whose intent is in this list. Default:
    * undefined (no restriction -- matches every intent, today's behavior).
    * The always-on live poller (`apps/chatbots`) sets this explicitly to
-   * `['live']` so it can never claim a 'triage'-only row before a human has
-   * reviewed it, or an 'extract' row owned by import's scoped extraction
-   * drain.
+   * `['live']` so it can never claim an 'import'-owned row.
    */
   intentFilter?: QueueIntent[];
 }

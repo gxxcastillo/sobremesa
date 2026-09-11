@@ -64,23 +64,20 @@ function ReviewRow(props: {
       <td>
         <Show
           when={props.row.intern}
-          fallback={<span class="score-badge fail">no decision</span>}
+          fallback={<span class="score-badge fail">no activity</span>}
         >
           {(intern) => (
             <>
               <span
                 class="score-badge"
                 classList={{
-                  pass: intern().decision === 'process',
-                  fail: intern().decision === 'skip',
+                  pass: intern().relevant === true,
+                  fail: intern().relevant === false,
                 }}
               >
-                {intern().decision}
+                {intern().action}
               </span>
               <div class="verification-reason">{intern().reason}</div>
-              <Show when={intern().overridden}>
-                <div class="hint">Human override</div>
-              </Show>
             </>
           )}
         </Show>
@@ -91,10 +88,10 @@ function ReviewRow(props: {
           classList={{
             pass:
               props.row.candidateActiveClaims === 0 &&
-              props.row.intern?.decision === 'skip',
+              props.row.intern?.relevant === false,
             fail:
               props.row.candidateActiveClaims > 0 &&
-              props.row.intern?.decision === 'skip',
+              props.row.intern?.relevant === false,
           }}
         >
           {props.row.candidateActiveClaims} active claim(s)
@@ -177,7 +174,7 @@ export function ImportVerification() {
       </Show>
       <Show when={report.loading}>
         <p class="hint">
-          Comparing source events, Intern decisions, and active claims…
+          Comparing source events, Intern activity, and active claims…
         </p>
       </Show>
       <Show when={report()}>
@@ -191,7 +188,7 @@ function VerificationReport(props: { report: ImportVerificationReport }) {
   const rowsNeedingReview = () =>
     props.report.rows.filter(
       (row) =>
-        row.intern?.decision === 'skip' ||
+        row.intern?.relevant === false ||
         !row.inputMatches ||
         !row.candidateEvent ||
         row.candidateActiveClaims === 0,
@@ -208,10 +205,11 @@ function VerificationReport(props: { report: ImportVerificationReport }) {
           </div>
         </div>
         <div class="card">
-          <strong>{props.report.intern.process}</strong>
-          <span> Intern process</span>
+          <strong>{props.report.intern.relevant}</strong>
+          <span> Intern relevant</span>
           <div class="hint">
-            {props.report.intern.skip} skip · {props.report.intern.missing}{' '}
+            {props.report.intern.notRelevant} not relevant ·{' '}
+            {props.report.intern.admin} admin · {props.report.intern.missing}{' '}
             missing
           </div>
         </div>

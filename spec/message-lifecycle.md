@@ -35,11 +35,12 @@ always retried before its newer queued rows, rather than waiting for every other
 drain. The live processor handles one item at a time per worker; the dequeue exclusion preserves
 deterministic per-family text order across workers.
 
-Every `processing_queue` row also carries an `intent` (`'live' | 'triage' | 'extract'`, default
-`'live'`), and the dequeue function takes an optional intent filter. The always-on live poller
-(`apps/chatbots`) restricts itself to `['live', 'extract']` — it can never claim a `'triage'`-intent
-row, which exists specifically so a scoped import drain (§4.6) and the live poller never compete for
-the same row.
+Every `processing_queue` row also carries an `intent` (`'live' | 'import'`, default `'live'`), and
+the dequeue function takes an optional intent filter. The always-on live poller (`apps/chatbots`)
+restricts itself to `['live']` — it can never claim an `'import'`-owned row, which exists
+specifically so the import drain (§4.6) and the live poller never compete for the same row: import
+deliberately never wires `admin`/`historian`/`facilitatorNudge`, so a historical message must never
+be processed by the live pipeline instead.
 
 `MessageProcessor`:
 
@@ -47,7 +48,10 @@ the same row.
 2. Marks answered bot questions when the event replies to a tracked question and carries that
    question text forward as extraction context.
 3. Creates image records for media.
-4. Routes to ignore, admin, historian, or Scribe.
+4. Routes to ignore, admin, historian, or Scribe, and logs exactly one `intern_evaluated` audit
+   event per `InternAgent.route()` call — the canonical, append-only record of that routing
+   decision (action, relevance, reason, language, and whether it was deterministic or model-backed),
+   for every ingress alike. It is derived processing history, not a later pipeline input.
 5. Runs the Scribe path when appropriate: filter → Scribe → image-link fallback → Registrar.
 6. Returns a success/failure result. `MessageProcessor` never marks the queue row itself; the queue
    loop is the sole owner of completing or failing it. Failures requeue for retry up to a max
@@ -102,34 +106,43 @@ resume, show status/help, set primary language, and create Studio links.
 
 ## 4.6 Imported History
 
+There is no pre-extraction review checkpoint: every ingress — Studio import, CLI import, and live
+chat — persists an event, queues it, and runs the same shared Intern → Scribe → Registrar pipeline
+immediately. A prior design paused every Studio import at a two-phase human review step backed by a
+mutable `intern_decisions` table; that was retired (see ADR-032 and
+`.agents/plans/unified-import-pipeline-plan.md`) because Intern's per-message routing result is
+derived processing history, not family knowledge or a workflow gate, and a held-open review pauses a
+background pass indefinitely on browser/device/server availability. Quality control after import
+happens through the existing claim/admin/redaction paths, on durable data, not by approving raw
+messages one at a time before extraction.
+
 The Studio WhatsApp import path enters through the API but reuses the same ledger and queue:
 
 1. Browser parses/previews a `.txt` export and posts file + family/participant config.
 2. `ImportProcessor` creates/reuses family and participant records, then inserts immutable
-   `conversation_events` under an import conversation id. Every parsed event is written and, later,
-   enqueued unconditionally — there is no separate pre-queue skip/process decision at this stage
-   (matches live's `MessageIngester`, which never consults Intern before enqueueing either).
-3. **Phase 1 (triage).** Every event in the job's conversation is enqueued with
-   `intent: 'triage'` and drained directly (by event id, not via the shared dequeue function, so
-   this never competes with the live poller or a concurrent scoped drain) through
-   `buildMessagePipeline({ stages: ['router', 'filter'] })` — Intern's real router and filter, the
-   same free-rule-then-LLM-fallback judgment a live message gets, at no Scribe cost. Every verdict
-   (relevant or not) is recorded into `intern_decisions` via a filter-decision callback threaded
-   through `MessageProcessor`, replacing the old free heuristic-only guess.
-4. **Human review**, unchanged UI/UX: the Studio wizard shows each message with Intern's real
-   `process`/`skip` decision and reason; a super admin can override any of them.
-5. **Phase 2 (extraction).** The human-approved (`process`) events are re-enqueued with
-   `intent: 'extract'` and drained through `buildMessagePipeline({ stages: ['scribe', 'registrar'] })`
-   — `'filter'` is deliberately excluded here: `MessageProcessor` defaults `shouldProcess` to `true`
-   when no filter is wired, and re-running it would both double-pay for the same judgment and risk
-   silently overriding a human's override.
+   `conversation_events` under an import conversation id. Every parsed event is written unconditionally
+   — there is no pre-queue skip/process decision at this stage (matches live's `MessageIngester`,
+   which never consults Intern before enqueueing either).
+3. Once events are inserted, the API automatically runs the shared **import drain**
+   (`runImportDrain()`, `libs/import/src/lib/import-drain.ts`): every event in the job's conversation
+   is enqueued with `intent: 'import'` and drained directly (by event id, not via the shared dequeue
+   function, so this never competes with the live poller) through `buildMessagePipeline({ stages:
+['router', 'filter', 'imageLinker', 'scribe', 'registrar'] })` — the same real
+   Intern → Scribe → Registrar pipeline a live message gets, minus `admin`/`historian`/
+   `facilitatorNudge`: a historical import must never send an outbound message or answer a question.
+4. The import job's status moves straight from inserting messages to `complete` (or `failed`) once
+   the drain finishes — no manual API call and no intermediate review state.
 
-`sbm import`/`sbm process` (local dev CLI) don't have a human reviewer in the loop, so they collapse
-phases 1-2 into `sbm process`'s own single default pass (`router, filter, imageLinker, scribe,
-registrar`) — the same per-event shape a live message gets, just run as a batch. `sbm import` enqueues
-every parsed event unconditionally (default `intent: 'live'`, since nothing else competes with a
-local one-shot batch run); `sbm process` accepts an optional `--intent` filter for replicating the
-Studio two-phase shape locally if needed.
+`sbm import`/`sbm process` (local dev CLI) enqueue every parsed event unconditionally (default
+`intent: 'live'`, since nothing else competes with a local one-shot batch run) and drain them through
+`sbm process`'s own default stage set (`router, filter, imageLinker, scribe, registrar`) — the same
+per-event shape a live message gets, just run as a batch; `sbm process` accepts an optional `--intent`
+filter (`live` or `import`) for scoping a run to one owner.
+
+Every actual `InternAgent.route()` resolution, on any ingress, writes exactly one `intern_evaluated`
+audit event (§4.2) — the durable record of what Intern decided and why. It is never read back as
+pipeline input.
 
 Duplicate checking compares timestamp, actor, and content prefix before import. Failed imports can be
-resumed; in-progress imports can be cancelled between insertion batches.
+resumed (re-entering insertion, then the drain, automatically); in-progress imports can be cancelled
+between insertion batches.

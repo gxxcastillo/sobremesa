@@ -31,7 +31,8 @@ chatbots app  ──ingest──►  conversation_events  ──enqueue──►
 
 Studio (web) ── HTTPS ──► api app ──► same Postgres (read summaries, claim identity, admin)
       │
-      └── WhatsApp import wizard ──► import_jobs + intern_decisions ──► queue selected messages
+      └── WhatsApp import wizard ──► import_jobs ──► same processing_queue, same pipeline above
+                                      (no pre-extraction review checkpoint)
 ```
 
 ## 1.3 Repository Shape

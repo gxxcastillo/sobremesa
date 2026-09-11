@@ -74,15 +74,26 @@ function pipelineExplanation(trace: MessageTraceResult): string {
   if (trace.event.eventType !== 'message') {
     return `Non-text event ("${trace.event.eventType}") — Intern's filter skips these deterministically ("let Scribe handle those"), and the processor only runs Scribe when there's text content. Nothing here called an LLM.`;
   }
+  // trace.intern is the latest `intern_evaluated` event_log entry -- the
+  // canonical, append-only record of every InternAgent.route() call, for
+  // every ingress (live chat, Studio import, CLI import) alike. It is an
+  // observed pipeline result, not a reviewable decision.
   if (trace.intern) {
-    const override = trace.intern.overridden
-      ? ` A human overrode Intern's original ${trace.intern.originalDecision ?? 'unknown'} decision.`
-      : '';
-    if (trace.intern.decision === 'skip') {
-      return `Intern skipped this imported message before Scribe ran: ${trace.intern.reason}.${override}`;
+    const methodNote =
+      trace.intern.method === 'deterministic'
+        ? ' (deterministic, no LLM call)'
+        : ` (model call${trace.intern.tokensUsed ? `, ${trace.intern.tokensUsed} tokens` : ''})`;
+    if (trace.intern.action === 'ignore') {
+      return `Intern routed this to ignore${methodNote}: ${trace.intern.reason}. No extraction call was made.`;
     }
-    return `Intern approved this imported message for extraction: ${trace.intern.reason}.${override} Scribe ${registrarSummary ? 'ran and recorded a persist summary.' : 'has no recorded persist summary.'}${rejectionNote}${groundingNote}`;
+    if (trace.intern.action === 'admin') {
+      return `Intern routed this to admin${methodNote}: ${trace.intern.reason}. This is deterministic command/DM/mention handling, not a Scribe-relevance judgment.`;
+    }
+    return `Intern routed this to ${trace.intern.action}${methodNote}: ${trace.intern.reason}. Scribe ${registrarSummary ? 'ran and recorded a persist summary.' : 'has no recorded persist summary.'}${rejectionNote}${groundingNote}`;
   }
+  // Historical data predating the universal intern_evaluated audit event
+  // (see .agents/plans/unified-import-pipeline-plan.md item 1) falls back
+  // to the older, ambiguous markers it replaced.
   if (filtered) {
     const reason = filtered.eventData?.['reason'] ?? 'no reason recorded';
     return `Intern's filter call rejected this before Scribe ran: ${reason}. No extraction call was made.`;
@@ -94,7 +105,7 @@ function pipelineExplanation(trace: MessageTraceResult): string {
     }. Scribe then ran${registrarSummary ? '.' : ' — no persist summary was recorded, though.'}${rejectionNote}${groundingNote}`;
   }
   if (registrarSummary) {
-    return `No Intern decision was recorded. This family was imported before the real Intern review path, or this message did not pass through that import flow. Scribe ran unconditionally.${rejectionNote}${groundingNote}`;
+    return `No Intern activity was recorded for this event. Scribe ran unconditionally.${rejectionNote}${groundingNote}`;
   }
   return 'No routing decision and no Scribe/Registrar summary recorded — this message may never have reached the queue processor.';
 }
@@ -273,37 +284,37 @@ function TraceCard(props: {
       </Show>
 
       <div class="trace-intern">
-        <h3>Intern review</h3>
+        <h3>Intern activity</h3>
         <Show
           when={props.trace.intern}
           fallback={
             <p class="hint">
-              No persisted Intern decision — this family may predate the
-              two-phase import review, or the message did not enter through it.
+              No persisted Intern activity — this event predates the universal
+              `intern_evaluated` audit event, or nothing routed it through
+              `InternAgent.route()`.
             </p>
           }
         >
-          {(decision) => (
+          {(activity) => (
             <div>
               <span
                 class="category-tag"
                 classList={{
-                  'severity-warning-tag': decision().decision === 'skip',
+                  'severity-warning-tag': activity().action === 'ignore',
                 }}
               >
-                {decision().decision}
+                {activity().action}
               </span>{' '}
-              {decision().reason}
-              <Show when={decision().overridden}>
-                <div class="hint">
-                  Human override · original:{' '}
-                  {decision().originalDecision ?? 'unknown'}
-                </div>
-              </Show>
+              {activity().reason}
               <div class="hint">
-                Updated {fmt(decision().updatedAt)} · import job{' '}
-                {decision().importJobId}
+                relevant: {String(activity().relevant)} · method:{' '}
+                {activity().method}
+                {activity().model ? ` (${activity().model})` : ''}
+                {activity().language
+                  ? ` · language: ${activity().language}`
+                  : ''}
               </div>
+              <div class="hint">Observed {fmt(activity().observedAt)}</div>
             </div>
           )}
         </Show>

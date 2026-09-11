@@ -194,7 +194,11 @@ describe('MessageProcessor', () => {
 
   it('reports success without completing the queue item when routed to ignore', async () => {
     const processor = createProcessor();
-    processor.setRouter(async () => ({ action: 'ignore', reason: 'spam' }));
+    processor.setRouter(async () => ({
+      action: 'ignore',
+      reason: 'spam',
+      method: 'deterministic',
+    }));
     const scribe = vi.fn();
     processor.setScribe(scribe);
 
@@ -211,6 +215,7 @@ describe('MessageProcessor', () => {
       action: 'admin',
       adminSubtype: 'command',
       reason: 'admin command',
+      method: 'deterministic',
     }));
     const adminProcessor = vi.fn().mockResolvedValue({ success: true });
     processor.setAdminProcessor(adminProcessor);
@@ -231,6 +236,7 @@ describe('MessageProcessor', () => {
       action: 'admin',
       adminSubtype: 'command',
       reason: 'admin command',
+      method: 'deterministic',
     }));
     const adminProcessor = vi
       .fn()
@@ -252,6 +258,7 @@ describe('MessageProcessor', () => {
     processor.setRouter(async () => ({
       action: 'historian',
       reason: 'question asked',
+      method: 'deterministic',
     }));
     const historianProcessor = vi.fn().mockImplementation(async () => {
       callOrder.push('historian');
@@ -287,6 +294,7 @@ describe('MessageProcessor', () => {
     processor.setRouter(async () => ({
       action: 'historian',
       reason: 'question asked',
+      method: 'deterministic',
     }));
     const historianProcessor = vi
       .fn()
@@ -330,12 +338,19 @@ describe('MessageProcessor', () => {
       action: 'scribe',
       reason: 'relevant',
       language: 'es',
+      method: 'deterministic',
     }));
     // Intern's route() already calls filter() internally, and a router-
     // decided 'ignore' already short-circuits before processTextContent
     // runs -- so this separately registered filter must not be invoked
     // again for a 'scribe' routing outcome.
-    const filter = vi.fn().mockResolvedValue({ relevant: true, reason: 'ok' });
+    const filter = vi
+      .fn()
+      .mockResolvedValue({
+        relevant: true,
+        reason: 'ok',
+        method: 'deterministic',
+      });
     processor.setFilter(filter);
     const domainModel = createBaseDomainModel();
     const scribe = vi.fn().mockResolvedValue(domainModel);
@@ -355,6 +370,7 @@ describe('MessageProcessor', () => {
       action: 'scribe',
       reason: 'relevant',
       language: 'es',
+      method: 'deterministic',
     }));
     processor.setFilter(vi.fn());
     processor.setScribe(vi.fn().mockResolvedValue(createBaseDomainModel()));
@@ -481,55 +497,67 @@ describe('MessageProcessor', () => {
     expect(mockQueueRepo.complete).not.toHaveBeenCalled();
   });
 
-  it('invokes onFilterDecision when the router itself decides to ignore, even though processTextContent never runs', async () => {
+  it('logs intern_evaluated with relevant=false when the router itself decides to ignore, even though processTextContent never runs', async () => {
     const processor = createProcessor();
     processor.setRouter(async () => ({
       action: 'ignore',
       reason: 'Off-topic banter',
       language: 'es',
+      method: 'model',
+      model: 'claude-haiku-4-5',
       tokensUsed: 42,
     }));
     const filter = vi.fn();
     processor.setFilter(filter);
-    const onFilterDecision = vi.fn().mockResolvedValue(undefined);
-    processor.setOnFilterDecision(onFilterDecision);
     const scribe = vi.fn();
     processor.setScribe(scribe);
 
     const result = await processor.process(EVENT_ID, FAMILY_ID);
 
     expect(result.success).toBe(true);
-    expect(onFilterDecision).toHaveBeenCalledWith(EVENT_ID, FAMILY_ID, {
-      relevant: false,
-      reason: 'Off-topic banter',
-      language: 'es',
-      tokensUsed: 42,
-    });
+    // Canonical, append-only record of this route() call -- one per actual
+    // resolution, action space matches RoutingAction, relevant mirrors it.
+    expect(mockEventLog.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        familyId: FAMILY_ID,
+        eventType: 'intern_evaluated',
+        conversationEventId: EVENT_ID,
+        eventData: {
+          action: 'ignore',
+          relevant: false,
+          reason: 'Off-topic banter',
+          language: 'es',
+          method: 'model',
+          model: 'claude-haiku-4-5',
+          tokensUsed: 42,
+        },
+      }),
+    );
     // The separate registered filter is never reached -- process() returns
     // for 'ignore' before processTextContent runs.
     expect(filter).not.toHaveBeenCalled();
     expect(scribe).not.toHaveBeenCalled();
   });
 
-  it('invokes onFilterDecision as relevant when both router and filter are set and the router routes to scribe', async () => {
-    // Regression test: with both stages wired (the real import-triage
-    // configuration -- see libs/import/src/lib/intern-triage.ts), the
-    // registered `filter` stage's own onFilterDecision call is skipped
-    // (`!this.router` guard in processTextContent) since the router already
-    // called filter() internally. Without a synthesized call for the
-    // 'scribe' outcome, onFilterDecision would only ever fire for 'ignore'
-    // verdicts and never for relevant ones.
+  it('logs exactly one intern_evaluated event when both router and filter are set and the router routes to scribe', async () => {
+    // Regression test: with both stages wired (the shared import pipeline --
+    // see libs/import/src/lib/import-drain.ts), the registered `filter`
+    // stage's own call is skipped (`!this.router` guard in
+    // processTextContent) since the router already called filter()
+    // internally. This confirms exactly one `intern_evaluated` event is
+    // logged, not one from the router branch plus a second from
+    // processTextContent's own (skipped) filter call.
     const processor = createProcessor();
     processor.setRouter(async () => ({
       action: 'scribe',
       reason: 'Family story',
       language: 'en',
+      method: 'model',
+      model: 'claude-haiku-4-5',
       tokensUsed: 17,
     }));
     const filter = vi.fn();
     processor.setFilter(filter);
-    const onFilterDecision = vi.fn().mockResolvedValue(undefined);
-    processor.setOnFilterDecision(onFilterDecision);
     const scribe = vi.fn().mockResolvedValue(createBaseDomainModel());
     processor.setScribe(scribe);
     const registrar = vi.fn();
@@ -538,10 +566,17 @@ describe('MessageProcessor', () => {
     const result = await processor.process(EVENT_ID, FAMILY_ID);
 
     expect(result.success).toBe(true);
-    expect(onFilterDecision).toHaveBeenCalledWith(EVENT_ID, FAMILY_ID, {
+    const internEvaluatedCalls = mockEventLog.log.mock.calls.filter(
+      ([entry]) => entry.eventType === 'intern_evaluated',
+    );
+    expect(internEvaluatedCalls).toHaveLength(1);
+    expect(internEvaluatedCalls[0][0].eventData).toEqual({
+      action: 'scribe',
       relevant: true,
       reason: 'Family story',
       language: 'en',
+      method: 'model',
+      model: 'claude-haiku-4-5',
       tokensUsed: 17,
     });
     // The separate registered filter is never reached -- the router already
@@ -550,29 +585,66 @@ describe('MessageProcessor', () => {
     expect(scribe).toHaveBeenCalled();
   });
 
-  it('does not invoke onFilterDecision when the router routes to admin', async () => {
+  it('logs intern_evaluated with relevant=null when the router routes to admin', async () => {
     const processor = createProcessor();
     processor.setRouter(async () => ({
       action: 'admin',
       adminSubtype: 'status' as const,
       reason: 'Command: /status',
+      method: 'deterministic',
     }));
-    const onFilterDecision = vi.fn().mockResolvedValue(undefined);
-    processor.setOnFilterDecision(onFilterDecision);
+    processor.setAdminProcessor(vi.fn().mockResolvedValue({ success: true }));
 
-    const result = await processor.process(EVENT_ID, FAMILY_ID);
+    await processor.process(EVENT_ID, FAMILY_ID);
 
-    expect(result.success).toBe(true);
-    expect(onFilterDecision).not.toHaveBeenCalled();
+    expect(mockEventLog.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'intern_evaluated',
+        eventData: expect.objectContaining({
+          action: 'admin',
+          relevant: null,
+          method: 'deterministic',
+        }),
+      }),
+    );
   });
 
-  it('invokes onFilterDecision for every filter verdict, relevant or not', async () => {
+  it('processes the same event twice and appends a second intern_evaluated audit event rather than replacing the first', async () => {
     const processor = createProcessor();
-    const filterResults: Record<string, { relevant: boolean; reason: string }> =
-      {
-        'event-relevant': { relevant: true, reason: 'Family story' },
-        'event-not-relevant': { relevant: false, reason: 'Off-topic' },
-      };
+    processor.setRouter(async () => ({
+      action: 'scribe',
+      reason: 'Family story',
+      method: 'deterministic',
+    }));
+    processor.setScribe(vi.fn().mockResolvedValue(createBaseDomainModel()));
+    processor.setRegistrar(vi.fn().mockResolvedValue(undefined));
+
+    await processor.process(EVENT_ID, FAMILY_ID);
+    await processor.process(EVENT_ID, FAMILY_ID);
+
+    const internEvaluatedCalls = mockEventLog.log.mock.calls.filter(
+      ([entry]) => entry.eventType === 'intern_evaluated',
+    );
+    expect(internEvaluatedCalls).toHaveLength(2);
+  });
+
+  it('processes multiple filter verdicts independently -- only the relevant one reaches scribe', async () => {
+    const processor = createProcessor();
+    const filterResults: Record<
+      string,
+      { relevant: boolean; reason: string; method: 'deterministic' }
+    > = {
+      'event-relevant': {
+        relevant: true,
+        reason: 'Family story',
+        method: 'deterministic',
+      },
+      'event-not-relevant': {
+        relevant: false,
+        reason: 'Off-topic',
+        method: 'deterministic',
+      },
+    };
     mockEventRepo.findById.mockImplementation(
       async (_familyId: string, eventId: string) => ({
         ...baseEvent,
@@ -588,41 +660,11 @@ describe('MessageProcessor', () => {
     processor.setFilter(async (eventId: string) => filterResults[eventId]);
     const scribe = vi.fn().mockResolvedValue(createBaseDomainModel());
     processor.setScribe(scribe);
-    const onFilterDecision = vi.fn().mockResolvedValue(undefined);
-    processor.setOnFilterDecision(onFilterDecision);
 
     await processor.process('event-relevant', FAMILY_ID);
     await processor.process('event-not-relevant', FAMILY_ID);
 
-    expect(onFilterDecision).toHaveBeenCalledWith(
-      'event-relevant',
-      FAMILY_ID,
-      filterResults['event-relevant'],
-    );
-    expect(onFilterDecision).toHaveBeenCalledWith(
-      'event-not-relevant',
-      FAMILY_ID,
-      filterResults['event-not-relevant'],
-    );
-    // Only the relevant verdict lets scribe run -- confirms the callback
-    // firing doesn't itself change the shouldProcess decision.
     expect(scribe).toHaveBeenCalledTimes(1);
-  });
-
-  it('propagates an onFilterDecision error as processing failure (unlike onImageCreated, not swallowed)', async () => {
-    const processor = createProcessor();
-    processor.setFilter(async () => ({ relevant: true, reason: 'ok' }));
-    processor.setOnFilterDecision(async () => {
-      throw new Error('db write failed');
-    });
-    const scribe = vi.fn();
-    processor.setScribe(scribe);
-
-    const result = await processor.process(EVENT_ID, FAMILY_ID);
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('db write failed');
-    expect(scribe).not.toHaveBeenCalled();
   });
 
   it('creates an image record and invokes onImageCreated for media events', async () => {

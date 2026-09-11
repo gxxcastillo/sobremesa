@@ -82,10 +82,13 @@ default, override with `LLM_RESPONSE_REPLAY_DB`; gitignored, same as `eval.db`).
 run regardless of input mode; a substituted call still shows up in "LLM calls" via
 `RecordingProvider` (see above), just with a near-zero `durationMs`.
 
-Message Trace also surfaces _why_ a message did or didn't reach an LLM at all. For imports using the
-two-phase review path, it shows the persisted Intern decision, reason, override state, and import
-job alongside the downstream queue and extraction record. A missing decision means the family
-predates that path or the message did not enter through it.
+Message Trace also surfaces _why_ a message did or didn't reach an LLM at all. It reads the latest
+`intern_evaluated` `event_log` entry for the message -- the canonical, append-only record of Intern's
+`route()` call, written the same way for every ingress (live chat, Studio import, CLI import) -- and
+shows the action, relevance, reason, and whether the verdict was deterministic or model-backed,
+alongside the downstream queue and extraction record. This is an observed pipeline result, not a
+review decision: there is no override mechanism. A missing entry means the event predates the
+universal `intern_evaluated` write, or nothing routed it through `InternAgent.route()` at all.
 
 ## Message Trace
 
@@ -163,10 +166,11 @@ source column with a client-side filter, since a family can have 300+ active cla
 
 `/import-verification` is the focused before/after view for a fresh import. Choose the original and
 re-imported families; it verifies source inputs by sequence number, text, and event type; counts the
-fresh Intern `process`/`skip` decisions; and lists every original message that produced active claims.
-For each row it shows the matching fresh event, persisted Intern reason/override, and fresh active
-claim count, with direct links to Message Trace. It is read-only and does not contain any hard-coded
-family message text.
+fresh Intern activity by relevance (relevant / not relevant / admin, from the latest
+`intern_evaluated` event per candidate event -- there is no decision table to count instead); and
+lists every original message that produced active claims. For each row it shows the matching fresh
+event, the latest observed Intern action/reason, and fresh active claim count, with direct links to
+Message Trace. It is read-only and does not contain any hard-coded family message text.
 
 ## API
 
@@ -199,7 +203,7 @@ family message text.
   carries its `claim_analysis` (strength/grounding) and the other side of any `claim_conflicts` it's
   in; `produced.merges` lists `entity_merges` triggered by that event.
 - `GET /api/import-verification?baselineFamilyId=&candidateFamilyId=` — read-only before/after
-  input, Intern-decision, and claim-output report for a fresh import.
+  input, Intern-activity, and claim-output report for a fresh import.
 - `GET /api/providers` — Anthropic configured status plus each Ollama source's base URL and live
   model list (see "Local model sources" above).
 - `POST /api/runs` — `{ input, configs: [{provider, model}] }` → runs the input through each

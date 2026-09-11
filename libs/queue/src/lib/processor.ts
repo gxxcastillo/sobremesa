@@ -5,6 +5,8 @@ import {
   type LanguageCode,
   type RawImageReference,
   type ConversationEvent,
+  type InternDecisionMethod,
+  type InternEvaluatedEventData,
 } from '@sobremesa/shared-types';
 import {
   ConversationEventRepository,
@@ -101,6 +103,10 @@ export interface FilterProcessorResult {
   reason: string;
   /** Detected language of the message (en, es) */
   language?: LanguageCode;
+  /** How this verdict was reached -- deterministic (no LLM call) or model-backed. */
+  method: InternDecisionMethod;
+  /** Model id, present only when `method === 'model'`. */
+  model?: string;
   /** Tokens used for this filter call */
   tokensUsed?: number;
 }
@@ -216,6 +222,10 @@ export interface RoutingProcessorResult {
   reason: string;
   /** Detected language of the message (en, es) */
   language?: LanguageCode;
+  /** How this decision was reached -- deterministic (no LLM call) or model-backed. */
+  method: InternDecisionMethod;
+  /** Model id, present only when `method === 'model'`. */
+  model?: string;
   /** Tokens used (if AI was called) */
   tokensUsed?: number;
 }
@@ -261,26 +271,6 @@ export type OnImageCreatedCallback = (
 ) => void;
 
 /**
- * Callback invoked for every Filter verdict, relevant or not. `processTextContent`
- * itself only ever logs a *not-relevant* verdict to `event_log`
- * (`event_filtered`) -- a relevant verdict never reaches durable storage
- * otherwise. Import's triage drain (`buildMessagePipeline`'s `onFilterDecision`
- * option) supplies a callback that upserts every verdict into
- * `intern_decisions`, replacing the old pre-queue heuristic-only guess with
- * the real filter's own judgment. Live supplies nothing -- no-op, no
- * behavior change. Unlike `OnImageCreatedCallback`, a thrown error here is
- * NOT swallowed: for a triage-only drain, recording the decision *is* the
- * point of the run, so a failure to record one should fail that event's
- * processing (and retry/dead-letter through the normal queue lifecycle)
- * rather than silently succeeding with a missing decision.
- */
-export type FilterDecisionCallback = (
-  eventId: string,
-  familyId: string,
-  result: FilterProcessorResult,
-) => Promise<void>;
-
-/**
  * Message processor that orchestrates Router, Filter, Scribe, Registrar, and Admin.
  * Media events create Image records and notify via callback for async Curator analysis.
  */
@@ -300,7 +290,6 @@ export class MessageProcessor {
   private registrar?: RegistrarProcessor;
   private pipelineVersions?: PipelineVersions;
   private onImageCreated?: OnImageCreatedCallback;
-  private onFilterDecision?: FilterDecisionCallback;
   private logger: pino.Logger;
 
   constructor(options: {
@@ -434,15 +423,6 @@ export class MessageProcessor {
    */
   setOnImageCreated(callback: OnImageCreatedCallback): void {
     this.onImageCreated = callback;
-  }
-
-  /**
-   * Set callback invoked for every Filter verdict (relevant or not). See
-   * `FilterDecisionCallback`'s own doc for why this exists and why, unlike
-   * `onImageCreated`, its errors are not swallowed.
-   */
-  setOnFilterDecision(callback: FilterDecisionCallback): void {
-    this.onFilterDecision = callback;
   }
 
   /**
@@ -639,52 +619,36 @@ export class MessageProcessor {
             adminSubtype: routing.adminSubtype,
             reason: routing.reason,
             language: routing.language,
+            method: routing.method,
             tokensUsed: routing.tokensUsed,
           },
           'Message routed',
         );
 
-        // Log routing decision
+        // Canonical, append-only record of this route() resolution -- one
+        // per actual call, for every ingress. `relevant` mirrors what the
+        // routing action already means: ignore = not relevant, scribe/
+        // historian = relevant, admin = not a Scribe-relevance judgment at
+        // all (deterministic command/DM/mention handling), hence `null`.
+        const internEvaluatedData: InternEvaluatedEventData = {
+          action: routing.action,
+          relevant:
+            routing.action === 'admin' ? null : routing.action !== 'ignore',
+          reason: routing.reason,
+          language: routing.language,
+          method: routing.method,
+          model: routing.model,
+          tokensUsed: routing.tokensUsed,
+        };
         await this.eventLog.log({
           familyId,
-          eventType: 'event_processed',
+          eventType: 'intern_evaluated',
           eventCategory: 'system_event',
-          actor: 'router',
+          actor: 'intern',
           actorType: 'system',
           conversationEventId: eventId,
-          eventData: {
-            stage: 'routed',
-            action: routing.action,
-            adminSubtype: routing.adminSubtype,
-            reason: routing.reason,
-            language: routing.language,
-            tokensUsed: routing.tokensUsed,
-          },
+          eventData: internEvaluatedData as unknown as Record<string, unknown>,
         });
-
-        // Report the router's outcome as a filter verdict. Intern's route()
-        // already calls filter() internally (or deterministically decides
-        // ignore for e.g. an unknown command) before ever reaching here, so
-        // processTextContent's own registered `this.filter` call is skipped
-        // for every routed message (see the `!this.router` guard below) --
-        // without firing it here, onFilterDecision would never fire at all
-        // for a 'scribe'/'historian' routing outcome, only for 'ignore'.
-        // Fire it for every outcome that answers "should this go to Scribe"
-        // (ignore = no, scribe/historian = yes); 'admin' is excluded since
-        // it's deterministic command/DM/mention handling, not a
-        // Scribe-relevance judgment, and never sent through filter().
-        if (this.onFilterDecision && routingAction !== 'admin') {
-          await this.onFilterDecision(eventId, familyId, {
-            relevant: routingAction !== 'ignore',
-            reason:
-              routingResult?.reason ??
-              (routingAction === 'ignore'
-                ? 'Routed to ignore'
-                : 'Routed for processing'),
-            language: routingResult?.language,
-            tokensUsed: routingResult?.tokensUsed,
-          });
-        }
       }
 
       // Handle based on routing action
@@ -857,10 +821,6 @@ export class MessageProcessor {
       this.logger.debug({ eventId }, 'Running Filter');
       filterResult = await this.filter(eventId, familyId, context);
 
-      if (this.onFilterDecision) {
-        await this.onFilterDecision(eventId, familyId, filterResult);
-      }
-
       if (!filterResult.relevant) {
         // Message is not relevant - skip Scribe
         this.logger.info(
@@ -883,6 +843,8 @@ export class MessageProcessor {
           eventData: {
             relevant: false,
             reason: filterResult.reason,
+            method: filterResult.method,
+            model: filterResult.model,
             tokensUsed: filterResult.tokensUsed,
           },
         });
