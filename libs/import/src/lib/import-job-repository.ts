@@ -144,17 +144,24 @@ export class ImportJobRepository {
   /**
    * Atomically transition a job from one of the expected statuses to a new status.
    * Returns the updated job, or null if the job was not in an expected status
-   * (i.e. another request already transitioned it).
+   * (i.e. another request already transitioned it -- e.g. a concurrent cancel).
    */
   async transitionStatus(
     jobId: string,
     expectedStatuses: ImportJobStatus[],
     newStatus: ImportJobStatus,
     progress?: UpdateImportJobOptions['progress'],
+    extra?: Pick<UpdateImportJobOptions, 'error' | 'completedAt'>,
   ): Promise<ImportJob | null> {
     const updateData: Record<string, unknown> = { status: newStatus };
     if (progress) {
       updateData.progress = progress;
+    }
+    if (extra?.error !== undefined) {
+      updateData.error = extra.error;
+    }
+    if (extra?.completedAt) {
+      updateData.completed_at = extra.completedAt.toISOString();
     }
 
     let query = this.client

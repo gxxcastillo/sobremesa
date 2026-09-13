@@ -36,6 +36,7 @@ import {
   type ProcessingQueueRepository,
 } from '@sobremesa/database';
 import type { QueueItem } from '@sobremesa/shared-types';
+import { ImportJobRepository } from './import-job-repository';
 
 /** Progress callback -- fired after each event finishes. */
 export type DrainProgressCallback = (
@@ -46,6 +47,8 @@ export type DrainProgressCallback = (
 export interface ImportDrainOptions {
   dbClient: DatabaseClient;
   queueRepo: ProcessingQueueRepository;
+  /** Checked periodically so a cancel mid-drain stops further processing. */
+  jobId: string;
   familyId: string;
   conversationId: string;
   internProvider: AIProvider;
@@ -83,6 +86,7 @@ export async function runImportDrain(
   const {
     dbClient,
     queueRepo,
+    jobId,
     familyId,
     conversationId,
     internProvider,
@@ -91,6 +95,8 @@ export async function runImportDrain(
     scribeModel,
     onProgress,
   } = options;
+
+  const jobRepo = new ImportJobRepository(dbClient);
 
   const eventIds = await new ConversationEventRepository(
     dbClient,
@@ -107,12 +113,24 @@ export async function runImportDrain(
   // exists for this event -- e.g. a resumed job re-running this same drain.
   // Keep that returned row instead of discarding it and re-fetching it with
   // a second query per event below.
+  //
+  // This is pure bookkeeping (each row is independent, and the processing
+  // loop below iterates `eventIds` in its own fixed order regardless of
+  // which enqueue lands first), so it's safe to fan these out in bounded
+  // batches instead of one round trip at a time -- for a large import this
+  // is otherwise minutes of dead time before any real processing starts.
+  const ENQUEUE_BATCH_SIZE = 25;
   const queueItemsByEventId = new Map<string, QueueItem>();
-  for (const eventId of eventIds) {
-    const queueItem = await queueRepo.enqueue(familyId, eventId, {
-      intent: 'import',
-    });
-    queueItemsByEventId.set(eventId, queueItem);
+  for (let i = 0; i < eventIds.length; i += ENQUEUE_BATCH_SIZE) {
+    const batch = eventIds.slice(i, i + ENQUEUE_BATCH_SIZE);
+    const queueItems = await Promise.all(
+      batch.map((eventId) =>
+        queueRepo.enqueue(familyId, eventId, { intent: 'import' }),
+      ),
+    );
+    batch.forEach((eventId, index) =>
+      queueItemsByEventId.set(eventId, queueItems[index]),
+    );
   }
 
   // Progress is persisted via a DB write per call -- report it on every
@@ -164,6 +182,22 @@ export async function runImportDrain(
       failed++;
     }
     await reportProgress(processed, failed);
+
+    // Check for cancellation on the same throttled cadence as progress
+    // reporting -- one extra read per ~10 events, not one per event -- so a
+    // cancel mid-drain stops further Scribe/Registrar writes within a bounded
+    // window instead of running to completion regardless. The final status
+    // write in the caller (`apps/api/src/routes/import.ts`) is itself an
+    // atomic transition guarded on the job still being 'processing', so it
+    // never clobbers a 'cancelled' status even if a cancel lands in the gap
+    // between checks here.
+    const count = processed + failed;
+    if (count % progressReportInterval === 0) {
+      const job = await jobRepo.findById(jobId);
+      if (job?.status === 'cancelled') {
+        break;
+      }
+    }
   }
 
   return { total: eventIds.length, processed, failed };

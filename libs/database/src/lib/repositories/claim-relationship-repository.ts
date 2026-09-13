@@ -179,22 +179,75 @@ export class ClaimRelationshipRepository {
     familyId: string,
     claimId: string,
   ): Promise<string[]> {
+    const partnerIdsByClaimId = await this.findContradictingClaimIdsForClaims(
+      familyId,
+      [claimId],
+    );
+    return partnerIdsByClaimId.get(claimId) ?? [];
+  }
+
+  /**
+   * Batched form of `findContradictingClaimIds` for a whole set of claim
+   * ids -- two queries total (one per direction) instead of two per claim.
+   * Returns a map from claim id to its contradicting partner ids; a claim
+   * with no contradictions is absent from the map.
+   */
+  async findContradictingClaimIdsForClaims(
+    familyId: string,
+    claimIds: string[],
+  ): Promise<Map<string, string[]>> {
+    const partnerIdsByClaimId = new Map<string, string[]>();
+    if (claimIds.length === 0) {
+      return partnerIdsByClaimId;
+    }
+
+    const addPartner = (claimId: string, partnerId: string) => {
+      const partners = partnerIdsByClaimId.get(claimId);
+      if (partners) {
+        if (!partners.includes(partnerId)) {
+          partners.push(partnerId);
+        }
+      } else {
+        partnerIdsByClaimId.set(claimId, [partnerId]);
+      }
+    };
+
     const [outgoing, incoming] = await Promise.all([
-      this.findByType(familyId, claimId, 'contradicts'),
-      this.findByRelatedClaim(familyId, claimId),
+      this.client
+        .from(this.tableName)
+        .select('*')
+        .eq('family_id', familyId)
+        .eq('relationship_type', 'contradicts')
+        .in('claim_id', claimIds),
+      this.client
+        .from(this.tableName)
+        .select('*')
+        .eq('family_id', familyId)
+        .eq('relationship_type', 'contradicts')
+        .in('related_claim_id', claimIds),
     ]);
 
-    const partnerIds = new Set<string>();
-    for (const rel of outgoing) {
-      partnerIds.add(rel.relatedClaimId);
+    if (outgoing.error) {
+      throw new Error(
+        `Failed to find claim relationships: ${outgoing.error.message}`,
+      );
     }
-    for (const rel of incoming) {
-      if (rel.relationshipType === 'contradicts') {
-        partnerIds.add(rel.claimId);
-      }
+    if (incoming.error) {
+      throw new Error(
+        `Failed to find related claims: ${incoming.error.message}`,
+      );
     }
 
-    return [...partnerIds];
+    for (const row of outgoing.data || []) {
+      const rel = this.mapFromDb(row);
+      addPartner(rel.claimId, rel.relatedClaimId);
+    }
+    for (const row of incoming.data || []) {
+      const rel = this.mapFromDb(row);
+      addPartner(rel.relatedClaimId, rel.claimId);
+    }
+
+    return partnerIdsByClaimId;
   }
 
   /**

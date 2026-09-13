@@ -71,7 +71,7 @@ describe('DataRetriever', () => {
     findByIds: ReturnType<typeof vi.fn>;
   };
   let claimRelationshipRepo: {
-    findContradictingClaimIds: ReturnType<typeof vi.fn>;
+    findContradictingClaimIdsForClaims: ReturnType<typeof vi.fn>;
   };
   let claimAnalysisRepo: { findByClaimIds: ReturnType<typeof vi.fn> };
   let relationshipRepo: {
@@ -102,7 +102,7 @@ describe('DataRetriever', () => {
       findByIds: vi.fn().mockResolvedValue([]),
     };
     claimRelationshipRepo = {
-      findContradictingClaimIds: vi.fn().mockResolvedValue([]),
+      findContradictingClaimIdsForClaims: vi.fn().mockResolvedValue(new Map()),
     };
     claimAnalysisRepo = { findByClaimIds: vi.fn().mockResolvedValue([]) };
     relationshipRepo = {
@@ -141,9 +141,8 @@ describe('DataRetriever', () => {
       claimRepo.findByEntity.mockResolvedValue([claimA]);
       // The partner claim (recorded months apart) was never fetched by this
       // query's own strategy.
-      claimRelationshipRepo.findContradictingClaimIds.mockImplementation(
-        async (_familyId: string, claimId: string) =>
-          claimId === 'claim-a' ? ['claim-b'] : [],
+      claimRelationshipRepo.findContradictingClaimIdsForClaims.mockResolvedValue(
+        new Map([['claim-a', ['claim-b']]]),
       );
       const claimB = makeClaim({
         id: 'claim-b',
@@ -179,7 +178,9 @@ describe('DataRetriever', () => {
       });
       personRepo.findByFuzzyMatch.mockResolvedValue(makePerson());
       claimRepo.findByEntity.mockResolvedValue([claimA, claimB]);
-      claimRelationshipRepo.findContradictingClaimIds.mockResolvedValue([]);
+      claimRelationshipRepo.findContradictingClaimIdsForClaims.mockResolvedValue(
+        new Map(),
+      );
 
       const context = await retriever.retrieve(
         'fam1',
@@ -200,7 +201,7 @@ describe('DataRetriever', () => {
 
       expect(context.hasConflicts).toBe(false);
       expect(
-        claimRelationshipRepo.findContradictingClaimIds,
+        claimRelationshipRepo.findContradictingClaimIdsForClaims,
       ).not.toHaveBeenCalled();
     });
   });

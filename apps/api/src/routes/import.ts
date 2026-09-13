@@ -96,30 +96,29 @@ export function importRoutes(dbClient: DatabaseClient) {
       return;
     }
 
-    if (!job.familyId || !job.conversationId) {
-      await jobRepo.update(jobId, {
-        status: 'failed',
-        error: 'Job missing familyId or conversationId',
-      });
+    const precondition =
+      !job.familyId || !job.conversationId
+        ? 'Job missing familyId or conversationId'
+        : !hasAIProvider
+          ? 'No AI provider configured (ANTHROPIC_API_KEY missing)'
+          : null;
+    if (precondition) {
+      await jobRepo.update(jobId, { status: 'failed', error: precondition });
       return;
     }
 
-    if (!hasAIProvider) {
-      await jobRepo.update(jobId, {
-        status: 'failed',
-        error: 'No AI provider configured (ANTHROPIC_API_KEY missing)',
-      });
-      return;
-    }
-
-    const familyId = job.familyId;
+    // Narrowed by the precondition check above (not by TS control-flow
+    // analysis, since that check is expressed as a single ternary).
+    const familyId = job.familyId as string;
+    const conversationId = job.conversationId as string;
 
     try {
       const { total, processed, failed } = await runImportDrain({
         dbClient,
         queueRepo,
+        jobId,
         familyId,
-        conversationId: job.conversationId,
+        conversationId,
         internProvider: aiFactory.getProviderForAgent('intern'),
         internModel: aiFactory.getModelForAgent('intern'),
         scribeProvider: aiFactory.getProviderForAgent('scribe'),
@@ -135,49 +134,67 @@ export function importRoutes(dbClient: DatabaseClient) {
         },
       });
 
-      await jobRepo.update(jobId, {
-        status: 'complete',
-        progress: {
+      // Atomic: only lands if the job is still 'processing'. If a
+      // concurrent cancel already flipped it to 'cancelled', this is a
+      // no-op rather than silently clobbering that cancellation back to
+      // 'complete'.
+      const completedJob = await jobRepo.transitionStatus(
+        jobId,
+        ['processing'],
+        'complete',
+        {
           current: total,
           total,
           stage:
             `Processed ${processed} messages` +
             (failed > 0 ? ` (${failed} failed)` : ''),
         },
-        completedAt: new Date(),
-      });
+        { completedAt: new Date() },
+      );
 
-      await eventLogRepo.log({
-        familyId,
-        eventType: 'import_completed',
-        eventCategory: 'system_event',
-        actor: 'system',
-        actorType: 'system',
-        severity: 'info',
-        eventData: {
-          importJobId: jobId,
-          source: job.source,
-          messagesProcessed: processed,
-          messagesFailed: failed,
-        },
-      });
+      if (completedJob) {
+        await eventLogRepo.log({
+          familyId,
+          eventType: 'import_completed',
+          eventCategory: 'system_event',
+          actor: 'system',
+          actorType: 'system',
+          severity: 'info',
+          eventData: {
+            importJobId: jobId,
+            source: job.source,
+            messagesProcessed: processed,
+            messagesFailed: failed,
+          },
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      await jobRepo.update(jobId, { status: 'failed', error: message });
-      await eventLogRepo.log({
-        familyId,
-        eventType: 'import_failed',
-        eventCategory: 'system_event',
-        actor: 'system',
-        actorType: 'system',
-        severity: 'error',
-        eventData: {
-          importJobId: jobId,
-          source: job.source,
-          error: message,
-          failedAt: 'extraction drain',
-        },
-      });
+      // Same atomic guard as the completion path above -- a concurrent
+      // cancel must not be overwritten back to 'failed'.
+      const failedJob = await jobRepo.transitionStatus(
+        jobId,
+        ['processing'],
+        'failed',
+        undefined,
+        { error: message },
+      );
+      if (failedJob) {
+        await eventLogRepo.log({
+          familyId,
+          eventType: 'import_failed',
+          eventCategory: 'system_event',
+          actor: 'system',
+          actorType: 'system',
+          severity: 'error',
+          eventData: {
+            importJobId: jobId,
+            source: job.source,
+            error: message,
+            failedAt: 'extraction drain',
+          },
+        });
+      }
       throw error;
     }
   }

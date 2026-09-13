@@ -35,6 +35,7 @@ import type {
   ImportConfig,
   CostEstimate,
   ImportStatus,
+  ImportJobStatus,
   LanguageCode,
   DuplicateCheckResult,
 } from '@sobremesa/shared-types';
@@ -44,6 +45,16 @@ import './ImportWhatsApp.css';
 type WizardStep = 1 | 2 | 3 | 4 | 5;
 
 const STEP_LABELS = ['Upload', 'Family', 'Participants', 'Preview', 'Import'];
+
+// Statuses the import job never leaves once reached -- polling stops and the
+// wizard treats the job as finished. Kept as one shared list so the poller's
+// stop condition and the step-5 render's "still in progress" check can't
+// silently drift apart.
+const TERMINAL_IMPORT_STATUSES: ImportJobStatus[] = [
+  'complete',
+  'failed',
+  'cancelled',
+];
 
 // Language options
 const LANGUAGE_OPTIONS: { value: LanguageCode; label: string }[] = [
@@ -418,11 +429,7 @@ export const ImportWhatsApp: Component = () => {
           const status = await client.getImportStatus(response.jobId);
           setImportStatus(status);
 
-          if (
-            status.status === 'complete' ||
-            status.status === 'failed' ||
-            status.status === 'cancelled'
-          ) {
+          if (TERMINAL_IMPORT_STATUSES.includes(status.status)) {
             clearInterval(interval);
             setPollInterval(null);
             setIsImporting(false);
@@ -976,9 +983,7 @@ export const ImportWhatsApp: Component = () => {
               <Show
                 when={
                   importStatus() &&
-                  !['complete', 'failed', 'cancelled'].includes(
-                    importStatus()!.status,
-                  )
+                  !TERMINAL_IMPORT_STATUSES.includes(importStatus()!.status)
                 }
               >
                 <h2>Importing Messages...</h2>

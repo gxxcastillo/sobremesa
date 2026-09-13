@@ -724,19 +724,14 @@ export class DataRetriever {
 
     const claimsById = new Map(retrievedClaims.map((c) => [c.id, c]));
 
-    const partnerIdsByClaimId = new Map<string, string[]>();
-    await Promise.all(
-      retrievedClaims.map(async (claim) => {
-        const partnerIds =
-          await this.claimRelationshipRepo.findContradictingClaimIds(
-            familyId,
-            claim.id,
-          );
-        if (partnerIds.length > 0) {
-          partnerIdsByClaimId.set(claim.id, partnerIds);
-        }
-      }),
-    );
+    // Deduped by `claimsById`'s keys (a claim can appear in both
+    // `context.claims` and a person's claims) and batched into two queries
+    // total, rather than two per retrieved claim.
+    const partnerIdsByClaimId =
+      await this.claimRelationshipRepo.findContradictingClaimIdsForClaims(
+        familyId,
+        [...claimsById.keys()],
+      );
 
     if (partnerIdsByClaimId.size === 0) {
       return;

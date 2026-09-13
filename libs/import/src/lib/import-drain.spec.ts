@@ -9,6 +9,7 @@ vi.mock('@sobremesa/pipeline', () => ({
 
 const FAMILY_ID = 'family-1';
 const CONVERSATION_ID = 'conv-1';
+const JOB_ID = 'job-1';
 
 function createEventsQueryStub(eventIds: string[]) {
   const chain: Record<string, unknown> = {};
@@ -21,8 +22,45 @@ function createEventsQueryStub(eventIds: string[]) {
   return chain;
 }
 
-function createDbClientStub(eventIds: string[]) {
-  return { from: vi.fn().mockReturnValue(createEventsQueryStub(eventIds)) };
+/** Stub for `ImportJobRepository.findById`'s `.select('*').eq('id', id).single()`. */
+function createImportJobQueryStub(getStatus: () => string) {
+  const chain: Record<string, unknown> = {};
+  chain['select'] = vi.fn().mockReturnValue(chain);
+  chain['eq'] = vi.fn().mockReturnValue(chain);
+  chain['single'] = vi.fn().mockImplementation(async () => ({
+    data: {
+      id: JOB_ID,
+      created_by: 'user-1',
+      status: getStatus(),
+      source: 'whatsapp',
+      config: {},
+      progress: { current: 0, total: 0, stage: '' },
+      batch_ids: [],
+      family_id: FAMILY_ID,
+      conversation_id: CONVERSATION_ID,
+      started_at: new Date().toISOString(),
+    },
+    error: null,
+  }));
+  return chain;
+}
+
+/**
+ * `jobStatus` is read lazily (via a getter) so a test can flip it mid-drain
+ * to simulate a concurrent cancel.
+ */
+function createDbClientStub(
+  eventIds: string[],
+  jobStatus: () => string = () => 'processing',
+) {
+  return {
+    from: vi.fn().mockImplementation((table: string) => {
+      if (table === 'import_jobs') {
+        return createImportJobQueryStub(jobStatus);
+      }
+      return createEventsQueryStub(eventIds);
+    }),
+  };
 }
 
 function createQueueRepoStub(statusByEventId: Record<string, string> = {}) {
@@ -69,6 +107,7 @@ describe('runImportDrain', () => {
     const result = await runImportDrain({
       dbClient: dbClient as never,
       queueRepo: queueRepo as never,
+      jobId: JOB_ID,
       familyId: FAMILY_ID,
       conversationId: CONVERSATION_ID,
       internProvider: {} as never,
@@ -108,6 +147,7 @@ describe('runImportDrain', () => {
     await runImportDrain({
       dbClient: dbClient as never,
       queueRepo: queueRepo as never,
+      jobId: JOB_ID,
       familyId: FAMILY_ID,
       conversationId: CONVERSATION_ID,
       internProvider: {} as never,
@@ -141,6 +181,7 @@ describe('runImportDrain', () => {
     await runImportDrain({
       dbClient: dbClient as never,
       queueRepo: queueRepo as never,
+      jobId: JOB_ID,
       familyId: FAMILY_ID,
       conversationId: CONVERSATION_ID,
       internProvider: {} as never,
@@ -167,6 +208,7 @@ describe('runImportDrain', () => {
     await runImportDrain({
       dbClient: dbClient as never,
       queueRepo: queueRepo as never,
+      jobId: JOB_ID,
       familyId: FAMILY_ID,
       conversationId: CONVERSATION_ID,
       internProvider: {} as never,
@@ -179,6 +221,41 @@ describe('runImportDrain', () => {
     expect(onProgress.mock.calls.map((call) => call[0])).toEqual([10, 20, 25]);
   });
 
+  it('stops processing further events once the job is cancelled mid-drain', async () => {
+    const eventIds = Array.from({ length: 25 }, (_, i) => `event-${i}`);
+    // Flips to 'cancelled' only once the throttled check (every 10 events)
+    // would observe it -- simulates a cancel landing after event 10.
+    let status = 'processing';
+    const dbClient = createDbClientStub(eventIds, () => status);
+    const process = vi.fn().mockImplementation(async (eventId: string) => {
+      if (eventId === 'event-9') {
+        // The 10th processed event (0-indexed) -- flip status right after
+        // it's processed, before the throttled cancellation check runs.
+        status = 'cancelled';
+      }
+      return { success: true };
+    });
+    buildMessagePipeline.mockReturnValue({ process });
+
+    const result = await runImportDrain({
+      dbClient: dbClient as never,
+      queueRepo: queueRepo as never,
+      jobId: JOB_ID,
+      familyId: FAMILY_ID,
+      conversationId: CONVERSATION_ID,
+      internProvider: {} as never,
+      internModel: 'mock-intern-model',
+      scribeProvider: {} as never,
+      scribeModel: 'mock-scribe-model',
+    });
+
+    // Only the first 10 events were processed before the drain observed the
+    // cancellation and stopped -- the remaining 15 are never touched, so no
+    // further Scribe/Registrar writes happen for a cancelled import.
+    expect(process).toHaveBeenCalledTimes(10);
+    expect(result).toEqual({ total: 25, processed: 10, failed: 0 });
+  });
+
   it('skips reprocessing an event whose queue row is already done (resumed job)', async () => {
     const dbClient = createDbClientStub(['event-a', 'event-b']);
     queueRepo = createQueueRepoStub({ 'event-a': 'done' });
@@ -188,6 +265,7 @@ describe('runImportDrain', () => {
     const result = await runImportDrain({
       dbClient: dbClient as never,
       queueRepo: queueRepo as never,
+      jobId: JOB_ID,
       familyId: FAMILY_ID,
       conversationId: CONVERSATION_ID,
       internProvider: {} as never,
@@ -220,6 +298,7 @@ describe('runImportDrain', () => {
     const result = await runImportDrain({
       dbClient: dbClient as never,
       queueRepo: queueRepo as never,
+      jobId: JOB_ID,
       familyId: FAMILY_ID,
       conversationId: CONVERSATION_ID,
       internProvider: {} as never,

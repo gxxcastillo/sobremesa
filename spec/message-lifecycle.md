@@ -145,4 +145,7 @@ pipeline input.
 
 Duplicate checking compares timestamp, actor, and content prefix before import. Failed imports can be
 resumed (re-entering insertion, then the drain, automatically); in-progress imports can be cancelled
-between insertion batches.
+between insertion batches and, during the drain, on the same throttled cadence as drain progress
+reporting (every 10 events). The job's completion/failure write at the end of either phase is an
+atomic transition guarded on the job still being in the expected in-progress status, so a cancel that
+lands in the gap between checks is never silently overwritten back to `complete`/`failed`.
