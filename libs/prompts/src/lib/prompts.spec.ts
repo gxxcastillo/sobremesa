@@ -3,7 +3,6 @@ import { loadPrompt } from './prompts';
 describe('prompts', () => {
   describe('loadPrompt', () => {
     it('should load all agent prompts', () => {
-      expect(loadPrompt('admin')).toBeDefined();
       expect(loadPrompt('curator')).toBeDefined();
       expect(loadPrompt('facilitator')).toBeDefined();
       expect(loadPrompt('historian')).toBeDefined();

@@ -42,8 +42,12 @@ Prompt templates are filled from family config and runtime values:
 - `intern-filter.txt`, `intern-image-link.txt`: routing/filtering and image references.
 - `historian.txt`: Q&A language/persona.
 - `facilitator.txt`, `facilitator-response.txt`: warm questions and answer sending.
-- `admin.txt`: command/DM/member-event responses.
 - `curator.txt`: image analysis.
+
+Admin has no prompt: every response (`/status`, DM help, join/leave, mentions) is a deterministic
+formatted template, never an LLM call. An `admin.txt` prompt existed with no caller until it was
+deleted (`agent-hygiene-plan.md` #5); see the dead-end register in
+`.agents/spec-editorial-state.md`.
 
 Scribe uses JSON-schema constrained structured output. Pipeline version strings and token usage are
 recorded for audit/cost tracking.

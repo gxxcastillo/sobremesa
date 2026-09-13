@@ -1,4 +1,3 @@
-import adminPrompt from '../agents/admin.txt?raw';
 import curatorPrompt from '../agents/curator.txt?raw';
 import facilitatorPrompt from '../agents/facilitator.txt?raw';
 import facilitatorResponsePrompt from '../agents/facilitator-response.txt?raw';
@@ -10,7 +9,6 @@ import scribePrompt from '../agents/scribe.txt?raw';
 export type PromptName = keyof typeof prompts;
 
 const prompts = {
-  admin: adminPrompt,
   curator: curatorPrompt,
   facilitator: facilitatorPrompt,
   facilitatorResponse: facilitatorResponsePrompt,
