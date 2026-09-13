@@ -109,6 +109,18 @@ Historian retrieves merge-aware context and returns an answer with source attrib
 awareness. It does not send directly. Facilitator formats/sends the answer in the original question's
 language and applies the warmth/personality layer.
 
+Within one retrieval, claims are ordered by `claim_analysis.claim_strength` (recency as tiebreak)
+before any per-query cap is applied, so a subject with more claims than the cap surfaces its
+strongest evidence rather than whatever was recorded most recently.
+
+Conflicts shown to a family are read from the links Registrar already persisted in
+`claim_relationships` (`relationship_type = 'contradicts'`), not re-derived from value inequality
+across whatever one retrieval strategy happened to fetch. Registrar writes that edge in one direction
+only (the newer claim → the older claim it disputes), so Historian checks both directions for every
+retrieved claim, and fetches the contradicting claim from the database when the retrieval strategy
+didn't already have it — a conflict recorded months apart still surfaces even though a single query
+wouldn't have fetched both sides.
+
 Facilitator also asks the highest-priority pending question when allowed by the simple time throttle
 configured in the chatbots app.
 

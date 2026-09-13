@@ -170,6 +170,34 @@ export class ClaimRelationshipRepository {
   }
 
   /**
+   * Find the ids of claims that contradict a given claim, in either
+   * direction. `create()` only ever writes one directed edge per
+   * contradiction (the newer claim -> the older claim it disputes), so the
+   * older claim can be contradicted without ever being a row's `claim_id`.
+   */
+  async findContradictingClaimIds(
+    familyId: string,
+    claimId: string,
+  ): Promise<string[]> {
+    const [outgoing, incoming] = await Promise.all([
+      this.findByType(familyId, claimId, 'contradicts'),
+      this.findByRelatedClaim(familyId, claimId),
+    ]);
+
+    const partnerIds = new Set<string>();
+    for (const rel of outgoing) {
+      partnerIds.add(rel.relatedClaimId);
+    }
+    for (const rel of incoming) {
+      if (rel.relationshipType === 'contradicts') {
+        partnerIds.add(rel.claimId);
+      }
+    }
+
+    return [...partnerIds];
+  }
+
+  /**
    * Find all supporting claims for a claim.
    */
   async findSupporting(

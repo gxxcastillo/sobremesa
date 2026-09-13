@@ -554,6 +554,61 @@ describe('ClaimRepository - createFromExtracted', () => {
   });
 });
 
+describe('ClaimRepository - findByIds', () => {
+  let claimRepo: ClaimRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    claimRepo = new ClaimRepository(mockSupabaseClient as any);
+  });
+
+  it('returns [] without querying when given no ids', async () => {
+    const result = await claimRepo.findByIds('fam1', []);
+
+    expect(result).toEqual([]);
+    expect(mockSupabaseClient.from).not.toHaveBeenCalled();
+  });
+
+  it('queries claims scoped to the family, excluding redacted ones', async () => {
+    const rows = [
+      {
+        id: 'claim-1',
+        family_id: 'fam1',
+        subject: 'Grandpa',
+        status: 'active',
+      },
+      {
+        id: 'claim-2',
+        family_id: 'fam1',
+        subject: 'Grandma',
+        status: 'disputed',
+      },
+    ];
+    const chain = createChainableMock({ data: rows, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await claimRepo.findByIds('fam1', ['claim-1', 'claim-2']);
+
+    expect(chain.eq).toHaveBeenCalledWith('family_id', 'fam1');
+    expect(chain.neq).toHaveBeenCalledWith('status', 'redacted');
+    expect(chain.in).toHaveBeenCalledWith('id', ['claim-1', 'claim-2']);
+    expect(result).toHaveLength(2);
+    expect(result[0].id).toBe('claim-1');
+  });
+
+  it('throws on a database error', async () => {
+    const chain = createChainableMock({
+      data: null,
+      error: { code: '42P01', message: 'Table not found' },
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await expect(claimRepo.findByIds('fam1', ['claim-1'])).rejects.toThrow(
+      'Failed to find claims by id',
+    );
+  });
+});
+
 describe('ClaimRepository - addConflict', () => {
   let claimRepo: ClaimRepository;
 

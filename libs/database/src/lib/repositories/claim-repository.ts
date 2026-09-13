@@ -119,6 +119,29 @@ export class ClaimRepository extends BaseRepository<Claim> {
   }
 
   /**
+   * Find multiple claims by id (skips redacted claims, matching every other
+   * read path here).
+   */
+  async findByIds(familyId: string, ids: string[]): Promise<Claim[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .neq('status', 'redacted')
+      .in('id', ids);
+
+    if (error) {
+      throw new Error(`Failed to find claims by id: ${error.message}`);
+    }
+
+    return (data || []).map((row) => this.mapFromDb(row));
+  }
+
+  /**
    * Create a claim from extracted data.
    * Note: Analysis fields (strength, inference method) are now in claim_analysis table.
    */

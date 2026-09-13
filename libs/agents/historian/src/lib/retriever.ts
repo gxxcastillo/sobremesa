@@ -1,6 +1,8 @@
 import {
   PersonRepository,
   ClaimRepository,
+  ClaimRelationshipRepository,
+  ClaimAnalysisRepository,
   RelationshipRepository,
   TimelineEventRepository,
   StoryRepository,
@@ -8,7 +10,7 @@ import {
   ImageRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
-import type { Confidence } from '@sobremesa/shared-types';
+import type { Claim, Confidence } from '@sobremesa/shared-types';
 import type {
   ParsedQuestion,
   RetrievedContext,
@@ -25,6 +27,8 @@ import type {
 export class DataRetriever {
   private personRepo!: PersonRepository;
   private claimRepo!: ClaimRepository;
+  private claimRelationshipRepo!: ClaimRelationshipRepository;
+  private claimAnalysisRepo!: ClaimAnalysisRepository;
   private relationshipRepo!: RelationshipRepository;
   private eventRepo!: TimelineEventRepository;
   private storyRepo!: StoryRepository;
@@ -35,6 +39,8 @@ export class DataRetriever {
     dbClient?: DatabaseClient;
     personRepo?: PersonRepository;
     claimRepo?: ClaimRepository;
+    claimRelationshipRepo?: ClaimRelationshipRepository;
+    claimAnalysisRepo?: ClaimAnalysisRepository;
     relationshipRepo?: RelationshipRepository;
     eventRepo?: TimelineEventRepository;
     storyRepo?: StoryRepository;
@@ -53,6 +59,18 @@ export class DataRetriever {
       this.claimRepo = options.claimRepo;
     } else if (dbClient) {
       this.claimRepo = new ClaimRepository(dbClient);
+    }
+
+    if (options?.claimRelationshipRepo) {
+      this.claimRelationshipRepo = options.claimRelationshipRepo;
+    } else if (dbClient) {
+      this.claimRelationshipRepo = new ClaimRelationshipRepository(dbClient);
+    }
+
+    if (options?.claimAnalysisRepo) {
+      this.claimAnalysisRepo = options.claimAnalysisRepo;
+    } else if (dbClient) {
+      this.claimAnalysisRepo = new ClaimAnalysisRepository(dbClient);
     }
 
     if (options?.relationshipRepo) {
@@ -88,6 +106,8 @@ export class DataRetriever {
     if (
       !this.personRepo ||
       !this.claimRepo ||
+      !this.claimRelationshipRepo ||
+      !this.claimAnalysisRepo ||
       !this.relationshipRepo ||
       !this.eventRepo ||
       !this.storyRepo ||
@@ -148,8 +168,8 @@ export class DataRetriever {
         break;
     }
 
-    // Detect conflicts in retrieved claims
-    this.detectConflicts(context);
+    // Surface conflicts Registrar already detected and persisted
+    await this.attachPersistedConflicts(familyId, context);
 
     return context;
   }
@@ -175,7 +195,11 @@ export class DataRetriever {
         );
         context.people.push({
           person,
-          claims: claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
+          claims: await this.orderAndCapClaims(
+            familyId,
+            claims,
+            config.maxClaimsPerQuery,
+          ),
         });
 
         // Get relationships
@@ -214,9 +238,11 @@ export class DataRetriever {
           );
           context.people.push({
             person,
-            claims: claims
-              .slice(0, config.maxClaimsPerQuery)
-              .map(this.mapClaim),
+            claims: await this.orderAndCapClaims(
+              familyId,
+              claims,
+              config.maxClaimsPerQuery,
+            ),
           });
         }
       }
@@ -319,7 +345,11 @@ export class DataRetriever {
         c.subject.toLowerCase().includes('when'),
     );
     context.claims.push(
-      ...dateClaims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
+      ...(await this.orderAndCapClaims(
+        familyId,
+        dateClaims,
+        config.maxClaimsPerQuery,
+      )),
     );
 
     // Deduplicate events
@@ -364,7 +394,11 @@ export class DataRetriever {
         place.id,
       );
       context.claims.push(
-        ...claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
+        ...(await this.orderAndCapClaims(
+          familyId,
+          claims,
+          config.maxClaimsPerQuery,
+        )),
       );
     }
 
@@ -387,9 +421,11 @@ export class DataRetriever {
             c.subject.toLowerCase().includes('place'),
         );
         context.claims.push(
-          ...locationClaims
-            .slice(0, config.maxClaimsPerQuery)
-            .map(this.mapClaim),
+          ...(await this.orderAndCapClaims(
+            familyId,
+            locationClaims,
+            config.maxClaimsPerQuery,
+          )),
         );
         context.people.push({ person, claims: [] });
       }
@@ -475,7 +511,11 @@ export class DataRetriever {
         story.id,
       );
       context.claims.push(
-        ...claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
+        ...(await this.orderAndCapClaims(
+          familyId,
+          claims,
+          config.maxClaimsPerQuery,
+        )),
       );
     }
 
@@ -521,7 +561,11 @@ export class DataRetriever {
     );
 
     context.claims.push(
-      ...matchingClaims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
+      ...(await this.orderAndCapClaims(
+        familyId,
+        matchingClaims,
+        config.maxClaimsPerQuery,
+      )),
     );
 
     // Get people mentioned
@@ -534,7 +578,11 @@ export class DataRetriever {
           person.id,
         );
         context.claims.push(
-          ...claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
+          ...(await this.orderAndCapClaims(
+            familyId,
+            claims,
+            config.maxClaimsPerQuery,
+          )),
         );
         context.people.push({ person, claims: [] });
       }
@@ -561,7 +609,11 @@ export class DataRetriever {
         );
         context.people.push({
           person,
-          claims: claims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
+          claims: await this.orderAndCapClaims(
+            familyId,
+            claims,
+            config.maxClaimsPerQuery,
+          ),
         });
       }
     }
@@ -604,40 +656,124 @@ export class DataRetriever {
           ),
       );
       context.claims.push(
-        ...matchingClaims.slice(0, config.maxClaimsPerQuery).map(this.mapClaim),
+        ...(await this.orderAndCapClaims(
+          familyId,
+          matchingClaims,
+          config.maxClaimsPerQuery,
+        )),
       );
     }
   }
 
   /**
-   * Detect conflicts in the retrieved claims.
+   * Order raw claims by system-computed strength (`claim_analysis
+   * .claim_strength`, written on every claim but otherwise unread on the
+   * live path) before capping, so a subject with more claims than the cap
+   * surfaces its strongest evidence rather than whatever was recorded most
+   * recently. Ties keep recency as the tiebreak.
    */
-  private detectConflicts(context: RetrievedContext): void {
-    // Group claims by subject
-    const claimsBySubject = new Map<string, ClaimWithSource[]>();
+  private async orderAndCapClaims(
+    familyId: string,
+    claims: Claim[],
+    cap: number,
+  ): Promise<ClaimWithSource[]> {
+    if (claims.length === 0) {
+      return [];
+    }
 
-    const allClaims = [
+    const analyses = await this.claimAnalysisRepo.findByClaimIds(
+      familyId,
+      claims.map((c) => c.id),
+    );
+    const strengthByClaimId = new Map(
+      analyses.map((a) => [a.claimId, a.claimStrength ?? 0.5]),
+    );
+
+    const ordered = [...claims].sort((a, b) => {
+      const strengthDiff =
+        (strengthByClaimId.get(b.id) ?? 0.5) -
+        (strengthByClaimId.get(a.id) ?? 0.5);
+      if (strengthDiff !== 0) return strengthDiff;
+      return new Date(b.claimedAt).getTime() - new Date(a.claimedAt).getTime();
+    });
+
+    return ordered.slice(0, cap).map(this.mapClaim);
+  }
+
+  /**
+   * Surface conflicts Registrar already detected and persisted
+   * (`claim_relationships`, type 'contradicts') instead of re-deriving
+   * disagreement from value inequality across whatever this query happened
+   * to retrieve — which reports "1891" vs 1891 as a dispute while missing a
+   * real one recorded months apart. Fetches the contradicting claim from the
+   * database when the retrieval strategy didn't already fetch it, since the
+   * whole point is that a conflict shouldn't depend on one query having
+   * fetched both sides.
+   */
+  private async attachPersistedConflicts(
+    familyId: string,
+    context: RetrievedContext,
+  ): Promise<void> {
+    const retrievedClaims = [
       ...context.claims,
       ...context.people.flatMap((p) => p.claims),
     ];
-
-    for (const claim of allClaims) {
-      const existing = claimsBySubject.get(claim.subject) || [];
-      existing.push(claim);
-      claimsBySubject.set(claim.subject, existing);
+    if (retrievedClaims.length === 0) {
+      return;
     }
 
-    // Find subjects with conflicting values
-    for (const [subject, claims] of claimsBySubject.entries()) {
-      if (claims.length > 1) {
-        // Check if values actually differ
-        const values = claims.map((c) => JSON.stringify(c.claimValue));
-        const uniqueValues = [...new Set(values)];
-        if (uniqueValues.length > 1) {
-          context.hasConflicts = true;
-          context.conflicts.set(subject, claims);
+    const claimsById = new Map(retrievedClaims.map((c) => [c.id, c]));
+
+    const partnerIdsByClaimId = new Map<string, string[]>();
+    await Promise.all(
+      retrievedClaims.map(async (claim) => {
+        const partnerIds =
+          await this.claimRelationshipRepo.findContradictingClaimIds(
+            familyId,
+            claim.id,
+          );
+        if (partnerIds.length > 0) {
+          partnerIdsByClaimId.set(claim.id, partnerIds);
+        }
+      }),
+    );
+
+    if (partnerIdsByClaimId.size === 0) {
+      return;
+    }
+
+    const missingIds = new Set<string>();
+    for (const partnerIds of partnerIdsByClaimId.values()) {
+      for (const id of partnerIds) {
+        if (!claimsById.has(id)) {
+          missingIds.add(id);
         }
       }
+    }
+
+    if (missingIds.size > 0) {
+      const fetched = await this.claimRepo.findByIds(familyId, [...missingIds]);
+      for (const claim of fetched) {
+        claimsById.set(claim.id, this.mapClaim(claim));
+      }
+    }
+
+    context.hasConflicts = true;
+    for (const [claimId, partnerIds] of partnerIdsByClaimId.entries()) {
+      const claim = claimsById.get(claimId);
+      if (!claim) continue;
+
+      const group = context.conflicts.get(claim.subject) ?? [];
+      if (!group.some((c) => c.id === claim.id)) {
+        group.push(claim);
+      }
+      for (const partnerId of partnerIds) {
+        const partner = claimsById.get(partnerId);
+        if (partner && !group.some((c) => c.id === partner.id)) {
+          group.push(partner);
+        }
+      }
+      context.conflicts.set(claim.subject, group);
     }
   }
 
