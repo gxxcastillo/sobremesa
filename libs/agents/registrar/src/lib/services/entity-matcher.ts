@@ -1,6 +1,6 @@
 import type { ExtractedPerson, ExtractedPlace } from '@sobremesa/shared-types';
 import { PersonRepository, PlaceRepository } from '@sobremesa/database';
-import { createLogger } from '@sobremesa/shared-utils';
+import { classifyPersonName, createLogger } from '@sobremesa/shared-utils';
 
 /**
  * Result of entity matching.
@@ -46,6 +46,48 @@ export class EntityMatcherService {
     );
 
     if (!result) {
+      // findBestMatch excludes placeholders, so a relational description
+      // ("Ricardo Hermoso's father") that didn't match any real person may
+      // still be reusing an existing placeholder rather than a new one.
+      // Exact normalized name only -- never through fuzzy/first-name passes.
+      if (classifyPersonName(extracted.name) === 'relational') {
+        const placeholder =
+          await this.personRepo.findPlaceholderByNormalizedName(
+            familyId,
+            extracted.name,
+          );
+        if (placeholder) {
+          // Placeholder rows can already have biographical fields from an
+          // earlier extraction. Exact wording alone must not override the
+          // normal conflict protection used for real-person matches.
+          if (this.hasBiographicalConflict(extracted, placeholder)) {
+            this.logger.info(
+              {
+                extractedName: extracted.name,
+                extractedBirthYear: extracted.birthYear,
+                extractedDeathYear: extracted.deathYear,
+                candidateName: placeholder.name,
+                candidateBirthYear: placeholder.birthYear,
+                candidateDeathYear: placeholder.deathYear,
+              },
+              'Biographical conflict detected - will create separate entity instead of reusing placeholder',
+            );
+            return {
+              matched: false,
+              confidence: 0,
+              matchReason: 'biographical_conflict_creating_new',
+            };
+          }
+
+          return {
+            matched: true,
+            existingEntityId: placeholder.id,
+            confidence: this.convertConfidence('high'),
+            matchReason: 'placeholder reuse: exact normalized name',
+          };
+        }
+      }
+
       return {
         matched: false,
         confidence: 0,

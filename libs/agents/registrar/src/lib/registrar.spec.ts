@@ -11,6 +11,7 @@ const mockPersonRepo = {
   findOrCreate: vi.fn(),
   createNew: vi.fn(),
   updateAliases: vi.fn(),
+  findById: vi.fn(),
 };
 
 const mockPlaceRepo = {
@@ -996,6 +997,184 @@ describe('RegistrarAgent - Claim Subject Resolution', () => {
       'event',
       { role: 'subject' },
     );
+  });
+});
+
+describe('RegistrarAgent - Speaker-Relative Aliases (F4)', () => {
+  let registrar: RegistrarAgent;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockConversationEventRepo.findById.mockResolvedValue({
+      id: 'event-123',
+      source: 'telegram',
+      actorExternalId: 'ext-test-user',
+      actorDisplayName: 'Test User',
+      actorUsername: 'testuser',
+    });
+    mockIdentityRepo.findByProviderUserId.mockResolvedValue({
+      id: 'identity-test-user',
+    });
+
+    mockPersonRepo.findBestMatch.mockResolvedValue(null);
+    mockPersonRepo.createNew.mockImplementation(async (_familyId, person) => ({
+      id: `person-${person.name.toLowerCase().replace(/\s+/g, '-')}`,
+      ...person,
+    }));
+
+    mockPlaceRepo.findOrCreate.mockImplementation(async (_familyId, place) => ({
+      id: `place-${place.name.toLowerCase().replace(/\s+/g, '-')}`,
+      ...place,
+      createdAt: new Date(Date.now() - 10000),
+    }));
+
+    mockClaimRepo.findActiveBySubject.mockResolvedValue([]);
+    mockClaimRepo.findByEntity.mockResolvedValue([]);
+    mockClaimRepo.createFromExtracted.mockImplementation(
+      async (_familyId, claim) => ({
+        id: 'claim-1',
+        ...claim,
+      }),
+    );
+    mockClaimAnalysisRepo.createForClaim.mockResolvedValue({});
+    mockClaimAnalysisRepo.findByClaimIds.mockResolvedValue([]);
+    mockClaimEntityRepo.link.mockResolvedValue({});
+    mockClaimRelationshipRepo.create.mockResolvedValue({});
+    mockEventPeopleRepo.createMany.mockResolvedValue([]);
+    mockEventLog.log.mockResolvedValue(undefined);
+
+    registrar = new RegistrarAgent({
+      personRepo: mockPersonRepo as any,
+      placeRepo: mockPlaceRepo as any,
+      eventRepo: mockEventRepo as any,
+      storyRepo: mockStoryRepo as any,
+      claimRepo: mockClaimRepo as any,
+      claimAnalysisRepo: mockClaimAnalysisRepo as any,
+      relationshipRepo: mockRelationshipRepo as any,
+      eventLog: mockEventLog as any,
+      conversationEventRepo: mockConversationEventRepo as any,
+      identityRepo: mockIdentityRepo as any,
+      imageRepo: mockImageRepo as any,
+      entityMergeRepo: mockEntityMergeRepo as any,
+      claimEntityRepo: mockClaimEntityRepo as any,
+      claimRelationshipRepo: mockClaimRelationshipRepo as any,
+      storyPeopleRepo: mockStoryPeopleRepo as any,
+      storyPlacesRepo: mockStoryPlacesRepo as any,
+      storyEventsRepo: mockStoryEventsRepo as any,
+      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
+      eventPeopleRepo: mockEventPeopleRepo as any,
+      eventPlacesRepo: mockEventPlacesRepo as any,
+      llmQueueRepo: mockLlmQueueRepo as any,
+      logger: mockLogger as any,
+    });
+  });
+
+  it('creates a new person with the speaker-relative alias dropped', async () => {
+    const domainModel: ScribeDomainModel = {
+      conversationEventId: 'event-123',
+      familyId: 'family-abc',
+      processedAt: new Date(),
+      people: [
+        {
+          name: 'Gerie Najlis',
+          aliases: ['Geraldine', 'mi tía'],
+          confidence: 'high',
+        },
+      ],
+      places: [],
+      events: [],
+      relationships: [],
+      claims: [],
+      imageReferences: [],
+      detectedLanguage: 'es',
+    };
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockPersonRepo.createNew).toHaveBeenCalledWith(
+      'family-abc',
+      expect.objectContaining({ name: 'Gerie Najlis', aliases: ['Geraldine'] }),
+      'event-123',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('still resolves a same-message claim subject that is a speaker-relative term', async () => {
+    const domainModel: ScribeDomainModel = {
+      conversationEventId: 'event-123',
+      familyId: 'family-abc',
+      processedAt: new Date(),
+      people: [
+        { name: 'Gerie Najlis', aliases: ['mi tía'], confidence: 'high' },
+      ],
+      places: [],
+      events: [],
+      relationships: [],
+      claims: [
+        {
+          claimType: 'detail',
+          subject: 'mi tía',
+          claimValue: 'le encanta cocinar',
+          confidence: 'high',
+          claimedBySource: 'direct',
+        },
+      ],
+      imageReferences: [],
+      detectedLanguage: 'es',
+    };
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockClaimEntityRepo.link).toHaveBeenCalledWith(
+      'family-abc',
+      'claim-1',
+      'person-gerie-najlis',
+      'person',
+      { role: 'subject' },
+    );
+  });
+
+  it('does not offer a speaker-relative term as a suggested alias for a matched person', async () => {
+    mockPersonRepo.findBestMatch.mockResolvedValueOnce({
+      person: {
+        id: 'existing-1',
+        name: 'Gerie Najlis',
+        aliases: ['Geraldine'],
+      },
+      confidence: 'high',
+      matchReason: 'exact match',
+    });
+    mockPersonRepo.findById.mockResolvedValueOnce({
+      id: 'existing-1',
+      name: 'Gerie Najlis',
+      aliases: ['Geraldine'],
+    });
+    mockPersonRepo.updateAliases.mockResolvedValue({});
+
+    const domainModel: ScribeDomainModel = {
+      conversationEventId: 'event-123',
+      familyId: 'family-abc',
+      processedAt: new Date(),
+      people: [
+        {
+          name: 'Gerie Najlis',
+          aliases: ['Geraldine', 'mi tía'],
+          confidence: 'high',
+        },
+      ],
+      places: [],
+      events: [],
+      relationships: [],
+      claims: [],
+      imageReferences: [],
+      detectedLanguage: 'es',
+    };
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockPersonRepo.updateAliases).not.toHaveBeenCalled();
   });
 });
 

@@ -74,7 +74,14 @@ Registrar is the single writer for extracted knowledge. It:
    sister", "la tía de Juan" — anything `classifyPersonName` in `shared-utils` flags as relational or
    generic) may only match an existing person by exact name or alias equality; it is never eligible
    for first-name or fuzzy matching, so a description of a relative can never be merged into the
-   person it describes a relative _of_.
+   person it describes a relative _of_. When no real person matches, a `relational` description
+   (never `generic`) reuses an existing placeholder person whose `name` (never its aliases, which may
+   carry speaker-relative terms) is an exact normalized-name match — otherwise a new placeholder is
+   created. This is the only path that matches against placeholders; `findBestMatch` excludes them.
+   Speaker-relative aliases (`"mi tía"`, `"my mom"` — `isSpeakerRelativeTerm` in `shared-utils`) are
+   never searched or stored durably, since they name a different person for every speaker; they are
+   still registered for the current message only, so a claim subject in the same message can resolve
+   one.
 3. Stores claims and links them to affected entities.
 4. Detects conflicts with existing claims.
 5. Computes claim strength and enqueues uncertain/high-stakes cases for async review.

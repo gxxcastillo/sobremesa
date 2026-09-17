@@ -1,4 +1,8 @@
-import type { Person, ScribeDomainModel } from '@sobremesa/shared-types';
+import type {
+  ExtractedPerson,
+  Person,
+  ScribeDomainModel,
+} from '@sobremesa/shared-types';
 import {
   PersonRepository,
   PlaceRepository,
@@ -23,7 +27,7 @@ import {
   LlmEvaluationQueueRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
-import { createLogger } from '@sobremesa/shared-utils';
+import { createLogger, isSpeakerRelativeTerm } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 import {
   detectClaimConflict,
@@ -457,9 +461,22 @@ export class RegistrarAgent {
     try {
       // 1. Process People (using EntityMatcherService)
       for (const person of domainModel.people) {
+        // "mi tía", "my mom" -- unambiguous within this one message (one
+        // speaker) but names a different person for every other speaker, so
+        // it must never be searched or stored durably. Matching/creation see
+        // only the durable aliases; personIdMap below still registers every
+        // alias so claim subjects in this message can still resolve it.
+        const durableAliases = person.aliases.filter(
+          (alias) => !isSpeakerRelativeTerm(alias),
+        );
+        const personForMatching: ExtractedPerson = {
+          ...person,
+          aliases: durableAliases,
+        };
+
         const matchResult = await this.entityMatcherService.matchPerson(
           familyId,
-          person,
+          personForMatching,
         );
 
         if (matchResult.matched && matchResult.existingEntityId) {
@@ -547,7 +564,7 @@ export class RegistrarAgent {
           // already determined there's no match (possibly due to biographical conflicts)
           const newPerson = await this.personRepo.createNew(
             familyId,
-            person,
+            personForMatching,
             conversationEventId,
             claimedBy,
             extractionVersion,

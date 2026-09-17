@@ -1,6 +1,10 @@
 import type { DatabaseClient } from '../client';
 import type { Person, ExtractedPerson } from '@sobremesa/shared-types';
-import { classifyPersonName, normalizeNameKey } from '@sobremesa/shared-utils';
+import {
+  classifyPersonName,
+  isSpeakerRelativeTerm,
+  normalizeNameKey,
+} from '@sobremesa/shared-utils';
 import {
   BaseRepository,
   mapRowToCamelCase,
@@ -90,7 +94,12 @@ export class PersonRepository extends BaseRepository<Person> {
 
     const nameLower = name.toLowerCase().trim();
     const aliasesLower = aliases.map((a) => a.toLowerCase().trim());
-    const allSearchTerms = [nameLower, ...aliasesLower];
+    // Speaker-relative terms ("mi tía", "my mom") name a different person for
+    // every speaker, so no caller may match on one here -- even a caller
+    // that (unlike Registrar's people loop) forgot to filter its own input.
+    const allSearchTerms = [nameLower, ...aliasesLower].filter(
+      (t) => !isSpeakerRelativeTerm(t),
+    );
 
     // Descriptions ("Ralph's sister", "la tía de Juan", "the neighbor") may only match
     // exactly (pass 1) — they must never first-name- or fuzzy-match a real person.
@@ -210,7 +219,9 @@ export class PersonRepository extends BaseRepository<Person> {
     const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,
       name: extracted.name,
-      aliases: extracted.aliases,
+      aliases: extracted.aliases.filter(
+        (alias) => !isSpeakerRelativeTerm(alias),
+      ),
       birthYear: extracted.birthYear,
       birthYearConfidence: extracted.confidence,
       deathYear: extracted.deathYear,
@@ -276,9 +287,12 @@ export class PersonRepository extends BaseRepository<Person> {
     id: string,
     aliases: string[],
   ): Promise<Person> {
+    const durableAliases = aliases.filter(
+      (alias) => !isSpeakerRelativeTerm(alias),
+    );
     const { data, error } = await this.client
       .from(this.tableName)
-      .update({ aliases })
+      .update({ aliases: durableAliases })
       .eq('family_id', familyId)
       .eq('id', id)
       .select()
@@ -311,7 +325,11 @@ export class PersonRepository extends BaseRepository<Person> {
 
     if (addOldNameAsAlias && current.name !== newName) {
       const newAliases = [
-        ...new Set([...(current.aliases || []), current.name]),
+        ...new Set(
+          [...(current.aliases || []), current.name].filter(
+            (alias) => !isSpeakerRelativeTerm(alias),
+          ),
+        ),
       ];
       updates.aliases = newAliases;
     }
@@ -372,7 +390,7 @@ export class PersonRepository extends BaseRepository<Person> {
       familyId,
       name: 'Unknown',
       aliases: [
-        description,
+        ...(!isSpeakerRelativeTerm(description) ? [description] : []),
         ...relatedToPersonIds.map((id) => `related-to:${id}`),
       ],
       isPlaceholder: true,
@@ -383,6 +401,40 @@ export class PersonRepository extends BaseRepository<Person> {
     };
 
     return await this.insert(record);
+  }
+
+  /**
+   * Find a placeholder person whose `name` (never its aliases -- placeholder
+   * rows carry speaker-relative aliases like "mi papá", which name a
+   * different person per speaker) exactly matches by normalized key.
+   * Used to reuse a relational placeholder (e.g. "Ricardo Hermoso's father")
+   * across mentions instead of minting a duplicate row each time.
+   */
+  async findPlaceholderByNormalizedName(
+    familyId: string,
+    name: string,
+  ): Promise<Person | null> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('is_placeholder', true)
+      .eq('redacted', false);
+
+    if (error) {
+      throw new Error(`Failed to find placeholder by name: ${error.message}`);
+    }
+
+    if (!data || data.length === 0) {
+      return null;
+    }
+
+    const targetKey = normalizeNameKey(name);
+    const match = data.find(
+      (row) => normalizeNameKey(row.name as string) === targetKey,
+    );
+
+    return match ? this.mapFromDb(match) : null;
   }
 
   /**

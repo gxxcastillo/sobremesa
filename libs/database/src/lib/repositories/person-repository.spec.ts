@@ -437,6 +437,195 @@ describe('PersonRepository - findBestMatch', () => {
 
     expect(result).toBeNull();
   });
+
+  it('should not match a search alias that is a speaker-relative term (F4)', async () => {
+    // Simulates a pre-fix row that still carries a speaker-relative alias
+    // (no backfill) -- a later mention of "mi tía" must not resolve to it,
+    // since "mi tía" names a different person for every speaker.
+    const mockPeople = [
+      {
+        id: '1',
+        family_id: 'fam1',
+        name: 'Geraldine',
+        aliases: ['mi tía'],
+        redacted: false,
+        is_placeholder: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    const chain = createChainableMock({ data: mockPeople, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findBestMatch('fam1', 'Someone Else', [
+      'mi tía',
+    ]);
+
+    expect(result).toBeNull();
+  });
+
+  it('should not match a speaker-relative name against a real person by first name/fuzzy (F4)', async () => {
+    const mockPeople = [
+      {
+        id: '1',
+        family_id: 'fam1',
+        name: 'Mi Amigo',
+        aliases: [],
+        redacted: false,
+        is_placeholder: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    const chain = createChainableMock({ data: mockPeople, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findBestMatch('fam1', 'mi amigo');
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('PersonRepository - findPlaceholderByNormalizedName', () => {
+  let personRepo: PersonRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    personRepo = new PersonRepository(mockSupabaseClient as any);
+  });
+
+  it('matches a placeholder by normalized name (curly apostrophe, accent, casing) (F3)', async () => {
+    const mockPlaceholders = [
+      {
+        id: '1',
+        family_id: 'fam1',
+        name: "Ricardo Hermoso's father",
+        aliases: [],
+        redacted: false,
+        is_placeholder: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    const chain = createChainableMock({ data: mockPlaceholders, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findPlaceholderByNormalizedName(
+      'fam1',
+      'RICARDO HERMOSO’S FATHER',
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.id).toBe('1');
+  });
+
+  it('filters to non-redacted placeholders server-side (F3)', async () => {
+    const chain = createChainableMock({ data: [], error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await personRepo.findPlaceholderByNormalizedName(
+      'fam1',
+      "Ricardo Hermoso's father",
+    );
+
+    expect(chain.eq).toHaveBeenCalledWith('is_placeholder', true);
+    expect(chain.eq).toHaveBeenCalledWith('redacted', false);
+  });
+
+  it('does not match on an alias, only the name field (F3)', async () => {
+    const mockPlaceholders = [
+      {
+        id: '1',
+        family_id: 'fam1',
+        name: 'Unknown',
+        aliases: ["Ricardo Hermoso's father"],
+        redacted: false,
+        is_placeholder: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    const chain = createChainableMock({ data: mockPlaceholders, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findPlaceholderByNormalizedName(
+      'fam1',
+      "Ricardo Hermoso's father",
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when no placeholders exist', async () => {
+    const chain = createChainableMock({ data: [], error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findPlaceholderByNormalizedName(
+      'fam1',
+      "Ricardo Hermoso's father",
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('does not match a similar-but-distinct description ("Maria\'s son" vs "Mario\'s son") (F3)', async () => {
+    const mockPlaceholders = [
+      {
+        id: '1',
+        family_id: 'fam1',
+        name: "Mario's son",
+        aliases: [],
+        redacted: false,
+        is_placeholder: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    const chain = createChainableMock({ data: mockPlaceholders, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findPlaceholderByNormalizedName(
+      'fam1',
+      "Maria's son",
+    );
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('PersonRepository - durable aliases', () => {
+  let personRepo: PersonRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    personRepo = new PersonRepository(mockSupabaseClient as any);
+  });
+
+  it('does not persist speaker-relative aliases through updateAliases', async () => {
+    const chain = createChainableMock({
+      data: {
+        id: '1',
+        family_id: 'fam1',
+        name: 'Geraldine',
+        aliases: ['Gerie'],
+        redacted: false,
+        is_placeholder: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      error: null,
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await personRepo.updateAliases('fam1', '1', ['Gerie', 'mi tía']);
+
+    expect(chain.update).toHaveBeenCalledWith({ aliases: ['Gerie'] });
+  });
 });
 
 describe('PersonRepository - updateName', () => {
