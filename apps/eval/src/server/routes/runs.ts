@@ -120,7 +120,7 @@ export function runRoutes(dbClient: DatabaseClient, store: EvalStore) {
               results.push({
                 provider: config.provider,
                 model: config.model,
-                outputs: undefined,
+                outputs: [],
                 error:
                   configErr instanceof Error
                     ? configErr.message

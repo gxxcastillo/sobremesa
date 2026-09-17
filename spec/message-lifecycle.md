@@ -52,7 +52,11 @@ duration of that one event. This protection lapses if a single event takes longe
 function's own lock-staleness window (`lockTimeoutMs`, default 5 minutes): a `'processing'` row older
 than that is treated as abandoned and no longer blocks other leases. This matters when import targets
 a family that also has live traffic (`existingFamilyId`, §4.6) — the default, no-existing-family case
-has no live traffic to race against.
+has no live traffic to race against. `markProcessing()` is a CAS guard, not just bookkeeping: a caller
+reprocessing a row left `'error'` by an earlier partial pass (e.g. a resumed import job) must pass
+`'error'` among its expected statuses too, or the claim silently matches no row and that reprocessing
+pass gets no in-flight protection at all. The local dev CLI's `sbm process --event-id` path claims a
+row the same way before processing it directly, for the same reason.
 
 `MessageProcessor`:
 
@@ -167,4 +171,7 @@ resumed (re-entering insertion, then the drain, automatically); in-progress impo
 between insertion batches and, during the drain, on the same throttled cadence as drain progress
 reporting (every 10 events). The job's completion/failure write at the end of either phase is an
 atomic transition guarded on the job still being in the expected in-progress status, so a cancel that
-lands in the gap between checks is never silently overwritten back to `complete`/`failed`.
+lands in the gap between checks is never silently overwritten back to `complete`/`failed`. The resume
+API route is guarded the same way — an atomic transition from `failed` to `pending` — so two
+overlapping resume calls (double-click, retry, a second admin) can't both pass the status read and
+both start a second, concurrent `runImportJob` for the same job.

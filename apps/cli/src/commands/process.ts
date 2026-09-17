@@ -714,18 +714,22 @@ export async function runProcess(options: ProcessOptions): Promise<void> {
           // nothing to update; only that case is genuinely a no-op on the
           // queue.
           const queueItem = await queueRepo.findByEventId(familyId, eventId);
-          // Claim it as 'processing' (when still 'queued') before running
-          // it directly, so it counts toward the per-family in-flight check
-          // `dequeueAny` relies on -- otherwise a concurrent worker (the
-          // live poller, or another `sbm process`) could claim and process
-          // this same event at the same time, which -- per the comment
-          // above -- is a real duplicate-data risk, not just untidy
-          // bookkeeping.
-          if (queueItem && queueItem.status === 'queued') {
+          // Claim it as 'processing' (when 'queued' or dead-lettered
+          // 'error') before running it directly, so it counts toward the
+          // per-family in-flight check `dequeueAny` relies on -- otherwise a
+          // concurrent worker (the live poller, or another `sbm process`)
+          // could claim and process this same event at the same time, which
+          // -- per the comment above -- is a real duplicate-data risk, not
+          // just untidy bookkeeping.
+          if (
+            queueItem &&
+            (queueItem.status === 'queued' || queueItem.status === 'error')
+          ) {
             await queueRepo.markProcessing(
               familyId,
               queueItem.id,
               'cli-process-event-id',
+              ['queued', 'error'],
             );
           }
           const itemResult = await runOne(eventId, familyId);

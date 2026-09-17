@@ -1,6 +1,6 @@
 import type { DatabaseClient } from '../client';
 import type { Person, ExtractedPerson } from '@sobremesa/shared-types';
-import { classifyPersonName } from '@sobremesa/shared-utils';
+import { classifyPersonName, normalizeNameKey } from '@sobremesa/shared-utils';
 import {
   BaseRepository,
   mapRowToCamelCase,
@@ -92,18 +92,28 @@ export class PersonRepository extends BaseRepository<Person> {
     const aliasesLower = aliases.map((a) => a.toLowerCase().trim());
     const allSearchTerms = [nameLower, ...aliasesLower];
 
+    // Descriptions ("Ralph's sister", "la tía de Juan", "the neighbor") may only match
+    // exactly (pass 1) — they must never first-name- or fuzzy-match a real person.
+    const looseTerms = allSearchTerms.filter(
+      (t) => classifyPersonName(t) === null,
+    );
+
     const people = data.map((row) => this.mapFromDb(row));
 
-    // Pass 1: Exact match on name or alias (high confidence)
+    // Pass 1: Exact match on name or alias (high confidence). Compared via
+    // normalizeNameKey so a curly-apostrophe/accent variant of the same
+    // description (routine LLM output) still exact-matches instead of
+    // spawning a duplicate placeholder person.
+    const allSearchKeys = allSearchTerms.map((t) => normalizeNameKey(t));
     for (const person of people) {
-      const personNameLower = person.name.toLowerCase().trim();
-      const personAliasesLower = (person.aliases || []).map((a) =>
-        a.toLowerCase().trim(),
+      const personNameKey = normalizeNameKey(person.name);
+      const personAliasKeys = (person.aliases || []).map((a) =>
+        normalizeNameKey(a),
       );
-      const allPersonTerms = [personNameLower, ...personAliasesLower];
+      const allPersonKeys = [personNameKey, ...personAliasKeys];
 
-      for (const searchTerm of allSearchTerms) {
-        for (const personTerm of allPersonTerms) {
+      for (const searchTerm of allSearchKeys) {
+        for (const personTerm of allPersonKeys) {
           if (searchTerm === personTerm) {
             return {
               person,
@@ -120,7 +130,7 @@ export class PersonRepository extends BaseRepository<Person> {
     for (const person of people) {
       const personFirstName = person.name.toLowerCase().trim().split(' ')[0];
 
-      for (const searchTerm of allSearchTerms) {
+      for (const searchTerm of looseTerms) {
         // Check if search term matches first name
         if (searchTerm === personFirstName) {
           firstNameMatches.push(person);
@@ -147,15 +157,18 @@ export class PersonRepository extends BaseRepository<Person> {
       };
     }
 
-    // Pass 3: Fuzzy match (Levenshtein similarity > 0.8)
+    // Pass 3: Fuzzy match (Levenshtein similarity > 0.8). A stored alias that
+    // is itself a description (e.g. "Mario's son") must be excluded here too
+    // -- otherwise a new, unrelated description could fuzzy-match it and
+    // merge into the wrong person.
     for (const person of people) {
       const personNameLower = person.name.toLowerCase().trim();
-      const personAliasesLower = (person.aliases || []).map((a) =>
-        a.toLowerCase().trim(),
-      );
-      const allPersonTerms = [personNameLower, ...personAliasesLower];
+      const personLooseAliases = (person.aliases || [])
+        .map((a) => a.toLowerCase().trim())
+        .filter((a) => classifyPersonName(a) === null);
+      const allPersonTerms = [personNameLower, ...personLooseAliases];
 
-      for (const searchTerm of allSearchTerms) {
+      for (const searchTerm of looseTerms) {
         for (const personTerm of allPersonTerms) {
           const similarity = this.calculateSimilarity(searchTerm, personTerm);
           if (similarity > 0.8) {

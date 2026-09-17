@@ -168,9 +168,9 @@ export class ProcessingQueueRepository {
   }
 
   /**
-   * Mark a 'queued' item as 'processing' outside the `dequeueAny()` lease
-   * path -- used by callers (e.g. the import drain) that process a bounded,
-   * known set of rows directly rather than leasing them. Setting `status`/
+   * Mark an item as 'processing' outside the `dequeueAny()` lease path --
+   * used by callers (e.g. the import drain) that process a bounded, known
+   * set of rows directly rather than leasing them. Setting `status`/
    * `locked_at` here is what makes this row count toward
    * `dequeue_processing_queue_item`'s per-family in-flight exclusion check,
    * so a live-intent lease for the same family is blocked while this row is
@@ -180,11 +180,18 @@ export class ProcessingQueueRepository {
    * window) before the row is treated as abandoned; callers with a
    * single-event processing time under that window get real mutual
    * exclusion from this alone.
+   *
+   * `expectedStatuses` (default `['queued']`) is a CAS guard, not just a
+   * safety check: a caller re-processing a row left `'error'` by an earlier,
+   * partial pass (e.g. the import drain resuming a previously-failed job)
+   * must pass `'error'` too, or this update silently matches zero rows and
+   * the resumed pass gets no in-flight protection at all.
    */
   async markProcessing(
     familyId: string,
     id: string,
     workerId: string,
+    expectedStatuses: QueueItemStatus[] = ['queued'],
   ): Promise<void> {
     const { error } = await this.client
       .from(this.tableName)
@@ -195,7 +202,7 @@ export class ProcessingQueueRepository {
       })
       .eq('family_id', familyId)
       .eq('id', id)
-      .eq('status', 'queued');
+      .in('status', expectedStatuses);
 
     if (error) {
       throw new Error(

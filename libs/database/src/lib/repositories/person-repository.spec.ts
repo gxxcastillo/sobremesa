@@ -317,6 +317,126 @@ describe('PersonRepository - findBestMatch', () => {
     expect(result).not.toBeNull();
     expect(result?.confidence).toBe('high');
   });
+
+  it('should not first-name-match a description of a real person (F2)', async () => {
+    const mockPeople = [
+      {
+        id: '1',
+        family_id: 'fam1',
+        name: 'Ricardo Hermoso',
+        aliases: [],
+        redacted: false,
+        is_placeholder: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    const chain = createChainableMock({ data: mockPeople, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findBestMatch(
+      'fam1',
+      "Ricardo Hermoso's father",
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('should still exact-match a description already stored as a real alias (F2)', async () => {
+    const mockPeople = [
+      {
+        id: '1',
+        family_id: 'fam1',
+        name: 'Robert Williams',
+        aliases: ["Ralph's sister"],
+        redacted: false,
+        is_placeholder: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    const chain = createChainableMock({ data: mockPeople, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findBestMatch('fam1', "Ralph's sister");
+
+    expect(result).not.toBeNull();
+    expect(result?.confidence).toBe('high');
+    expect(result?.person.name).toBe('Robert Williams');
+  });
+
+  it('should still first-name-match a real (non-descriptive) name (F2)', async () => {
+    const mockPeople = [
+      {
+        id: '1',
+        family_id: 'fam1',
+        name: 'Ricardo Hermoso',
+        aliases: [],
+        redacted: false,
+        is_placeholder: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    const chain = createChainableMock({ data: mockPeople, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findBestMatch('fam1', 'Ricardo');
+
+    expect(result).not.toBeNull();
+    expect(result?.confidence).toBe('medium');
+    expect(result?.person.name).toBe('Ricardo Hermoso');
+  });
+
+  it('should not let a description alias drive pass 2 first-name matching (F2)', async () => {
+    const mockPeople = [
+      {
+        id: '1',
+        family_id: 'fam1',
+        name: 'Ricardo Hermoso',
+        aliases: [],
+        redacted: false,
+        is_placeholder: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    const chain = createChainableMock({ data: mockPeople, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    // Name is a plain non-matching name; the description is passed as a search alias.
+    const result = await personRepo.findBestMatch('fam1', 'Carol', [
+      "Ricardo Hermoso's father",
+    ]);
+
+    expect(result).toBeNull();
+  });
+
+  it('should not fuzzy-match one description against a similar description (F2)', async () => {
+    const mockPeople = [
+      {
+        id: '1',
+        family_id: 'fam1',
+        name: 'Mario Gomez',
+        aliases: ["Mario's son"],
+        redacted: false,
+        is_placeholder: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    const chain = createChainableMock({ data: mockPeople, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findBestMatch('fam1', "Maria's son");
+
+    expect(result).toBeNull();
+  });
 });
 
 describe('PersonRepository - updateName', () => {

@@ -88,8 +88,8 @@ function unifyApostrophesAndWhitespace(name: string): string {
  * for 'tio' vs 'tío').
  */
 export function normalizeNameKey(name: string): string {
-  const unifiedApostrophes = name.toLowerCase().replace(/[’ʼ‘]/g, "'");
-  const foldedDiacritics = unifiedApostrophes
+  const unified = unifyApostrophesAndWhitespace(name.toLowerCase());
+  const foldedDiacritics = unified
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .normalize('NFC');

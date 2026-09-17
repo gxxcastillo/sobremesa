@@ -169,8 +169,16 @@ export async function runImportDrain(
     // more history into an already-connected family) could have the live
     // poller and this drain run Scribe/Registrar concurrently for it. See
     // ProcessingQueueRepository.markProcessing() for the staleness caveat.
+    //
+    // A resumed job (§ the 'done' skip above) can also hand us a row already
+    // left 'error' by an earlier, partial pass -- pass that status through
+    // too, or the claim silently no-ops and this reprocessing pass gets no
+    // in-flight protection at all.
     if (queueItem) {
-      await queueRepo.markProcessing(familyId, queueItem.id, 'import-drain');
+      await queueRepo.markProcessing(familyId, queueItem.id, 'import-drain', [
+        'queued',
+        'error',
+      ]);
     }
 
     const result = await processor.process(eventId, familyId);

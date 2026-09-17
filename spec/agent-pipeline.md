@@ -70,7 +70,11 @@ Scribe responsibilities:
 Registrar is the single writer for extracted knowledge. It:
 
 1. Finds or creates people, places, events, relationships, and stories.
-2. Applies conservative entity matching and merge rules.
+2. Applies conservative entity matching and merge rules. A descriptive name or alias (e.g. "Ralph's
+   sister", "la tía de Juan" — anything `classifyPersonName` in `shared-utils` flags as relational or
+   generic) may only match an existing person by exact name or alias equality; it is never eligible
+   for first-name or fuzzy matching, so a description of a relative can never be merged into the
+   person it describes a relative _of_.
 3. Stores claims and links them to affected entities.
 4. Detects conflicts with existing claims.
 5. Computes claim strength and enqueues uncertain/high-stakes cases for async review.
