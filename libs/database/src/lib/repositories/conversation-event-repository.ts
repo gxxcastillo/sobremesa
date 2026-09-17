@@ -127,7 +127,15 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
         .eq('family_id', familyId)
         .eq('conversation_id', conversationId)
         .is('redacted.id', null)
-        .order('occurred_at', { ascending: true })
+        // `occurred_at` is not unique -- imported conversations routinely
+        // have many events sharing the same second/minute timestamp, which
+        // makes offset/limit pagination on it alone non-deterministic
+        // across pages (rows can be skipped or repeated at page
+        // boundaries). `sequence_number` is a monotonic, per-family-unique
+        // column assigned atomically at insert time specifically for this
+        // kind of deterministic ordering (see `findRecent`'s
+        // `beforeSequenceNumber`), so use it as the tiebreaker.
+        .order('sequence_number', { ascending: true })
         .range(offset, offset + pageSize - 1);
 
       if (error) {

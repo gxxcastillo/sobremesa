@@ -42,6 +42,18 @@ specifically so the import drain (§4.6) and the live poller never compete for t
 deliberately never wires `admin`/`historian`/`facilitatorNudge`, so a historical message must never
 be processed by the live pipeline instead.
 
+Row ownership by intent is not, by itself, per-family exclusion: the import drain processes its rows
+directly (§4.6) rather than leasing them through the dequeue function above, so without a separate
+signal, the dequeue function's own family-level in-flight check would never see an import drain as
+"in flight." The drain closes this by marking each row `'processing'` immediately before running it
+(`ProcessingQueueRepository.markProcessing()`) — the same status the dequeue function's per-family
+exclusion check already looks for — so a live-intent lease for that family is blocked for the
+duration of that one event. This protection lapses if a single event takes longer than the dequeue
+function's own lock-staleness window (`lockTimeoutMs`, default 5 minutes): a `'processing'` row older
+than that is treated as abandoned and no longer blocks other leases. This matters when import targets
+a family that also has live traffic (`existingFamilyId`, §4.6) — the default, no-existing-family case
+has no live traffic to race against.
+
 `MessageProcessor`:
 
 1. Loads the event and shared recent context.
@@ -130,8 +142,15 @@ The Studio WhatsApp import path enters through the API but reuses the same ledge
 ['router', 'filter', 'imageLinker', 'scribe', 'registrar'] })` — the same real
    Intern → Scribe → Registrar pipeline a live message gets, minus `admin`/`historian`/
    `facilitatorNudge`: a historical import must never send an outbound message or answer a question.
+   A single drain pass makes exactly one attempt per event and never revisits a `'queued'` row within
+   that pass, so a per-event failure dead-letters immediately (`status = 'error'`, unlike the live
+   queue's multi-attempt retry-then-dead-letter above) — it stays visible via the same
+   errors/requeue surface rather than sitting as an unrecoverable `'queued'` row once the job
+   completes.
 4. The import job's status moves straight from inserting messages to `complete` (or `failed`) once
-   the drain finishes — no manual API call and no intermediate review state.
+   the drain finishes — no manual API call and no intermediate review state. `complete` reflects the
+   drain finishing its pass over every event, not that every event succeeded; per-event failures are
+   dead-lettered (above), not retried by re-running the job.
 
 `sbm import`/`sbm process` (local dev CLI) enqueue every parsed event unconditionally (default
 `intent: 'live'`, since nothing else competes with a local one-shot batch run) and drain them through

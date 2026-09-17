@@ -606,11 +606,25 @@ export function importRoutes(dbClient: DatabaseClient) {
             return { error: 'Can only resume failed jobs' };
           }
 
-          // Reset status to pending
-          await jobRepo.update(jobId, {
-            status: 'pending',
-            error: undefined,
-          });
+          // Compare-and-swap, mirroring /cancel above: only resume if the
+          // job is still 'failed'. Without this, two overlapping resume
+          // calls (double-click, retry, a second admin) could both pass the
+          // read above, both flip status to 'pending', and both invoke
+          // runImportJob concurrently for the same job/family -- racing two
+          // Intern->Scribe->Registrar drains and letting one's failure
+          // handler clobber the other's in-progress/complete status.
+          const updated = await jobRepo.transitionStatus(
+            jobId,
+            ['failed'],
+            'pending',
+            undefined,
+            { error: undefined },
+          );
+
+          if (!updated) {
+            set.status = 400;
+            return { error: 'Can only resume failed jobs' };
+          }
 
           // Start processing in background
           runImportJob(jobId).catch((error) => {

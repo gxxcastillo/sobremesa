@@ -1654,12 +1654,19 @@ function GoldenEditor(props: {
 
   // Reload the draft whenever the *pair* changes (not on every render) —
   // `on` so this doesn't also fire from `golden`'s own updates below.
+  // `requestId` guards against a stale response: if the pair changes again
+  // before this fetch resolves, its `.then` must not overwrite the newer
+  // pair's state (which the persist effect below would then save over the
+  // new pair's actual golden record).
+  let requestId = 0;
   createEffect(
     on([() => props.familyIdA, () => props.familyIdB], ([a, b]) => {
+      const thisRequestId = ++requestId;
       setHydrated(false);
       setGolden({});
       if (!a || !b) return;
       void api.getFamilyGolden(a, b).then((draft) => {
+        if (thisRequestId !== requestId) return;
         setGolden(draft.golden ?? {});
         setHydrated(true);
       });

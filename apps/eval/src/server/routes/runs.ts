@@ -84,27 +84,52 @@ export function runRoutes(dbClient: DatabaseClient, store: EvalStore) {
 
           const results = [];
           for (const config of configs) {
-            const recordingProvider = new RecordingProvider(
-              resolveProvider(config),
-            );
-            const result = await runScenario(
-              scenario,
-              recordingProvider,
-              config.model,
-              runOptions,
-            );
-            results.push({
-              provider: config.provider,
-              model: config.model,
-              outputs: result.outputs,
-              error: result.error?.message,
-              score:
-                input.kind === 'scenario'
-                  ? scoreScenario(result, SCORING_THRESHOLD)
-                  : undefined,
-              llmCalls: recordingProvider.calls,
-              costEstimate: estimateCost(config.model, recordingProvider.calls),
-            });
+            // Per-config try/catch: resolveProvider() throws synchronously
+            // for a misconfigured config (e.g. a missing API key env var),
+            // unlike runScenario itself, which reports failures via
+            // `result.error` instead of throwing. Without this, one bad
+            // config later in the list would abort the whole request and
+            // discard every earlier config's already-completed (and, for a
+            // paid provider, already-billed) result along with it.
+            try {
+              const recordingProvider = new RecordingProvider(
+                resolveProvider(config),
+              );
+              const result = await runScenario(
+                scenario,
+                recordingProvider,
+                config.model,
+                runOptions,
+              );
+              results.push({
+                provider: config.provider,
+                model: config.model,
+                outputs: result.outputs,
+                error: result.error?.message,
+                score:
+                  input.kind === 'scenario'
+                    ? scoreScenario(result, SCORING_THRESHOLD)
+                    : undefined,
+                llmCalls: recordingProvider.calls,
+                costEstimate: estimateCost(
+                  config.model,
+                  recordingProvider.calls,
+                ),
+              });
+            } catch (configErr) {
+              results.push({
+                provider: config.provider,
+                model: config.model,
+                outputs: undefined,
+                error:
+                  configErr instanceof Error
+                    ? configErr.message
+                    : 'Failed to run this config',
+                score: undefined,
+                llmCalls: [],
+                costEstimate: undefined,
+              });
+            }
           }
 
           const stored = store.insertRun({

@@ -264,6 +264,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@sobremesa/shared-types": "workspace:*",
+        "@sobremesa/shared-utils": "workspace:*",
         "@supabase/supabase-js": "^2.90.1",
         "tslib": "^2.3.0",
       },
@@ -275,6 +276,7 @@
       "name": "@sobremesa/evals",
       "version": "0.0.1",
       "dependencies": {
+        "@sobremesa/agents-intern": "workspace:*",
         "@sobremesa/agents-registrar": "workspace:*",
         "@sobremesa/agents-scribe": "workspace:*",
         "@sobremesa/ai-provider": "workspace:*",

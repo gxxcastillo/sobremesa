@@ -37,7 +37,11 @@ Primary entity tables are `people`, `places`, `events`, and `stories`. They are 
 soft-redactable, and merge-aware.
 
 - **People** may be placeholders (`isPlaceholder`) such as "Ralph's sister" until an identity claim
-  resolves them.
+  resolves them. Whether a name is a placeholder, and which kind, is decided by
+  `classifyPersonName` (`libs/shared/utils`): `relational` names describe someone by their
+  relationship to another named person ("Ralph's sister", "la tía de Juan") and may only be matched
+  or reused by exact normalized name; `generic` names are plain generic references ("someone", "the
+  neighbor") or speaker-relative terms ("mi papá") and are never reused across mentions.
 - **Places**, **events**, **relationships**, and image references use controlled vocabularies enforced
   at the extraction/type layer rather than as DB enum/check constraints.
 - Join tables connect stories/events to people, places, source messages, and each other.

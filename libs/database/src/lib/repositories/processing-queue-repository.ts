@@ -168,6 +168,43 @@ export class ProcessingQueueRepository {
   }
 
   /**
+   * Mark a 'queued' item as 'processing' outside the `dequeueAny()` lease
+   * path -- used by callers (e.g. the import drain) that process a bounded,
+   * known set of rows directly rather than leasing them. Setting `status`/
+   * `locked_at` here is what makes this row count toward
+   * `dequeue_processing_queue_item`'s per-family in-flight exclusion check,
+   * so a live-intent lease for the same family is blocked while this row is
+   * mid-processing -- closing the gap where a direct-process caller and the
+   * leasing path could otherwise run concurrently for one family. The block
+   * only holds for `lockTimeoutMs` (matching `dequeueAny`'s own staleness
+   * window) before the row is treated as abandoned; callers with a
+   * single-event processing time under that window get real mutual
+   * exclusion from this alone.
+   */
+  async markProcessing(
+    familyId: string,
+    id: string,
+    workerId: string,
+  ): Promise<void> {
+    const { error } = await this.client
+      .from(this.tableName)
+      .update({
+        status: 'processing',
+        locked_at: new Date().toISOString(),
+        locked_by: workerId,
+      })
+      .eq('family_id', familyId)
+      .eq('id', id)
+      .eq('status', 'queued');
+
+    if (error) {
+      throw new Error(
+        `Failed to mark queue item as processing: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Mark an item as completed.
    */
   async complete(familyId: string, id: string): Promise<void> {

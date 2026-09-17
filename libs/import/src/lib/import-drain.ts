@@ -161,17 +161,36 @@ export async function runImportDrain(
       continue;
     }
 
+    // Claim the row as 'processing' before running it through the shared
+    // pipeline, purely so it counts toward the per-family in-flight check
+    // `dequeue_processing_queue_item` (the live poller's lease path) already
+    // enforces -- without this, that check never sees an import event as
+    // "in flight," so a family with active live traffic (e.g. importing
+    // more history into an already-connected family) could have the live
+    // poller and this drain run Scribe/Registrar concurrently for it. See
+    // ProcessingQueueRepository.markProcessing() for the staleness caveat.
+    if (queueItem) {
+      await queueRepo.markProcessing(familyId, queueItem.id, 'import-drain');
+    }
+
     const result = await processor.process(eventId, familyId);
 
     if (queueItem) {
       if (result.success) {
         await queueRepo.complete(familyId, queueItem.id);
       } else {
+        // maxRetries=1: this drain makes exactly one processing attempt per
+        // event and never revisits a 'queued' row within the same pass, so a
+        // higher maxRetries here would leave a failed event stuck as
+        // 'queued' forever once the job is marked 'complete' -- invisible to
+        // both the live poller (intent='import' is filtered out) and the
+        // dead-letter UI (which only surfaces status='error'). Dead-letter
+        // immediately instead, so it's visible via getErrors()/requeue().
         await queueRepo.fail(
           familyId,
           queueItem.id,
           result.error || 'Unknown error',
-          3,
+          1,
         );
       }
     }

@@ -85,6 +85,7 @@ function createQueueRepoStub(statusByEventId: Record<string, string> = {}) {
       })),
     complete: vi.fn().mockResolvedValue(undefined),
     fail: vi.fn().mockResolvedValue('queued'),
+    markProcessing: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -130,11 +131,14 @@ describe('runImportDrain', () => {
     expect(process).toHaveBeenCalledWith('event-a', FAMILY_ID);
     expect(process).toHaveBeenCalledWith('event-b', FAMILY_ID);
     expect(queueRepo.complete).toHaveBeenCalledWith(FAMILY_ID, 'queue-event-a');
+    // maxRetries=1: a single drain pass never revisits a 'queued' item, so a
+    // failed event must dead-letter (status='error') immediately rather than
+    // reset to 'queued' with nothing left to retry it.
     expect(queueRepo.fail).toHaveBeenCalledWith(
       FAMILY_ID,
       'queue-event-b',
       'boom',
-      3,
+      1,
     );
 
     expect(result.total).toBe(2);

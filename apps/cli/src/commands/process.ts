@@ -714,6 +714,20 @@ export async function runProcess(options: ProcessOptions): Promise<void> {
           // nothing to update; only that case is genuinely a no-op on the
           // queue.
           const queueItem = await queueRepo.findByEventId(familyId, eventId);
+          // Claim it as 'processing' (when still 'queued') before running
+          // it directly, so it counts toward the per-family in-flight check
+          // `dequeueAny` relies on -- otherwise a concurrent worker (the
+          // live poller, or another `sbm process`) could claim and process
+          // this same event at the same time, which -- per the comment
+          // above -- is a real duplicate-data risk, not just untidy
+          // bookkeeping.
+          if (queueItem && queueItem.status === 'queued') {
+            await queueRepo.markProcessing(
+              familyId,
+              queueItem.id,
+              'cli-process-event-id',
+            );
+          }
           const itemResult = await runOne(eventId, familyId);
           if (queueItem) {
             if (itemResult.success) {
@@ -821,5 +835,15 @@ export async function runProcess(options: ProcessOptions): Promise<void> {
           `${f.claims} claims, ${f.stories} stories, ${f.places} places, ${f.conflicts} conflicts`,
       );
     }
+  }
+
+  // The inner catch above deliberately doesn't rethrow so the run log/
+  // summary above still get written on a mid-run failure -- but citty's
+  // runMain only sets a non-zero exit code when the command handler throws,
+  // so without this, a partial/failed run (e.g. a dropped DB connection)
+  // would otherwise report success (exit 0) to any script chaining
+  // `sbm import && sbm process`.
+  if (error !== undefined) {
+    throw new Error(error);
   }
 }
