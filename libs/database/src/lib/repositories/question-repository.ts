@@ -77,6 +77,28 @@ export class QuestionRepository {
   }
 
   /**
+   * Find the most recent `asked_at` timestamp for a family, regardless of a
+   * question's current status -- an answered or retired question was still
+   * asked, and the ask-rate throttle paces the bot's asking, not its backlog.
+   */
+  async findMostRecentAskedAt(familyId: string): Promise<Date | null> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('asked_at')
+      .eq('family_id', familyId)
+      .not('asked_at', 'is', null)
+      .order('asked_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to find most recent asked_at: ${error.message}`);
+    }
+
+    return data?.asked_at ? new Date(data.asked_at as string) : null;
+  }
+
+  /**
    * Find unanswered questions (proposed or asked).
    */
   async findUnanswered(familyId: string): Promise<Question[]> {

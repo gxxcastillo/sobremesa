@@ -398,26 +398,15 @@ export class FacilitatorAgent {
 
   /**
    * Check if a question was asked recently (within minMinutesBetweenQuestions).
+   * Keyed on the most recent `asked_at` regardless of the question's current
+   * status: an answered question was still asked, so it must still throttle.
    */
   private async wasQuestionAskedRecently(familyId: string): Promise<boolean> {
-    const questions = await this.questionRepo.findByStatus(familyId, 'asked');
-
-    if (questions.length === 0) {
+    const askedAt = await this.questionRepo.findMostRecentAskedAt(familyId);
+    if (!askedAt) {
       return false;
     }
 
-    // Find the most recently asked question
-    const mostRecent = questions.reduce((latest: Question, q: Question) => {
-      if (!q.askedAt) return latest;
-      if (!latest.askedAt) return q;
-      return new Date(q.askedAt) > new Date(latest.askedAt) ? q : latest;
-    }, questions[0]);
-
-    if (!mostRecent.askedAt) {
-      return false;
-    }
-
-    const askedAt = new Date(mostRecent.askedAt);
     const minutesSinceAsked = (Date.now() - askedAt.getTime()) / (1000 * 60);
 
     return minutesSinceAsked < this.minMinutesBetweenQuestions;

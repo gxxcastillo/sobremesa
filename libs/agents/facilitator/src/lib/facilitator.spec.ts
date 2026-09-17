@@ -10,6 +10,7 @@ vi.mock('@sobremesa/prompts', () => ({
 // Mock repositories
 const mockQuestionRepo = {
   findByStatus: vi.fn(),
+  findMostRecentAskedAt: vi.fn(),
   findPending: vi.fn(),
   markAsked: vi.fn(),
   updateStatus: vi.fn(),
@@ -88,6 +89,7 @@ describe('FacilitatorAgent - Participant Addressing', () => {
     // Reset mock implementations
     mockQuestionRepo.findPending.mockResolvedValue([]);
     mockQuestionRepo.findByStatus.mockResolvedValue([]);
+    mockQuestionRepo.findMostRecentAskedAt.mockResolvedValue(null);
     mockQuestionRepo.markAsked.mockResolvedValue(undefined);
     mockQuestionRepo.updateStatus.mockResolvedValue(undefined);
     mockFamilyRepo.findById.mockResolvedValue(baseFamily);
@@ -282,6 +284,72 @@ describe('FacilitatorAgent - Participant Addressing', () => {
       // Should not check participant since no chatId
       expect(mockPersonRepo.findBestMatch).not.toHaveBeenCalled();
       expect(mockFamilyAccessRepo.isPersonParticipant).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('ask-rate throttle', () => {
+    let throttledFacilitator: FacilitatorAgent;
+
+    beforeEach(() => {
+      throttledFacilitator = new FacilitatorAgent({
+        questionRepo: mockQuestionRepo as any,
+        familyRepo: mockFamilyRepo as any,
+        eventLog: mockEventLog as any,
+        familyAccessRepo: mockFamilyAccessRepo as any,
+        personRepo: mockPersonRepo as any,
+        messageSender: mockMessageSender as any,
+        provider: mockProvider as any,
+        model: 'test-model',
+        logger: mockLogger as any,
+        minMinutesBetweenQuestions: 60,
+      });
+    });
+
+    const minutesAgo = (minutes: number): Date =>
+      new Date(Date.now() - minutes * 60 * 1000);
+
+    it('throttles on an answered question asked 10 minutes ago (regression)', async () => {
+      mockQuestionRepo.findMostRecentAskedAt.mockResolvedValue(minutesAgo(10));
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      const result = await throttledFacilitator.askNextQuestion(baseFamily.id);
+
+      expect(result.skippedReason).toContain(
+        'Question asked within last 60 minutes',
+      );
+      expect(mockMessageSender.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does not throttle when no question has ever been asked', async () => {
+      mockQuestionRepo.findMostRecentAskedAt.mockResolvedValue(null);
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      const result = await throttledFacilitator.askNextQuestion(baseFamily.id);
+
+      expect(result.skippedReason).toBeUndefined();
+      expect(mockMessageSender.sendMessage).toHaveBeenCalled();
+    });
+
+    it('throttles just inside the interval', async () => {
+      mockQuestionRepo.findMostRecentAskedAt.mockResolvedValue(minutesAgo(59));
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      const result = await throttledFacilitator.askNextQuestion(baseFamily.id);
+
+      expect(result.skippedReason).toContain(
+        'Question asked within last 60 minutes',
+      );
+      expect(mockMessageSender.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does not throttle just outside the interval', async () => {
+      mockQuestionRepo.findMostRecentAskedAt.mockResolvedValue(minutesAgo(61));
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      const result = await throttledFacilitator.askNextQuestion(baseFamily.id);
+
+      expect(result.skippedReason).toBeUndefined();
+      expect(mockMessageSender.sendMessage).toHaveBeenCalled();
     });
   });
 

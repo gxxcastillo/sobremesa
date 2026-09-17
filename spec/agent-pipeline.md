@@ -121,8 +121,10 @@ retrieved claim, and fetches the contradicting claim from the database when the 
 didn't already have it — a conflict recorded months apart still surfaces even though a single query
 wouldn't have fetched both sides.
 
-Facilitator also asks the highest-priority pending question when allowed by the simple time throttle
-configured in the chatbots app.
+Facilitator also asks the highest-priority pending question when allowed by a simple time throttle
+(default 60 minutes, configurable in the chatbots app). The throttle is keyed on the most recent
+`asked_at` across all questions for the family regardless of their current status: an answered or
+retired question was still asked, so it still counts toward pacing how often the bot speaks.
 
 ## 3.6 Model Tiers
 
