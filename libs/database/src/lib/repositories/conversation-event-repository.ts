@@ -102,30 +102,50 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
 
   /**
    * Find every (non-redacted) event id in a conversation, oldest first.
-   * Unlike `findRecent`, this has no limit -- it's meant for enumerating a
-   * bounded, known set of events to process (e.g. the import drain), not
-   * for context windows. Excludes redacted events using the same LEFT JOIN
-   * pattern as `findRecent`/`findUnprocessed`.
+   * Unlike `findRecent`, this has no application-level cap -- it's meant for
+   * enumerating a bounded, known set of events to process (e.g. the import
+   * drain), not for context windows. Excludes redacted events using the same
+   * LEFT JOIN pattern as `findRecent`/`findUnprocessed`.
+   *
+   * PostgREST caps any single response at `db.max_rows` (1000 in this
+   * project's config) regardless of app intent, so this pages through
+   * results internally to avoid silently truncating conversations larger
+   * than that.
    */
   async findAllIdsInConversation(
     familyId: string,
     conversationId: string,
   ): Promise<string[]> {
-    const { data, error } = await this.client
-      .from(this.tableName)
-      .select('id, redacted:conversation_redactions(id)')
-      .eq('family_id', familyId)
-      .eq('conversation_id', conversationId)
-      .is('redacted.id', null)
-      .order('occurred_at', { ascending: true });
+    const pageSize = 1000;
+    const ids: string[] = [];
+    let offset = 0;
 
-    if (error) {
-      throw new Error(
-        `Failed to find conversation event ids: ${error.message}`,
-      );
+    for (;;) {
+      const { data, error } = await this.client
+        .from(this.tableName)
+        .select('id, redacted:conversation_redactions(id)')
+        .eq('family_id', familyId)
+        .eq('conversation_id', conversationId)
+        .is('redacted.id', null)
+        .order('occurred_at', { ascending: true })
+        .range(offset, offset + pageSize - 1);
+
+      if (error) {
+        throw new Error(
+          `Failed to find conversation event ids: ${error.message}`,
+        );
+      }
+
+      const page = data || [];
+      ids.push(...page.map((row) => row['id'] as string));
+
+      if (page.length < pageSize) {
+        break;
+      }
+      offset += pageSize;
     }
 
-    return (data || []).map((row) => row['id'] as string);
+    return ids;
   }
 
   /**

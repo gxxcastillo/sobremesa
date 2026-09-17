@@ -50,7 +50,10 @@ import * as path from 'path';
 import { defineCommand } from 'citty';
 import { createLiveDbClient } from '../db-client';
 import { ImportJobRepository, ImportProcessor } from '@sobremesa/import';
-import { ProcessingQueueRepository } from '@sobremesa/database';
+import {
+  ConversationEventRepository,
+  ProcessingQueueRepository,
+} from '@sobremesa/database';
 import {
   ALL_IMPORT_SOURCES,
   SUPPORTED_IMPORT_SOURCES,
@@ -242,18 +245,11 @@ export async function runImport(options: ImportOptions): Promise<void> {
     // unconditionally, matching live's MessageIngester. `sbm process` (run
     // separately) is where Intern's real router/filter judges each message,
     // in the same pass as Scribe/Registrar.
-    const { data: importedEvents, error: eventsError } = await client
-      .from('conversation_events')
-      .select('id')
-      .eq('family_id', imported.familyId)
-      .eq('conversation_id', imported.conversationId)
-      .order('sequence_number', { ascending: true });
-    if (eventsError) {
-      throw new Error(
-        `Failed to load conversation events: ${eventsError.message}`,
-      );
-    }
-    const eventIds = (importedEvents ?? []).map((row) => row['id'] as string);
+    const eventRepo = new ConversationEventRepository(client);
+    const eventIds = await eventRepo.findAllIdsInConversation(
+      imported.familyId,
+      imported.conversationId,
+    );
 
     const queueRepo = new ProcessingQueueRepository(client);
     for (const eventId of eventIds) {

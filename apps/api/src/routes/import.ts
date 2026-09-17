@@ -533,10 +533,32 @@ export function importRoutes(dbClient: DatabaseClient) {
             };
           }
 
-          await jobRepo.update(jobId, {
-            status: 'cancelled',
-            error: 'Cancelled by user',
-          });
+          // Compare-and-swap: only cancel if the job is still in a
+          // non-terminal status. This avoids a race where the drain
+          // transitions the job to 'complete'/'failed' between our read
+          // above and this write, which would otherwise silently clobber
+          // a finished job's status back to 'cancelled'.
+          const updated = await jobRepo.transitionStatus(
+            jobId,
+            [
+              'pending',
+              'creating_family',
+              'creating_identities',
+              'submitting',
+              'processing',
+              'hydrating',
+            ],
+            'cancelled',
+            undefined,
+            { error: 'Cancelled by user' },
+          );
+
+          if (!updated) {
+            set.status = 400;
+            return {
+              error: 'Cannot cancel a completed or already cancelled job',
+            };
+          }
 
           // Log cancellation event
           if (job.familyId) {

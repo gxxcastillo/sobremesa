@@ -192,7 +192,7 @@ export async function runImportDrain(
     // never clobbers a 'cancelled' status even if a cancel lands in the gap
     // between checks here.
     const count = processed + failed;
-    if (count % progressReportInterval === 0) {
+    if (count === eventIds.length || count % progressReportInterval === 0) {
       const job = await jobRepo.findById(jobId);
       if (job?.status === 'cancelled') {
         break;

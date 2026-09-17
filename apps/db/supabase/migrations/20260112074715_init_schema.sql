@@ -2409,9 +2409,9 @@ CREATE TABLE IF NOT EXISTS questions (
 
   -- Composite FKs enforce tenant integrity
   CONSTRAINT fk_questions_source_message
-    FOREIGN KEY (family_id, source_message_id) REFERENCES conversation_events(family_id, id) ON DELETE SET NULL,
+    FOREIGN KEY (family_id, source_message_id) REFERENCES conversation_events(family_id, id) ON DELETE SET NULL (source_message_id),
   CONSTRAINT fk_questions_answer_message
-    FOREIGN KEY (family_id, answer_message_id) REFERENCES conversation_events(family_id, id) ON DELETE SET NULL
+    FOREIGN KEY (family_id, answer_message_id) REFERENCES conversation_events(family_id, id) ON DELETE SET NULL (answer_message_id)
 );
 
 COMMENT ON TABLE questions IS 'Question lifecycle managed by Facilitator.';

@@ -16,7 +16,11 @@ function createEventsQueryStub(eventIds: string[]) {
   chain['select'] = vi.fn().mockReturnValue(chain);
   chain['eq'] = vi.fn().mockReturnValue(chain);
   chain['is'] = vi.fn().mockReturnValue(chain);
-  chain['order'] = vi
+  chain['order'] = vi.fn().mockReturnValue(chain);
+  // findAllIdsInConversation pages through results via .range(); a single
+  // page covers every id here since test fixtures are always well under the
+  // 1000-row page size.
+  chain['range'] = vi
     .fn()
     .mockResolvedValue({ data: eventIds.map((id) => ({ id })), error: null });
   return chain;
