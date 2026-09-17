@@ -2405,6 +2405,8 @@ CREATE TABLE IF NOT EXISTS questions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
+  CONSTRAINT uq_questions_family_id UNIQUE (family_id, id),
+
   -- Composite FKs enforce tenant integrity
   CONSTRAINT fk_questions_source_message
     FOREIGN KEY (family_id, source_message_id) REFERENCES conversation_events(family_id, id) ON DELETE SET NULL,
@@ -2467,6 +2469,65 @@ CREATE TRIGGER validate_question_identity
   BEFORE INSERT OR UPDATE ON questions
   FOR EACH ROW
   EXECUTE FUNCTION validate_question_identity_access();
+
+-- ============================================================================
+-- OUTBOUND MESSAGES (Durable send ledger)
+-- ============================================================================
+-- Claim-before-send, confirm-after dedup for the outbound Telegram path.
+-- Append-mostly; only status fields mutate, via OutboundMessageRepository.
+-- Deliberately not conversation_events -- bot text must stay out of the
+-- extraction context window (the grounding check depends on bot text never
+-- being extractable). Backend-only: no decided Studio read surface yet
+-- (see outbound-send-reliability-plan.md's open decisions).
+CREATE TABLE IF NOT EXISTS outbound_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+
+  dedup_key TEXT NOT NULL,
+  role TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'sent', 'failed', 'unknown')),
+
+  send_attempted_at TIMESTAMPTZ NULL,
+  external_message_id TEXT NULL,
+
+  -- Reactive provenance: the incoming message this is a reply to
+  -- (Historian answers, admin replies). Null for proactive sends.
+  conversation_event_id UUID NULL,
+  -- Proactive provenance: the questions row this send delivers (gap-driven
+  -- today, conflict-driven later -- both are questions rows). Null for
+  -- reactive sends.
+  question_id UUID NULL,
+
+  attempts INTEGER NOT NULL DEFAULT 1,
+  last_error TEXT NULL,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sent_at TIMESTAMPTZ NULL,
+
+  CONSTRAINT uq_outbound_messages_dedup_key UNIQUE (family_id, dedup_key),
+
+  CONSTRAINT fk_outbound_messages_conversation_event
+    FOREIGN KEY (family_id, conversation_event_id)
+    REFERENCES conversation_events(family_id, id) ON DELETE SET NULL (conversation_event_id),
+  CONSTRAINT fk_outbound_messages_question
+    FOREIGN KEY (family_id, question_id)
+    REFERENCES questions(family_id, id) ON DELETE SET NULL (question_id)
+);
+
+COMMENT ON TABLE outbound_messages IS 'Durable send ledger: claim-before-send, confirm-after dedup for the outbound Telegram path. Backend-only.';
+COMMENT ON COLUMN outbound_messages.dedup_key IS 'Natural per-send dedup key, e.g. historian-answer:<conversation_event_id>, facilitator:question:<question_id>. Unique per family.';
+COMMENT ON COLUMN outbound_messages.role IS 'What kind of send this is (historian-answer, admin, facilitator-question, ...); matches the dedup_key prefix.';
+COMMENT ON COLUMN outbound_messages.content IS 'Final rendered text (post-warmth-formatting), frozen at claim time. Only a failed-row reclaim may refresh it.';
+COMMENT ON COLUMN outbound_messages.send_attempted_at IS 'Stamped at claim time (when the row is handed to BotManager''s per-chat queue), not right before the Telegram API call -- so a crash before the real send reads as ambiguous (never resent) rather than safely reclaimed, matching the lost-over-duplicate policy.';
+COMMENT ON COLUMN outbound_messages.conversation_event_id IS 'Reactive provenance: the incoming message this replies to. Null for proactive sends.';
+COMMENT ON COLUMN outbound_messages.question_id IS 'Proactive provenance: the questions row this send delivers. Null for reactive sends.';
+
+CREATE INDEX IF NOT EXISTS idx_outbound_messages_family_status
+  ON outbound_messages(family_id, status);
 
 -- ============================================================================
 -- FACILITATOR RULES (Dynamic, adjusted by coaching)
@@ -3122,6 +3183,8 @@ ALTER TABLE real_time_levers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE facilitator_performance ENABLE ROW LEVEL SECURITY;
 -- allowed_chats is backend-only (service_role access), no RLS needed
 -- ALTER TABLE allowed_chats ENABLE ROW LEVEL SECURITY;
+-- outbound_messages is backend-only (service_role access), no RLS needed
+-- ALTER TABLE outbound_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE integrity_checkpoints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_log ENABLE ROW LEVEL SECURITY;
 
@@ -3893,6 +3956,7 @@ END;
 $$;
 
 REVOKE ALL ON TABLE public.allowed_chats FROM anon, authenticated;
+REVOKE ALL ON TABLE public.outbound_messages FROM anon, authenticated;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO service_role;

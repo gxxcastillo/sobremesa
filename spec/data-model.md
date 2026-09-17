@@ -102,6 +102,15 @@ Imports:
   not attach Curator analysis.
 - `questions`: Facilitator question lifecycle: `proposed → asked → answered`, with `retired` as an
   exit state.
+- `outbound_messages`: durable send ledger for the outbound Telegram path -- claim-before-send,
+  confirm-after dedup keyed on `(family_id, dedup_key)`, `status IN ('pending','sent','failed',
+'unknown')`. `conversation_event_id` (reactive: Historian answers, admin replies) and `question_id`
+  (proactive: Facilitator questions) are both nullable, family-scoped composite FKs recording what a
+  send is about. Deleting either referenced row retains the ledger row and clears only that nullable
+  provenance ID, never its non-null `family_id`. Backend-only (no RLS; explicitly revoked from `anon`/`authenticated`, like
+  `allowed_chats`) -- no decided Studio read surface yet. Schema and `OutboundMessageRepository`
+  exist; no send call site claims a row yet, so the table has no live traffic -- see
+  `outbound-send-reliability-plan.md`.
 - `event_log`: audit trail for ingestion, filtering/routing, redaction, questions, conflicts, imports,
   and errors. `intern_evaluated` is the canonical, append-only record of every `InternAgent.route()`
   resolution (action, relevance, reason, language, deterministic-vs-model provenance), written exactly
@@ -147,7 +156,7 @@ Redaction is non-destructive:
 
 ## 2.7 Table Catalogue
 
-The current migration defines 40 tables:
+The current migration defines 41 tables:
 
 - Tenancy/config: `families`, `family_config`, `sequence_counters`
 - Ingestion/queue: `ingestion_batches`, `conversation_events`, `conversation_event_processing`,
@@ -159,6 +168,6 @@ The current migration defines 40 tables:
 - Relationships: `relationships`
 - Claims: `claims`, `claim_analysis`, `claim_conflicts`, `claim_entities`, `claim_relationships`,
   `entity_merges`
-- Async/media/questions/coaching/audit: `llm_evaluation_queue`, `images`, `questions`,
-  `facilitator_rules`, `real_time_levers`, `facilitator_performance`, `event_log`,
-  `integrity_checkpoints`
+- Async/media/questions/outbound/coaching/audit: `llm_evaluation_queue`, `images`, `questions`,
+  `outbound_messages`, `facilitator_rules`, `real_time_levers`, `facilitator_performance`,
+  `event_log`, `integrity_checkpoints`

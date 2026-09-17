@@ -20,6 +20,9 @@ export * from './lib/queue';
 // Outgoing queue types
 export * from './lib/outgoing-queue';
 
+// Outbound send ledger types
+export * from './lib/outbound-message';
+
 // Event log types
 export * from './lib/event-log';
 

@@ -21,6 +21,7 @@ export { ClaimRepository } from './claim-repository';
 export { ClaimAnalysisRepository } from './claim-analysis-repository';
 export { RelationshipRepository } from './relationship-repository';
 export { QuestionRepository } from './question-repository';
+export { OutboundMessageRepository } from './outbound-message-repository';
 export { ImageRepository } from './image-repository';
 export { AllowedChatRepository } from './allowed-chat-repository';
 // Phase 1c: Claims Enhancement repositories
