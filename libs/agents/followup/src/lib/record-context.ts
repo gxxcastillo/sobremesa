@@ -347,10 +347,43 @@ export class RecordContextBuilder {
 }
 
 function claimText(c: Claim): string {
-  const v = c.claimValue as Record<string, unknown> | null;
-  const value =
-    v && typeof v === 'object' && 'value' in v
-      ? String(v['value'])
-      : JSON.stringify(v);
-  return `${c.subject} — ${value} (${c.claimType})`;
+  return `${c.subject} — ${formatClaimTextValue(c.claimValue)} (${c.claimType})`;
+}
+
+/**
+ * Renders a claim's structured value as readable text. Mirrors the claim
+ * value shapes Scribe actually emits (scribe.txt's "Structured claim
+ * values") instead of falling through to raw JSON for anything that isn't a
+ * bare `{value: ...}` -- a date claim's `{year, month, day, text}` or an
+ * identity claim's `{real_name, descriptive_name}` previously rendered as
+ * e.g. `{"year":1992,"month":3,"day":13,"text":"March 13, 1992"}`.
+ */
+function formatClaimTextValue(v: Record<string, unknown> | null): string {
+  if (v === null || typeof v !== 'object') {
+    return String(v);
+  }
+  if ('value' in v) {
+    return String(v['value']);
+  }
+  // date: prefer the human-readable citation text, else compose year/month/day
+  if (typeof v['text'] === 'string' && v['text']) {
+    return v['text'];
+  }
+  if ('year' in v) {
+    return [v['year'], v['month'], v['day']]
+      .filter((p) => p !== undefined && p !== null)
+      .join('-');
+  }
+  // identity
+  if (typeof v['real_name'] === 'string' && v['real_name']) {
+    return v['real_name'];
+  }
+  if (typeof v['descriptive_name'] === 'string' && v['descriptive_name']) {
+    return v['descriptive_name'];
+  }
+  // relationship
+  if (typeof v['relationshipType'] === 'string') {
+    return v['relationshipType'];
+  }
+  return JSON.stringify(v);
 }

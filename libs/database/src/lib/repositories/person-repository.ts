@@ -130,6 +130,10 @@ export class PersonRepository extends BaseRepository<Person> {
     const looseTerms = allSearchTerms.filter(
       (t) => classifyPersonName(t) === null,
     );
+    // normalizeNameKey so a curly-apostrophe/accent variant of the same name
+    // (routine LLM output) still first-name/fuzzy-matches instead of
+    // spawning a duplicate person -- same reasoning as pass 1 above.
+    const normalizedLooseTerms = looseTerms.map((t) => normalizeNameKey(t));
 
     const people = data.map((row) => this.mapFromDb(row));
 
@@ -161,9 +165,9 @@ export class PersonRepository extends BaseRepository<Person> {
     // Pass 2: First-name match (check if search term is first name of a person)
     const firstNameMatches: Person[] = [];
     for (const person of people) {
-      const personFirstName = person.name.toLowerCase().trim().split(' ')[0];
+      const personFirstName = normalizeNameKey(person.name).split(' ')[0];
 
-      for (const searchTerm of looseTerms) {
+      for (const searchTerm of normalizedLooseTerms) {
         // Check if search term matches first name
         if (searchTerm === personFirstName) {
           firstNameMatches.push(person);
@@ -195,13 +199,13 @@ export class PersonRepository extends BaseRepository<Person> {
     // -- otherwise a new, unrelated description could fuzzy-match it and
     // merge into the wrong person.
     for (const person of people) {
-      const personNameLower = person.name.toLowerCase().trim();
+      const personNameLower = normalizeNameKey(person.name);
       const personLooseAliases = (person.aliases || [])
-        .map((a) => a.toLowerCase().trim())
-        .filter((a) => classifyPersonName(a) === null);
+        .filter((a) => classifyPersonName(a.toLowerCase().trim()) === null)
+        .map((a) => normalizeNameKey(a));
       const allPersonTerms = [personNameLower, ...personLooseAliases];
 
-      for (const searchTerm of looseTerms) {
+      for (const searchTerm of normalizedLooseTerms) {
         for (const personTerm of allPersonTerms) {
           const similarity = this.calculateSimilarity(searchTerm, personTerm);
           if (similarity > 0.8) {

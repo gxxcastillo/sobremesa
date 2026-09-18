@@ -71,7 +71,17 @@ export function importRoutes(dbClient: DatabaseClient) {
     process.env as Record<string, string | undefined>,
   );
   const aiFactory = createAIProviderFactory(aiConfig, anthropicClient);
-  const hasAIProvider = aiConfig.defaultProvider !== 'mock';
+  // The drain only ever calls Intern and Scribe (via getProviderForAgent
+  // below), so the precondition must check *their* resolved providers, not
+  // just the global default -- an `AI_PROVIDER_INTERN`/`AI_PROVIDER_SCRIBE`
+  // override to 'mock' (or pointing at an unconfigured provider) would
+  // otherwise slip past a real default provider and complete the job having
+  // extracted nothing.
+  const hasAIProvider = (['intern', 'scribe'] as const).every(
+    (agent) =>
+      aiConfig.agentModels[agent]?.provider === 'anthropic' ||
+      aiConfig.agentModels[agent]?.provider === 'local',
+  );
 
   /**
    * Runs a job's full lifecycle: parse+insert (via `ImportProcessor`), then

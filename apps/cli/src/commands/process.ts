@@ -39,7 +39,9 @@
  * `facilitatorNudge` are valid `PipelineStage`s but this command never
  * supplies a `messageSender`, so requesting them fails immediately with
  * `buildMessagePipeline`'s own clear error rather than this command
- * special-casing them.
+ * special-casing them. `storyFollowup` is likewise valid but this command
+ * never supplies a `followup` provider/model, so requesting it fails the
+ * same eager-validation way.
  *
  * `--limit=N` stops after N messages have been attempted (success or
  * failure both count), even if more are queued -- cheap to try a change on
@@ -161,6 +163,7 @@ export const ALL_PIPELINE_STAGES: PipelineStage[] = [
   'registrar',
   'historian',
   'facilitatorNudge',
+  'storyFollowup',
 ];
 
 export const DEFAULT_PROCESS_STAGES: PipelineStage[] = [
@@ -734,6 +737,22 @@ export async function runProcess(options: ProcessOptions): Promise<void> {
               'cli-process-event-id',
               ['queued', 'error'],
             );
+          } else if (queueItem && queueItem.status === 'processing') {
+            // Some other worker (the live poller, or a concurrent
+            // `sbm process` invocation) owns this row right now -- running
+            // it here too would be exactly the concurrent duplicate-data
+            // risk the comment above describes. Skip it instead of
+            // processing alongside that worker; it'll settle its own row.
+            tallyResult(
+              familyId,
+              {
+                success: false,
+                error:
+                  "queue row already 'processing' (owned by another worker)",
+              },
+              eventId,
+            );
+            continue;
           }
           const itemResult = await runOne(eventId, familyId);
           if (claimed && queueItem) {

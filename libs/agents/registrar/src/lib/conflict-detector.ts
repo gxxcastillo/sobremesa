@@ -144,8 +144,10 @@ export function isExactDuplicateClaim(
   const newTarget = relationshipTargetText(newVal);
   if (!existingTarget || !newTarget) {
     // Same type, but no comparable counterparty evidence on one or both
-    // sides -- not confirmed as the same fact, so don't skip it.
-    return existingTarget === newTarget;
+    // sides -- not confirmed as the same fact, so don't skip it. This also
+    // covers the case where *neither* side has target evidence (both ''):
+    // that's still not confirmed as the same fact, not an exact duplicate.
+    return false;
   }
 
   return subjectsMatch(existingTarget, newTarget);
