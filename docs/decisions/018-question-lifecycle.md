@@ -4,6 +4,12 @@
 
 Accepted
 
+**Implementation note (2026-09-18):** "Scribe and Curator propose" was never implemented — nothing
+in the live pipeline generated a question until ADR-031 landed. ADR-031 covers a different,
+narrower case: a new `FollowupAgent` (neither Scribe nor Curator) proposes `origin: 'followup'`
+questions from live message content. Scribe/Curator proposing, this ADR's original scope, remains
+unimplemented.
+
 ## Date
 
 2026-01-10

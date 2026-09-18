@@ -339,6 +339,7 @@
       "dependencies": {
         "@sobremesa/agents-admin": "workspace:*",
         "@sobremesa/agents-facilitator": "workspace:*",
+        "@sobremesa/agents-followup": "workspace:*",
         "@sobremesa/agents-historian": "workspace:*",
         "@sobremesa/agents-intern": "workspace:*",
         "@sobremesa/agents-registrar": "workspace:*",

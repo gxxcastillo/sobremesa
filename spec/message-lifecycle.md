@@ -114,6 +114,18 @@ acknowledgement, a continuation of the previous message — are not hardcoded by
 doesn't scale across languages); outside tracked answers they fall through to the filter LLM, which
 already gets the recent conversation for context.
 
+`origin: 'followup'` questions (§3.6 of [`agent-pipeline.md`](./agent-pipeline.md)) join the same
+table and the same `proposed → asked → answered` states, with two differences from a Curator/human
+question: they carry an `expires_at` (24 hours from proposal) and take the `proposed → retired`
+branch on expiry rather than only on manual retirement, and only one such question may be
+`proposed` or recently `asked` for a family at a time (`QuestionRepository.hasWaitingOrRecent`,
+24-hour pacing) — a second candidate message is simply never formulated while that holds. Proposal
+happens inline in the live pipeline (§3.6). Asking one goes through Facilitator's ordinary
+`proposed → asked` path (§3.5), plus its own additional 30-minute chat-quiet gate and expiry
+retirement, and is sent verbatim rather than through the warmth formula (`spec/product/warmth.md`,
+ADR-033). Nothing requests the `storyFollowup` proposal stage in production yet, so none of this
+runs live today regardless.
+
 ## 4.5 Family Activation
 
 A family is created by `/sobremesa` registration in an allow-listed chat by a Telegram admin.

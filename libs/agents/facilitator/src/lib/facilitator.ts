@@ -4,6 +4,7 @@ import {
   EventLogRepository,
   FamilyAccessRepository,
   PersonRepository,
+  ConversationEventRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
 import { createLogger, logBestEffort } from '@sobremesa/shared-utils';
@@ -27,6 +28,15 @@ import {
 export type { MessageSender };
 
 /**
+ * A follow-up question (`origin: 'followup'`) only gets asked once the
+ * family's chat has been quiet this long (story-followups-plan.md D2). The
+ * model doesn't choose timing -- this is deterministic, activity-only
+ * (ADR-007), and unrelated to `minMinutesBetweenQuestions`, which throttles
+ * how often *any* question gets asked regardless of origin.
+ */
+const FOLLOWUP_QUIET_MINUTES = 30;
+
+/**
  * Options for FacilitatorAgent.
  */
 export interface FacilitatorAgentOptions {
@@ -48,6 +58,8 @@ export interface FacilitatorAgentOptions {
   familyAccessRepo?: FamilyAccessRepository;
   /** Person repository (for name lookups) */
   personRepo?: PersonRepository;
+  /** Conversation event repository (for the follow-up quiet check) */
+  conversationEventRepo?: ConversationEventRepository;
   /** Logger instance */
   logger?: pino.Logger;
   /** Minimum minutes between questions to same family */
@@ -104,6 +116,7 @@ export class FacilitatorAgent {
   private eventLog!: EventLogRepository;
   private familyAccessRepo!: FamilyAccessRepository;
   private personRepo!: PersonRepository;
+  private conversationEventRepo!: ConversationEventRepository;
   private logger: pino.Logger;
   private minMinutesBetweenQuestions: number;
 
@@ -140,12 +153,19 @@ export class FacilitatorAgent {
       this.personRepo = new PersonRepository(dbClient);
     }
 
+    if (options.conversationEventRepo) {
+      this.conversationEventRepo = options.conversationEventRepo;
+    } else if (dbClient) {
+      this.conversationEventRepo = new ConversationEventRepository(dbClient);
+    }
+
     if (
       !this.questionRepo ||
       !this.familyRepo ||
       !this.eventLog ||
       !this.familyAccessRepo ||
-      !this.personRepo
+      !this.personRepo ||
+      !this.conversationEventRepo
     ) {
       throw new Error(
         'FacilitatorAgent requires either dbClient or all repository instances',
@@ -167,7 +187,13 @@ export class FacilitatorAgent {
     this.logger.info({ familyId }, 'Checking for questions to ask');
 
     try {
-      // 1. Get the family to find the chat ID
+      // 1. Retire any follow-up questions that expired unasked, before
+      // considering what to ask. `findPending` already excludes expired
+      // rows on its own, so this doesn't change what gets asked below --
+      // it's cleanup, keeping `status` accurate for Studio/audit review.
+      await this.retireExpiredQuestions(familyId);
+
+      // 2. Get the family to find the chat ID
       const family = await this.familyRepo.findById(familyId);
       if (!family) {
         return { success: false, error: 'Family not found' };
@@ -181,7 +207,7 @@ export class FacilitatorAgent {
         };
       }
 
-      // 2. Check if we asked a question recently
+      // 3. Check if we asked a question recently
       const recentlyAsked = await this.wasQuestionAskedRecently(familyId);
       if (recentlyAsked) {
         return {
@@ -190,7 +216,7 @@ export class FacilitatorAgent {
         };
       }
 
-      // 3. Get pending questions ordered by priority
+      // 4. Get pending questions ordered by priority
       const pending = await this.questionRepo.findPending(familyId, 1);
       if (pending.length === 0) {
         return { success: true, skippedReason: 'No pending questions' };
@@ -198,14 +224,27 @@ export class FacilitatorAgent {
 
       const question = pending[0];
 
-      // 4. Send the question via Facilitator bot
+      // 5. A follow-up question waits for the chat to go quiet (D2) -- the
+      // model doesn't choose timing, this deterministic check does. Every
+      // other origin has no such gate.
+      if (question.origin === 'followup') {
+        const isQuiet = await this.isChatQuiet(familyId);
+        if (!isQuiet) {
+          return {
+            success: true,
+            skippedReason: `Follow-up question waiting for ${FOLLOWUP_QUIET_MINUTES} minutes of quiet`,
+          };
+        }
+      }
+
+      // 6. Send the question via Facilitator bot
       const externalMessageId = await this.sendQuestion(
         family,
         question,
         chatId,
       );
 
-      // 5. Mark as asked with the external message ID for answer detection,
+      // 7. Mark as asked with the external message ID for answer detection,
       // and stamp the persona name so a later reply's answeredQuestion
       // context can read it back instead of hardcoding a role name.
       const askedByName =
@@ -219,7 +258,7 @@ export class FacilitatorAgent {
         askedByName,
       );
 
-      // 6. Log the event
+      // 8. Log the event
       await this.eventLog.log({
         familyId,
         eventType: 'question_asked',
@@ -266,9 +305,13 @@ export class FacilitatorAgent {
     question: Question,
     chatId: string,
   ): Promise<number> {
-    // Apply warmth formula via AI if available
+    // Apply warmth formula via AI if available. A story follow-up is sent
+    // verbatim -- provisional exception to the warmth formula, see
+    // spec/product/warmth.md and ADR-033.
     let message: string;
-    if (this.provider) {
+    if (question.origin === 'followup') {
+      message = question.contentOriginal;
+    } else if (this.provider) {
       try {
         // Check if target person is a verified participant
         const isTargetParticipant = await this.checkTargetParticipant(
@@ -410,6 +453,52 @@ export class FacilitatorAgent {
     const minutesSinceAsked = (Date.now() - askedAt.getTime()) / (1000 * 60);
 
     return minutesSinceAsked < this.minMinutesBetweenQuestions;
+  }
+
+  /**
+   * True once the family's chat has been quiet for `FOLLOWUP_QUIET_MINUTES`
+   * (story-followups-plan.md D2). Reads only the timestamp of the last
+   * conversation event -- never its content, so ADR-007 holds. No activity
+   * ever recorded means nothing to wait on.
+   */
+  private async isChatQuiet(familyId: string): Promise<boolean> {
+    const lastEventAt =
+      await this.conversationEventRepo.findMostRecentOccurredAt(familyId);
+    if (!lastEventAt) {
+      return true;
+    }
+
+    const minutesSinceLastEvent =
+      (Date.now() - lastEventAt.getTime()) / (1000 * 60);
+
+    return minutesSinceLastEvent >= FOLLOWUP_QUIET_MINUTES;
+  }
+
+  /**
+   * Retire every proposed question past its `expires_at` (D3) before this
+   * family's next question is chosen. `findPending` already excludes
+   * expired rows on its own -- this only keeps `status` accurate and logs
+   * `question_retired` for audit/Studio review.
+   */
+  private async retireExpiredQuestions(familyId: string): Promise<void> {
+    const expired = await this.questionRepo.findExpiredPending(familyId);
+
+    for (const question of expired) {
+      await this.questionRepo.retire(familyId, question.id);
+      await this.eventLog.log({
+        familyId,
+        eventType: 'question_retired',
+        eventCategory: 'system_event',
+        actor: 'facilitator',
+        actorType: 'system',
+        conversationEventId: question.sourceMessageId,
+        eventData: { questionId: question.id, reason: 'expired' },
+      });
+      this.logger.info(
+        { familyId, questionId: question.id },
+        'Retired expired question',
+      );
+    }
   }
 
   /**

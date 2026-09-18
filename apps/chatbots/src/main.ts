@@ -140,7 +140,11 @@ async function main() {
       stages,
       messageSender: botManager,
       botUsername: botInfo.username,
-      minMinutesBetweenQuestions: 5,
+      // 24h between any question asked -- story-followups-plan.md D2/#5;
+      // was 5, an override that made the constructor's 60-min default
+      // (F0's own fix, see spec/agent-pipeline.md) unreachable in
+      // production.
+      minMinutesBetweenQuestions: 1440,
       logger,
       providers: hasAIProvider
         ? {

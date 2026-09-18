@@ -1,5 +1,6 @@
 import type pino from 'pino';
 import type { AIProvider } from '@sobremesa/ai-provider';
+import { QuestionRepository, EventLogRepository } from '@sobremesa/database';
 import type { DatabaseClient } from '@sobremesa/database';
 import type { MessageSender } from '@sobremesa/shared-types';
 import { createLogger } from '@sobremesa/shared-utils';
@@ -10,6 +11,8 @@ import { ScribeAgent, SCRIBE_VERSION } from '@sobremesa/agents-scribe';
 import { RegistrarAgent } from '@sobremesa/agents-registrar';
 import { HistorianAgent } from '@sobremesa/agents-historian';
 import { FacilitatorAgent } from '@sobremesa/agents-facilitator';
+import { FollowupAgent } from '@sobremesa/agents-followup';
+import { createStoryFollowupHook } from './story-followup-hook';
 
 /**
  * Named stages of the live message pipeline. Each maps to one or more
@@ -22,6 +25,12 @@ import { FacilitatorAgent } from '@sobremesa/agents-facilitator';
  * `facilitatorNudge` is Facilitator proactively *asking* a new question
  * after a Registrar persist. A caller that omits `facilitatorNudge` (e.g.
  * an import pipeline) is guaranteed no outbound question send.
+ *
+ * `storyFollowup` (story-followups-plan.md #4) is a third, independent
+ * stage: it only proposes a follow-up question (writes `questions`/event
+ * log), never sends one -- `facilitatorNudge`/#6's periodic check own
+ * asking. A caller that omits it is guaranteed no follow-up is ever
+ * proposed.
  */
 export type PipelineStage =
   | 'admin'
@@ -31,14 +40,18 @@ export type PipelineStage =
   | 'scribe'
   | 'registrar'
   | 'historian'
-  | 'facilitatorNudge';
+  | 'facilitatorNudge'
+  | 'storyFollowup';
 
 export type PipelineAgentProviders = Partial<
-  Record<'intern' | 'scribe' | 'historian' | 'facilitator', AIProvider>
+  Record<
+    'intern' | 'scribe' | 'historian' | 'facilitator' | 'followup',
+    AIProvider
+  >
 >;
 
 export type PipelineAgentModels = Partial<
-  Record<'intern' | 'scribe' | 'historian' | 'facilitator', string>
+  Record<'intern' | 'scribe' | 'historian' | 'facilitator' | 'followup', string>
 >;
 
 export interface BuildPipelineOptions {
@@ -107,6 +120,12 @@ export function buildMessagePipeline(
     );
   }
 
+  if (wants('storyFollowup') && (!providers.followup || !models.followup)) {
+    throw new Error(
+      "buildMessagePipeline: 'storyFollowup' stage requires providers.followup and models.followup",
+    );
+  }
+
   // Both 'historian' (Historian returns, Facilitator sends -- see
   // docs/decisions/024-historian-returns-facilitator-sends.md) and
   // 'facilitatorNudge' construct a FacilitatorAgent below and need its
@@ -137,6 +156,16 @@ export function buildMessagePipeline(
         "buildMessagePipeline: 'facilitatorNudge' stage requires the 'registrar' stage (the nudge fires after a Registrar persist)",
       );
     }
+  }
+
+  if (wants('storyFollowup') && !wants('registrar')) {
+    // MessageProcessor requires the hook slot to exist regardless, but the
+    // stage combination is nonsensical without 'registrar': the whole point
+    // is to run right after a Registrar persist (or in place of the early
+    // return on the ignore route).
+    throw new Error(
+      "buildMessagePipeline: 'storyFollowup' stage requires the 'registrar' stage",
+    );
   }
 
   const messageSender = options.messageSender as MessageSender;
@@ -282,6 +311,23 @@ export function buildMessagePipeline(
           );
         }
       },
+    );
+  }
+
+  if (wants('storyFollowup')) {
+    const followup = new FollowupAgent({
+      dbClient,
+      provider: providers.followup as AIProvider,
+      model: models.followup as string,
+      logger,
+    });
+    processor.setStoryFollowupHook(
+      createStoryFollowupHook({
+        followup,
+        questionRepo: new QuestionRepository(dbClient),
+        eventLog: new EventLogRepository(dbClient),
+        logger,
+      }),
     );
   }
 

@@ -101,6 +101,30 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   }
 
   /**
+   * Most recent event's timestamp for a family, across every conversation --
+   * activity only, never content (ADR-007), so Facilitator can check the
+   * chat is quiet without seeing what was said. Redaction status is
+   * irrelevant here: a redacted message still happened at that time.
+   */
+  async findMostRecentOccurredAt(familyId: string): Promise<Date | null> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('occurred_at')
+      .eq('family_id', familyId)
+      .order('occurred_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(
+        `Failed to find most recent event time: ${error.message}`,
+      );
+    }
+
+    return data?.occurred_at ? new Date(data.occurred_at as string) : null;
+  }
+
+  /**
    * Find every (non-redacted) event id in a conversation, oldest first.
    * Unlike `findRecent`, this has no application-level cap -- it's meant for
    * enumerating a bounded, known set of events to process (e.g. the import

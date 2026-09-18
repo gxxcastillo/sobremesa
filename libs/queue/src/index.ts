@@ -17,4 +17,5 @@ export {
   type RoutingAction,
   type AdminProcessor,
   type AdminSubtype,
+  type StoryFollowupHook,
 } from './lib/processor';

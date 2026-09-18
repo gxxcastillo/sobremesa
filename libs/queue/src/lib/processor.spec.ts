@@ -344,13 +344,11 @@ describe('MessageProcessor', () => {
     // decided 'ignore' already short-circuits before processTextContent
     // runs -- so this separately registered filter must not be invoked
     // again for a 'scribe' routing outcome.
-    const filter = vi
-      .fn()
-      .mockResolvedValue({
-        relevant: true,
-        reason: 'ok',
-        method: 'deterministic',
-      });
+    const filter = vi.fn().mockResolvedValue({
+      relevant: true,
+      reason: 'ok',
+      method: 'deterministic',
+    });
     processor.setFilter(filter);
     const domainModel = createBaseDomainModel();
     const scribe = vi.fn().mockResolvedValue(domainModel);
@@ -698,5 +696,129 @@ describe('MessageProcessor', () => {
     const result = await handler(EVENT_ID, FAMILY_ID);
 
     expect(result.success).toBe(true);
+  });
+
+  describe('story follow-up hook (story-followups-plan.md #4)', () => {
+    it('runs after registrar persists on the scribe route, with the routed language', async () => {
+      const callOrder: string[] = [];
+      const processor = createProcessor();
+      processor.setRouter(async () => ({
+        action: 'scribe',
+        reason: 'ordinary message',
+        method: 'deterministic',
+        language: 'es',
+      }));
+      const domainModel = createBaseDomainModel();
+      processor.setScribe(vi.fn().mockResolvedValue(domainModel));
+      const registrar = vi.fn().mockImplementation(async () => {
+        callOrder.push('registrar');
+      });
+      processor.setRegistrar(registrar);
+      const hook = vi.fn().mockImplementation(async () => {
+        callOrder.push('hook');
+      });
+      processor.setStoryFollowupHook(hook);
+
+      const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+      expect(result.success).toBe(true);
+      expect(hook).toHaveBeenCalledWith(EVENT_ID, FAMILY_ID, 'es');
+      expect(callOrder).toEqual(['registrar', 'hook']);
+    });
+
+    it('runs in place of the early return on the ignore route', async () => {
+      const processor = createProcessor();
+      processor.setRouter(async () => ({
+        action: 'ignore',
+        reason: 'not relevant',
+        method: 'deterministic',
+        language: 'en',
+      }));
+      const hook = vi.fn().mockResolvedValue(undefined);
+      processor.setStoryFollowupHook(hook);
+
+      const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+      expect(result.success).toBe(true);
+      expect(hook).toHaveBeenCalledWith(EVENT_ID, FAMILY_ID, 'en');
+    });
+
+    it('never runs on the admin route', async () => {
+      const processor = createProcessor();
+      processor.setRouter(async () => ({
+        action: 'admin',
+        adminSubtype: 'command',
+        reason: 'admin command',
+        method: 'deterministic',
+      }));
+      processor.setAdminProcessor(vi.fn().mockResolvedValue({ success: true }));
+      const hook = vi.fn().mockResolvedValue(undefined);
+      processor.setStoryFollowupHook(hook);
+
+      await processor.process(EVENT_ID, FAMILY_ID);
+
+      expect(hook).not.toHaveBeenCalled();
+    });
+
+    it('never runs on the historian route, even though scribe/registrar still run', async () => {
+      const processor = createProcessor();
+      processor.setRouter(async () => ({
+        action: 'historian',
+        reason: 'question asked',
+        method: 'deterministic',
+      }));
+      processor.setHistorianProcessor(
+        vi.fn().mockResolvedValue({ success: true }),
+      );
+      processor.setScribe(vi.fn().mockResolvedValue(createBaseDomainModel()));
+      processor.setRegistrar(vi.fn().mockResolvedValue(undefined));
+      const hook = vi.fn().mockResolvedValue(undefined);
+      processor.setStoryFollowupHook(hook);
+
+      await processor.process(EVENT_ID, FAMILY_ID);
+
+      expect(hook).not.toHaveBeenCalled();
+    });
+
+    it('never runs when the pipeline reports failure before reaching it', async () => {
+      const processor = createProcessor();
+      processor.setScribe(vi.fn().mockRejectedValue(new Error('scribe down')));
+      const hook = vi.fn().mockResolvedValue(undefined);
+      processor.setStoryFollowupHook(hook);
+
+      const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+      expect(result.success).toBe(false);
+      expect(hook).not.toHaveBeenCalled();
+    });
+
+    it('catches a hook error and still reports success, on both the scribe and ignore routes', async () => {
+      const scribeProcessor = createProcessor();
+      scribeProcessor.setScribe(
+        vi.fn().mockResolvedValue(createBaseDomainModel()),
+      );
+      scribeProcessor.setRegistrar(vi.fn().mockResolvedValue(undefined));
+      scribeProcessor.setStoryFollowupHook(
+        vi.fn().mockRejectedValue(new Error('formulation call failed')),
+      );
+
+      const scribeResult = await scribeProcessor.process(EVENT_ID, FAMILY_ID);
+
+      expect(scribeResult.success).toBe(true);
+
+      const ignoreProcessor = createProcessor();
+      ignoreProcessor.setRouter(async () => ({
+        action: 'ignore',
+        reason: 'not relevant',
+        method: 'deterministic',
+      }));
+      ignoreProcessor.setStoryFollowupHook(
+        vi.fn().mockRejectedValue(new Error('formulation call failed')),
+      );
+
+      const ignoreResult = await ignoreProcessor.process(EVENT_ID, FAMILY_ID);
+
+      expect(ignoreResult.success).toBe(true);
+    });
   });
 });

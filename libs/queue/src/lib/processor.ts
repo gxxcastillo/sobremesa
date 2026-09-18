@@ -261,6 +261,20 @@ export type HistorianProcessor = (
 ) => Promise<{ success: boolean; error?: string }>;
 
 /**
+ * Story follow-up hook function type (story-followups-plan.md #4).
+ * Implementations decide whether the message deserves a follow-up question
+ * and, if so, propose one -- never called for `admin`/`historian` routing.
+ * Awaited by `process()`; any error is caught there and logged, never
+ * thrown, so a follow-up failure can never fail or retry a message that
+ * otherwise succeeded.
+ */
+export type StoryFollowupHook = (
+  eventId: string,
+  familyId: string,
+  routedLanguage?: LanguageCode,
+) => Promise<void>;
+
+/**
  * Callback for when a new image is ready for async analysis.
  * The Curator should be called with this image ID to analyze it.
  */
@@ -288,6 +302,7 @@ export class MessageProcessor {
   private imageLinker?: ImageLinkerProcessor;
   private scribe?: ScribeProcessor;
   private registrar?: RegistrarProcessor;
+  private storyFollowupHook?: StoryFollowupHook;
   private pipelineVersions?: PipelineVersions;
   private onImageCreated?: OnImageCreatedCallback;
   private logger: pino.Logger;
@@ -409,6 +424,15 @@ export class MessageProcessor {
    */
   setRegistrar(registrar: RegistrarProcessor): void {
     this.registrar = registrar;
+  }
+
+  /**
+   * Set the story follow-up hook (story-followups-plan.md #4).
+   * Runs after Registrar persists on the scribe route, or in place of the
+   * early return on the ignore route -- never for admin or historian.
+   */
+  setStoryFollowupHook(hook: StoryFollowupHook): void {
+    this.storyFollowupHook = hook;
   }
 
   /**
@@ -655,6 +679,11 @@ export class MessageProcessor {
       if (routingAction === 'ignore') {
         // Message should be ignored - report success; the queue loop completes the item
         this.logger.info({ eventId }, 'Message ignored by router');
+        await this.runStoryFollowupHook(
+          eventId,
+          familyId,
+          routingResult?.language,
+        );
         return {
           success: true,
           duration: Date.now() - startTime,
@@ -740,6 +769,17 @@ export class MessageProcessor {
           context,
           routingResult?.language,
           event.languageOriginal,
+        );
+      }
+
+      // Story follow-up only for the scribe route: a historian-routed
+      // message also runs the block above (extraction), but a question to
+      // the bot isn't itself a story to follow up.
+      if (routingAction === 'scribe') {
+        await this.runStoryFollowupHook(
+          eventId,
+          familyId,
+          routingResult?.language,
         );
       }
 
@@ -1017,6 +1057,27 @@ export class MessageProcessor {
         familyId,
         this.pipelineVersions,
         contextContents,
+      );
+    }
+  }
+
+  /**
+   * Run the story follow-up hook, if configured. Never throws: an error
+   * must not fail or retry a message that otherwise succeeded.
+   */
+  private async runStoryFollowupHook(
+    eventId: string,
+    familyId: string,
+    routedLanguage?: LanguageCode,
+  ): Promise<void> {
+    if (!this.storyFollowupHook) return;
+
+    try {
+      await this.storyFollowupHook(eventId, familyId, routedLanguage);
+    } catch (error) {
+      this.logger.warn(
+        { eventId, familyId, error },
+        'Story follow-up hook failed (non-fatal)',
       );
     }
   }

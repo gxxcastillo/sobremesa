@@ -12,8 +12,10 @@ const mockQuestionRepo = {
   findByStatus: vi.fn(),
   findMostRecentAskedAt: vi.fn(),
   findPending: vi.fn(),
+  findExpiredPending: vi.fn(),
   markAsked: vi.fn(),
   updateStatus: vi.fn(),
+  retire: vi.fn(),
 };
 
 const mockFamilyRepo = {
@@ -31,6 +33,10 @@ const mockFamilyAccessRepo = {
 
 const mockPersonRepo = {
   findBestMatch: vi.fn(),
+};
+
+const mockConversationEventRepo = {
+  findMostRecentOccurredAt: vi.fn(),
 };
 
 const mockLogger = {
@@ -90,8 +96,10 @@ describe('FacilitatorAgent - Participant Addressing', () => {
     mockQuestionRepo.findPending.mockResolvedValue([]);
     mockQuestionRepo.findByStatus.mockResolvedValue([]);
     mockQuestionRepo.findMostRecentAskedAt.mockResolvedValue(null);
+    mockQuestionRepo.findExpiredPending.mockResolvedValue([]);
     mockQuestionRepo.markAsked.mockResolvedValue(undefined);
     mockQuestionRepo.updateStatus.mockResolvedValue(undefined);
+    mockQuestionRepo.retire.mockResolvedValue(undefined);
     mockFamilyRepo.findById.mockResolvedValue(baseFamily);
     mockFamilyRepo.findAll.mockResolvedValue([baseFamily]);
     mockEventLog.log.mockResolvedValue(undefined);
@@ -99,6 +107,9 @@ describe('FacilitatorAgent - Participant Addressing', () => {
     mockProvider.complete.mockResolvedValue({
       content: 'Warmly formatted question!',
     });
+    // No activity ever recorded -- nothing for a follow-up quiet check to
+    // wait on, unless a test says otherwise.
+    mockConversationEventRepo.findMostRecentOccurredAt.mockResolvedValue(null);
 
     facilitator = new FacilitatorAgent({
       questionRepo: mockQuestionRepo as any,
@@ -106,6 +117,7 @@ describe('FacilitatorAgent - Participant Addressing', () => {
       eventLog: mockEventLog as any,
       familyAccessRepo: mockFamilyAccessRepo as any,
       personRepo: mockPersonRepo as any,
+      conversationEventRepo: mockConversationEventRepo as any,
       messageSender: mockMessageSender as any,
       provider: mockProvider as any,
       model: 'test-model',
@@ -297,6 +309,7 @@ describe('FacilitatorAgent - Participant Addressing', () => {
         eventLog: mockEventLog as any,
         familyAccessRepo: mockFamilyAccessRepo as any,
         personRepo: mockPersonRepo as any,
+        conversationEventRepo: mockConversationEventRepo as any,
         messageSender: mockMessageSender as any,
         provider: mockProvider as any,
         model: 'test-model',
@@ -388,6 +401,169 @@ describe('FacilitatorAgent - Participant Addressing', () => {
         12345,
         'Abuelita',
       );
+    });
+  });
+
+  describe('story-followups-plan.md #5', () => {
+    const followupQuestion: Question = {
+      id: 'q-followup-1',
+      familyId: baseFamily.id,
+      contentOriginal: '¿Cómo eligieron el nombre?',
+      languageOriginal: 'es',
+      origin: 'followup',
+      status: 'proposed',
+      priority: 50,
+      sourceMessageId: 'event-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    describe('retiring expired questions', () => {
+      it('retires every expired pending question and logs question_retired before asking', async () => {
+        const expired: Question = {
+          ...followupQuestion,
+          id: 'q-expired-1',
+        };
+        mockQuestionRepo.findExpiredPending.mockResolvedValue([expired]);
+        mockQuestionRepo.findPending.mockResolvedValue([]);
+
+        await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(mockQuestionRepo.findExpiredPending).toHaveBeenCalledWith(
+          baseFamily.id,
+        );
+        expect(mockQuestionRepo.retire).toHaveBeenCalledWith(
+          baseFamily.id,
+          'q-expired-1',
+        );
+        expect(mockEventLog.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            familyId: baseFamily.id,
+            eventType: 'question_retired',
+            conversationEventId: expired.sourceMessageId,
+            eventData: { questionId: 'q-expired-1', reason: 'expired' },
+          }),
+        );
+      });
+
+      it('retires every expired question, not just the first', async () => {
+        mockQuestionRepo.findExpiredPending.mockResolvedValue([
+          { ...followupQuestion, id: 'q-expired-1' },
+          { ...followupQuestion, id: 'q-expired-2' },
+        ]);
+        mockQuestionRepo.findPending.mockResolvedValue([]);
+
+        await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(mockQuestionRepo.retire).toHaveBeenCalledTimes(2);
+        expect(mockQuestionRepo.retire).toHaveBeenCalledWith(
+          baseFamily.id,
+          'q-expired-1',
+        );
+        expect(mockQuestionRepo.retire).toHaveBeenCalledWith(
+          baseFamily.id,
+          'q-expired-2',
+        );
+      });
+
+      it('does nothing when there is nothing expired', async () => {
+        mockQuestionRepo.findExpiredPending.mockResolvedValue([]);
+        mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+        await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(mockQuestionRepo.retire).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('follow-up quiet check (D2)', () => {
+      it('asks a follow-up once the chat has been quiet for 30+ minutes', async () => {
+        mockQuestionRepo.findPending.mockResolvedValue([followupQuestion]);
+        mockConversationEventRepo.findMostRecentOccurredAt.mockResolvedValue(
+          new Date(Date.now() - 31 * 60 * 1000),
+        );
+
+        const result = await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(result.success).toBe(true);
+        expect(result.questionId).toBe(followupQuestion.id);
+        expect(mockMessageSender.sendMessage).toHaveBeenCalled();
+      });
+
+      it('skips a follow-up while the chat is still active, without sending', async () => {
+        mockQuestionRepo.findPending.mockResolvedValue([followupQuestion]);
+        mockConversationEventRepo.findMostRecentOccurredAt.mockResolvedValue(
+          new Date(Date.now() - 5 * 60 * 1000),
+        );
+
+        const result = await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(result.success).toBe(true);
+        expect(result.skippedReason).toContain('quiet');
+        expect(mockMessageSender.sendMessage).not.toHaveBeenCalled();
+        expect(mockQuestionRepo.markAsked).not.toHaveBeenCalled();
+      });
+
+      it('asks a follow-up immediately when the family has no recorded activity at all', async () => {
+        mockQuestionRepo.findPending.mockResolvedValue([followupQuestion]);
+        mockConversationEventRepo.findMostRecentOccurredAt.mockResolvedValue(
+          null,
+        );
+
+        const result = await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(result.success).toBe(true);
+        expect(mockMessageSender.sendMessage).toHaveBeenCalled();
+      });
+
+      it('never applies the quiet check to a non-followup question', async () => {
+        mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+        mockConversationEventRepo.findMostRecentOccurredAt.mockResolvedValue(
+          new Date(), // chat is active right now
+        );
+
+        const result = await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(result.success).toBe(true);
+        expect(mockMessageSender.sendMessage).toHaveBeenCalled();
+        expect(
+          mockConversationEventRepo.findMostRecentOccurredAt,
+        ).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('verbatim send', () => {
+      it('sends a follow-up question verbatim, without the warmth formula', async () => {
+        mockQuestionRepo.findPending.mockResolvedValue([followupQuestion]);
+        mockConversationEventRepo.findMostRecentOccurredAt.mockResolvedValue(
+          new Date(Date.now() - 60 * 60 * 1000),
+        );
+
+        await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(mockProvider.complete).not.toHaveBeenCalled();
+        expect(mockPersonRepo.findBestMatch).not.toHaveBeenCalled();
+        expect(mockMessageSender.sendMessage).toHaveBeenCalledWith(
+          'facilitator',
+          expect.objectContaining({
+            text: followupQuestion.contentOriginal,
+          }),
+          expect.anything(),
+        );
+      });
+
+      it('still applies the warmth formula to a non-followup question', async () => {
+        mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+        await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(mockProvider.complete).toHaveBeenCalled();
+        expect(mockMessageSender.sendMessage).toHaveBeenCalledWith(
+          'facilitator',
+          expect.objectContaining({ text: 'Warmly formatted question!' }),
+          expect.anything(),
+        );
+      });
     });
   });
 });

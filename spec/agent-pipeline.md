@@ -1,16 +1,16 @@
 # Agent Pipeline
 
-`MessageProcessor` (`libs/queue`) orchestrates seven agents. It fetches shared recent-message/image
+`MessageProcessor` (`libs/queue`) orchestrates eight agents. It fetches shared recent-message/image
 context once per event and passes it through the pipeline.
 
 ## 3.1 Orchestration
 
 ```
 media record? → answer detection → route
-                                  ├── ignore
+                                  ├── ignore → story follow-up
                                   ├── admin
                                   ├── historian answer + Scribe path
-                                  └── Scribe path
+                                  └── Scribe path → story follow-up
 
 Scribe path: optional filter → Scribe → ImageLink fallback → Registrar → Facilitator nudge
 ```
@@ -21,6 +21,8 @@ Invariants:
 - Historian-routed messages still run through Scribe when they contain extractable facts, but only
   once Historian's own answer succeeds — a Historian failure fails the message immediately (before
   Scribe runs) so it retries answering rather than re-running Scribe's persist path on every attempt.
+- Story follow-up (§3.6) runs on the `ignore` and `scribe` routes only, never `admin` or
+  `historian` — a command, or a question to the bot, isn't a story to follow up.
 - Curator image analysis is not attached in the live app.
 - If the default AI provider resolves to `mock`, only Admin and plain-text Facilitator behavior are
   wired; routing/extraction/Q&A agents are not attached.
@@ -34,6 +36,7 @@ Invariants:
 | Registrar   | Persists entities, relationships, stories, claims, conflicts, scores, merges | core data tables                     |
 | Historian   | Answers user questions from stored family data                               | event log; sending delegated         |
 | Facilitator | Sends Historian answers and asks pending warm follow-up questions            | questions/event log                  |
+| Followup    | Decides whether a message deserves a story follow-up question, and drafts it | none (the pipeline hook persists)    |
 | Admin       | Handles chat commands, DMs, member events, mentions                          | admin side effects/event log         |
 | Curator     | Image vision analysis library                                                | image analysis when explicitly wired |
 
@@ -133,19 +136,55 @@ didn't already have it — a conflict recorded months apart still surfaces even 
 wouldn't have fetched both sides.
 
 Facilitator also asks the highest-priority pending question when allowed by a simple time throttle
-(default 60 minutes, configurable in the chatbots app). The throttle is keyed on the most recent
-`asked_at` across all questions for the family regardless of their current status: an answered or
-retired question was still asked, so it still counts toward pacing how often the bot speaks.
+(default 60 minutes; the chatbots app overrides it to 1440 minutes/24 hours -- story-followups-plan.md
+D2/#5). The throttle is keyed on the most recent `asked_at` across all questions for the family
+regardless of their current status: an answered or retired question was still asked, so it still
+counts toward pacing how often the bot speaks.
 
-## 3.6 Model Tiers
+Before picking a question to ask, Facilitator retires any `origin: 'followup'` question past its
+`expires_at` (`question_retired`, reason `expired`) — cleanup only, since the pending query already
+excludes expired rows on its own. A `'followup'`-origin question also carries its own additional
+gate on top of the throttle above: it is asked only once the family's chat has been quiet for 30
+minutes (`ConversationEventRepository.findMostRecentOccurredAt` — activity only, never content, so
+ADR-007 still holds). No prior activity at all means nothing to wait on. Every other origin has no
+such gate.
 
-| Agent       | Tier          |
-| ----------- | ------------- |
-| Intern      | fast          |
-| Scribe      | standard      |
-| Historian   | standard      |
-| Facilitator | fast          |
-| Curator     | vision        |
-| Admin       | template-only |
+## 3.6 Story Follow-ups
+
+An independent `storyFollowup` pipeline stage (`libs/pipeline`'s `createStoryFollowupHook`, wiring
+`FollowupAgent` from `libs/agents/followup`) decides whether a live message deserves a follow-up
+question about family history, separately from Registrar's extraction. It runs after
+`MessageProcessor.process()` handles the message, either after Registrar persists (the `scribe`
+route) or in place of the early return on the `ignore` route -- Intern's relevance filter answers
+"is there a fact to extract?", not "is there a story worth inviting?", so a message Intern ignored
+(e.g. "Way to go Leo 🥂") can still get a follow-up. It never runs for `admin` or `historian`: a
+command, or a question to the bot, isn't a story to follow up. A failure earlier in `process()`
+throws before the hook runs, and any error the hook itself raises is caught and logged there --
+a follow-up can never fail or retry a message that otherwise succeeded.
+
+The hook first checks pacing (`QuestionRepository.hasWaitingOrRecent`, 24 hours): a non-expired
+proposed question already waiting, or one asked within the last 24 hours, skips with no model call.
+Otherwise `FollowupAgent.formulate()` decides using the source message, the 5 messages before it,
+and the record context (people/places/events the message names, each one's claim history) --
+Sonnet 5 (`claude-sonnet-5`, pinned for this agent only via `AGENT_MODEL_RECOMMENDATIONS.followup`'s
+`modelPin`), no `temperature`, schema embedded in the system prompt. `FollowupAgent` is pure
+decision + generation: it never persists anything or writes to the event log. On `ask`, the hook
+creates the question (`origin: 'followup'`, `source_message_id` the source event,
+`expires_at` 24 hours out) and logs `question_proposed`. Asking it is Facilitator's job (§3.5),
+gated on its own pacing, expiry retirement, and quiet-chat check, and sent verbatim rather than
+through the warmth formula (§3.5, `spec/product/warmth.md`, ADR-033). Nothing requests the
+`storyFollowup` pipeline stage yet, so no follow-up is proposed in production today regardless.
+
+## 3.7 Model Tiers
+
+| Agent       | Tier                          |
+| ----------- | ----------------------------- |
+| Intern      | fast                          |
+| Scribe      | standard                      |
+| Historian   | standard                      |
+| Facilitator | fast                          |
+| Followup    | standard (pinned to Sonnet 5) |
+| Curator     | vision                        |
+| Admin       | template-only                 |
 
 Exact provider/model resolution is in [`ai-providers-and-prompts.md`](./ai-providers-and-prompts.md).

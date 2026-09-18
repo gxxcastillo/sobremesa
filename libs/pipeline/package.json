@@ -25,6 +25,7 @@
     "@sobremesa/agents-scribe": "workspace:*",
     "@sobremesa/agents-registrar": "workspace:*",
     "@sobremesa/agents-historian": "workspace:*",
-    "@sobremesa/agents-facilitator": "workspace:*"
+    "@sobremesa/agents-facilitator": "workspace:*",
+    "@sobremesa/agents-followup": "workspace:*"
   }
 }

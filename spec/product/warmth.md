@@ -435,9 +435,25 @@ With warmth, you have a family treasure.
 
 ---
 
+## Exception: Story Follow-up Questions (Provisional)
+
+**Decision (Gabriel, 2026-09-18; recorded as ADR-033):** a story follow-up question —
+`questions.origin = 'followup'`, proposed by `FollowupAgent` from live message content
+(`spec/agent-pipeline.md` §3.6) — is sent **verbatim**, without the four-part formula above. Every
+other question origin (`curator`, `human`) still requires the full formula; this exception is
+scoped to `origin = 'followup'` only, not a general loosening of the rule.
+
+This is deliberate and provisional, not a judgment that warmth doesn't matter here: the wording
+experiment behind it (`story-followups-plan.md` #0) tuned these questions to already be concrete
+and specific to a story just shared, and Gabriel wanted to see how they land unwrapped before
+deciding whether to add warmth back. **Revisit trigger:** if the first weeks running this on a real
+family feel cold, or follow-up questions go unanswered more than other origins, add the warmth
+formula back for this origin.
+
 ## Non-Negotiable Rules
 
-1. **ALWAYS use the four-part formula** - No exceptions
+1. **ALWAYS use the four-part formula** - No exceptions, except `origin: 'followup'` questions
+   (provisional — see above)
 2. **NEVER sound robotic** - Every message must feel human
 3. **NEVER pressure** - Permission is mandatory
 4. **ALWAYS thank** - Even for small contributions

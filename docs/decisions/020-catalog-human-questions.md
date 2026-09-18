@@ -9,6 +9,11 @@ proposal. The `questions.origin` column and its `'curator' | 'human'` type suppo
 the pipeline's `GeneratedQuestion` type hardcodes `origin: 'curator'` and nothing captures a
 human-asked question from chat or drives a follow-up.
 
+**2026-09-18:** See ADR-031 — a sibling but distinct mechanism now exists for a related question:
+a new `origin: 'followup'` question, proposed by `FollowupAgent` from live message content on a
+machine's own initiative. This ADR's own subject — cataloging a question a _family member_ asked,
+attributed to them, without the system re-asking it — is still not implemented.
+
 ## Date
 
 2026-01-10

@@ -24,6 +24,7 @@ describe('buildMessagePipeline', () => {
   let setRegistrar: ReturnType<typeof vi.spyOn>;
   let setAdminProcessor: ReturnType<typeof vi.spyOn>;
   let setHistorianProcessor: ReturnType<typeof vi.spyOn>;
+  let setStoryFollowupHook: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     setRouter = vi.spyOn(MessageProcessor.prototype, 'setRouter');
@@ -38,6 +39,10 @@ describe('buildMessagePipeline', () => {
     setHistorianProcessor = vi.spyOn(
       MessageProcessor.prototype,
       'setHistorianProcessor',
+    );
+    setStoryFollowupHook = vi.spyOn(
+      MessageProcessor.prototype,
+      'setStoryFollowupHook',
     );
   });
 
@@ -129,6 +134,35 @@ describe('buildMessagePipeline', () => {
 
     expect(setRegistrar).toHaveBeenCalledTimes(1);
     expect(setHistorianProcessor).not.toHaveBeenCalled();
+  });
+
+  it('wires registrar + storyFollowup together', () => {
+    buildMessagePipeline({
+      dbClient,
+      stages: stageSet('registrar', 'storyFollowup'),
+      providers: { followup: provider },
+      models: { followup: 'mock-model' },
+    });
+
+    expect(setRegistrar).toHaveBeenCalledTimes(1);
+    expect(setStoryFollowupHook).toHaveBeenCalledTimes(1);
+  });
+
+  it('omitting storyFollowup registers no follow-up hook', () => {
+    buildMessagePipeline({
+      dbClient,
+      stages: stageSet(
+        'router',
+        'filter',
+        'imageLinker',
+        'scribe',
+        'registrar',
+      ),
+      providers: { intern: provider, scribe: provider },
+      models: { intern: 'mock-model', scribe: 'mock-model' },
+    });
+
+    expect(setStoryFollowupHook).not.toHaveBeenCalled();
   });
 
   describe('validation', () => {
@@ -245,6 +279,39 @@ describe('buildMessagePipeline', () => {
           messageSender,
         }),
       ).toThrow(/providers\.facilitator and models\.facilitator/);
+    });
+
+    it('throws requesting storyFollowup without providers.followup', () => {
+      expect(() =>
+        buildMessagePipeline({
+          dbClient,
+          stages: stageSet('registrar', 'storyFollowup'),
+          providers: {},
+          models: {},
+        }),
+      ).toThrow(/providers\.followup and models\.followup/);
+    });
+
+    it('throws requesting storyFollowup without models.followup', () => {
+      expect(() =>
+        buildMessagePipeline({
+          dbClient,
+          stages: stageSet('registrar', 'storyFollowup'),
+          providers: { followup: provider },
+          models: {},
+        }),
+      ).toThrow(/providers\.followup and models\.followup/);
+    });
+
+    it('throws requesting storyFollowup without registrar', () => {
+      expect(() =>
+        buildMessagePipeline({
+          dbClient,
+          stages: stageSet('storyFollowup'),
+          providers: { followup: provider },
+          models: { followup: 'mock-model' },
+        }),
+      ).toThrow(/registrar/);
     });
   });
 });
