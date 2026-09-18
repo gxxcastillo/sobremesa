@@ -53,8 +53,10 @@ Scribe responsibilities:
   `IN REPLY TO QUESTION` blocks when the current message replies to a known message or tracked bot
   question.
 - Preserve uncertainty and conflicts; never resolve disputes.
-- Return validated structured output. Non-empty malformed extractions fail loud so the queue can retry
-  rather than silently treating the event as empty.
+- Return validated structured output. An explicit `null` on an optional field (the model's own way
+  of saying "no value") is normalized to absent rather than treated as malformed. Non-empty
+  malformed extractions still fail loud so the queue can retry rather than silently treating the
+  event as empty.
 - Never assert who is speaking. Claims carry `claimed_by_source` (direct/attributed/hearsay) and,
   only for attributed/hearsay claims, `attributed_to` — the person the speaker attributes the fact
   to (e.g. "Mom always said..." → `attributed_to: "Mom"`). Scribe does not output a speaker name;
@@ -89,6 +91,18 @@ Registrar is the single writer for extracted knowledge. It:
 4. Detects conflicts with existing claims.
 5. Computes claim strength and enqueues uncertain/high-stakes cases for async review.
 6. Handles identity claims by merging or renaming descriptive placeholder people.
+
+Conflict detection (`detectClaimConflict`) only compares claims of the same singular claim type
+(date, location, identity, relationship — never additive `detail`) with matching subjects. Within
+that, two rules keep noisy field-level differences from becoming a false disagreement (#5d): a
+free-text citation/explanation field (`text`, e.g. a date claim's `"at age 43"` vs. `"8 years ago"`)
+is ignored when a structured field already exists to compare instead, and becomes the fact being
+compared only when it's the only value either side has. A `relationship`-type claim only conflicts
+with another when both name the same counterparty (compared with the same whole-word-token
+precision bar used for subject matching) and disagree on `relationshipType` — "sibling to her
+brothers" and "great-grandchild to our grandparents" are compatible facts about different people,
+not a contradiction; missing or ambiguous counterparty evidence on either side makes the pair not
+comparable rather than a confident conflict.
 
 No LLM runs on the hot Registrar path.
 
@@ -165,13 +179,20 @@ a follow-up can never fail or retry a message that otherwise succeeded.
 The hook first checks pacing (`QuestionRepository.hasWaitingOrRecent`, 24 hours): a non-expired
 proposed question already waiting, or one asked within the last 24 hours, skips with no model call.
 Otherwise `FollowupAgent.formulate()` decides using the source message, the 5 messages before it,
-and the record context (people/places/events the message names, each one's claim history) --
-Sonnet 5 (`claude-sonnet-5`, pinned for this agent only via `AGENT_MODEL_RECOMMENDATIONS.followup`'s
+and the record context (people/places/events the message names, each one's claim history). Named
+entities are normally found through the claims the current message produced; a message with none
+(e.g. one Intern ignored) falls back to a bounded, read-only whole-word name match against the
+family's active people/places (`textMentionsName`, capped at 3 each side, placeholders and
+ambiguous shared names excluded) so a known person's history isn't blind to imported context just
+because this particular message created no claims (#10). The fallback never merges entities or
+writes claims. Sonnet 5 (`claude-sonnet-5`, pinned for this agent only via
+`AGENT_MODEL_RECOMMENDATIONS.followup`'s
 `modelPin`), no `temperature`, schema embedded in the system prompt. `FollowupAgent` is pure
 decision + generation: it never persists anything or writes to the event log. On `ask`, the hook
 creates the question (`origin: 'followup'`, `source_message_id` the source event,
 `expires_at` 24 hours out) and logs `question_proposed`. Asking it is Facilitator's job (§3.5),
-gated on its own pacing, expiry retirement, and quiet-chat check, and sent verbatim rather than
+gated on its own pacing, expiry retirement, quiet-chat check, and conservative-cancellation check
+(§4.4 of `message-lifecycle.md`), and sent verbatim rather than
 through the warmth formula (§3.5, `spec/product/warmth.md`, ADR-033). Nothing requests the
 `storyFollowup` pipeline stage yet, so no follow-up is proposed in production today regardless.
 

@@ -43,16 +43,19 @@ export type PipelineStage =
   | 'facilitatorNudge'
   | 'storyFollowup';
 
+/** Agent keys `PipelineAgentProviders`/`PipelineAgentModels` are keyed by. */
+type PipelineAgentKey =
+  | 'intern'
+  | 'scribe'
+  | 'historian'
+  | 'facilitator'
+  | 'followup';
+
 export type PipelineAgentProviders = Partial<
-  Record<
-    'intern' | 'scribe' | 'historian' | 'facilitator' | 'followup',
-    AIProvider
-  >
+  Record<PipelineAgentKey, AIProvider>
 >;
 
-export type PipelineAgentModels = Partial<
-  Record<'intern' | 'scribe' | 'historian' | 'facilitator' | 'followup', string>
->;
+export type PipelineAgentModels = Partial<Record<PipelineAgentKey, string>>;
 
 export interface BuildPipelineOptions {
   dbClient: DatabaseClient;
@@ -88,6 +91,29 @@ export function buildMessagePipeline(
   const logger = options.logger ?? createLogger({ name: 'pipeline' });
   const wants = (stage: PipelineStage) => stages.has(stage);
 
+  /**
+   * Throws if any of `requestedStages` is non-empty but `agentKey`'s
+   * provider/model wasn't supplied, and otherwise returns them narrowed to
+   * non-undefined -- the one place `providers`/`models` (typed
+   * `Partial<Record<...>>`) get read, so construction sites below never
+   * need their own `as AIProvider`/`as string` cast. Safe to call
+   * unconditionally (with an empty `requestedStages`) purely to resolve the
+   * values: validation just doesn't apply in that case.
+   */
+  function requireProviderAndModel(
+    agentKey: PipelineAgentKey,
+    requestedStages: readonly PipelineStage[],
+  ): { provider: AIProvider; model: string } {
+    const provider = providers[agentKey];
+    const model = models[agentKey];
+    if (requestedStages.length > 0 && (!provider || !model)) {
+      throw new Error(
+        `buildMessagePipeline: stage(s) [${requestedStages.join(', ')}] require providers.${agentKey} and models.${agentKey}`,
+      );
+    }
+    return { provider: provider as AIProvider, model: model as string };
+  }
+
   // --- Validate up front. ---
   const messageSenderStages = (
     ['admin', 'historian', 'facilitatorNudge'] as const
@@ -102,29 +128,23 @@ export function buildMessagePipeline(
     wants,
   );
   const needsIntern = internStages.length > 0;
-  if (needsIntern && (!providers.intern || !models.intern)) {
-    throw new Error(
-      `buildMessagePipeline: stage(s) [${internStages.join(', ')}] require providers.intern and models.intern`,
-    );
-  }
+  const { provider: internProvider, model: internModel } =
+    requireProviderAndModel('intern', internStages);
 
-  if (wants('scribe') && (!providers.scribe || !models.scribe)) {
-    throw new Error(
-      "buildMessagePipeline: 'scribe' stage requires providers.scribe and models.scribe",
-    );
-  }
+  const { provider: scribeProvider, model: scribeModel } =
+    requireProviderAndModel('scribe', wants('scribe') ? ['scribe'] : []);
 
-  if (wants('historian') && (!providers.historian || !models.historian)) {
-    throw new Error(
-      "buildMessagePipeline: 'historian' stage requires providers.historian and models.historian",
+  const { provider: historianProvider, model: historianModel } =
+    requireProviderAndModel(
+      'historian',
+      wants('historian') ? ['historian'] : [],
     );
-  }
 
-  if (wants('storyFollowup') && (!providers.followup || !models.followup)) {
-    throw new Error(
-      "buildMessagePipeline: 'storyFollowup' stage requires providers.followup and models.followup",
+  const { provider: followupProvider, model: followupModel } =
+    requireProviderAndModel(
+      'followup',
+      wants('storyFollowup') ? ['storyFollowup'] : [],
     );
-  }
 
   // Both 'historian' (Historian returns, Facilitator sends -- see
   // docs/decisions/024-historian-returns-facilitator-sends.md) and
@@ -138,14 +158,8 @@ export function buildMessagePipeline(
   const facilitatorStages = (['historian', 'facilitatorNudge'] as const).filter(
     wants,
   );
-  if (
-    facilitatorStages.length > 0 &&
-    (!providers.facilitator || !models.facilitator)
-  ) {
-    throw new Error(
-      `buildMessagePipeline: stage(s) [${facilitatorStages.join(', ')}] require providers.facilitator and models.facilitator`,
-    );
-  }
+  const { provider: facilitatorProvider, model: facilitatorModel } =
+    requireProviderAndModel('facilitator', facilitatorStages);
 
   if (wants('facilitatorNudge')) {
     if (!wants('registrar')) {
@@ -173,6 +187,24 @@ export function buildMessagePipeline(
   // --- Construct agents and wire the processor. ---
   const processor = new MessageProcessor({ dbClient, logger });
 
+  /**
+   * Narrows an agent constructed conditionally above (via `let x: X |
+   * undefined`) to non-undefined at a later use site `wants()` guarantees
+   * it was constructed for -- TypeScript can't correlate two separate
+   * `wants()` checks as implying the same runtime condition, so it can't
+   * narrow `x` itself across them. Throws instead of silently calling a
+   * method on `undefined` if that invariant is ever broken by a future
+   * change here.
+   */
+  function requireAgent<T>(agent: T | undefined, label: string): T {
+    if (agent === undefined) {
+      throw new Error(
+        `buildMessagePipeline: internal error - ${label} was not constructed`,
+      );
+    }
+    return agent;
+  }
+
   if (wants('admin')) {
     const admin = new AdminAgent({ dbClient, messageSender, logger });
     processor.setAdminProcessor((eventId, familyId, subtype) =>
@@ -184,8 +216,8 @@ export function buildMessagePipeline(
   if (needsIntern) {
     intern = new InternAgent({
       dbClient,
-      provider: providers.intern as AIProvider,
-      model: models.intern as string,
+      provider: internProvider,
+      model: internModel,
       logger,
       config: { botUsername: options.botUsername },
     });
@@ -194,17 +226,17 @@ export function buildMessagePipeline(
     // Context is pre-fetched by MessageProcessor and shared to avoid
     // duplicate DB queries.
     processor.setRouter((eventId, familyId, context) =>
-      (intern as InternAgent).route(eventId, familyId, context),
+      requireAgent(intern, 'intern').route(eventId, familyId, context),
     );
   }
   if (wants('filter')) {
     processor.setFilter((eventId, familyId, context) =>
-      (intern as InternAgent).filter(eventId, familyId, context),
+      requireAgent(intern, 'intern').filter(eventId, familyId, context),
     );
   }
   if (wants('imageLinker')) {
     processor.setImageLinker((eventId, familyId, context) =>
-      (intern as InternAgent).linkToImage(eventId, familyId, context),
+      requireAgent(intern, 'intern').linkToImage(eventId, familyId, context),
     );
   }
 
@@ -212,12 +244,17 @@ export function buildMessagePipeline(
   if (wants('scribe')) {
     scribe = new ScribeAgent({
       dbClient,
-      provider: providers.scribe as AIProvider,
-      model: models.scribe as string,
+      provider: scribeProvider,
+      model: scribeModel,
       logger,
     });
     processor.setScribe((eventId, familyId, context, preprocessed) =>
-      (scribe as ScribeAgent).process(eventId, familyId, context, preprocessed),
+      requireAgent(scribe, 'scribe').process(
+        eventId,
+        familyId,
+        context,
+        preprocessed,
+      ),
     );
   }
 
@@ -238,8 +275,8 @@ export function buildMessagePipeline(
     facilitator = new FacilitatorAgent({
       dbClient,
       messageSender,
-      provider: providers.facilitator,
-      model: models.facilitator,
+      provider: facilitatorProvider,
+      model: facilitatorModel,
       logger,
       minMinutesBetweenQuestions: options.minMinutesBetweenQuestions,
     });
@@ -248,8 +285,8 @@ export function buildMessagePipeline(
   if (wants('historian')) {
     const historian = new HistorianAgent({
       dbClient,
-      provider: providers.historian as AIProvider,
-      model: models.historian as string,
+      provider: historianProvider,
+      model: historianModel,
       logger,
     });
     processor.setHistorianProcessor(async (eventId, familyId) => {
@@ -261,8 +298,9 @@ export function buildMessagePipeline(
 
       // 2. Facilitator formats and sends the response with appropriate
       // warmth/language.
-      const responseResult = await (
-        facilitator as FacilitatorAgent
+      const responseResult = await requireAgent(
+        facilitator,
+        'facilitator',
       ).sendResponse({
         familyId,
         originalQuestion: result.originalQuestion,
@@ -278,7 +316,7 @@ export function buildMessagePipeline(
   if (wants('registrar')) {
     processor.setRegistrar(
       async (domainModel, familyId, pipelineVersions, contextContents) => {
-        await (registrar as RegistrarAgent).persist(
+        await requireAgent(registrar, 'registrar').persist(
           domainModel,
           familyId,
           pipelineVersions,
@@ -288,27 +326,29 @@ export function buildMessagePipeline(
         if (wants('facilitatorNudge')) {
           // Fire-and-forget: trigger Facilitator after persist. Log errors
           // but don't block or retry.
-          (facilitator as FacilitatorAgent).askNextQuestion(familyId).then(
-            (result) => {
-              if (result.questionContent) {
-                logger.info(
-                  { familyId, questionId: result.questionId },
-                  'Facilitator asked question',
+          requireAgent(facilitator, 'facilitator')
+            .askNextQuestion(familyId)
+            .then(
+              (result) => {
+                if (result.questionContent) {
+                  logger.info(
+                    { familyId, questionId: result.questionId },
+                    'Facilitator asked question',
+                  );
+                } else if (result.skippedReason) {
+                  logger.debug(
+                    { familyId, reason: result.skippedReason },
+                    'Facilitator skipped asking',
+                  );
+                }
+              },
+              (err) => {
+                logger.error(
+                  { familyId, err },
+                  'Facilitator failed to ask question',
                 );
-              } else if (result.skippedReason) {
-                logger.debug(
-                  { familyId, reason: result.skippedReason },
-                  'Facilitator skipped asking',
-                );
-              }
-            },
-            (err) => {
-              logger.error(
-                { familyId, err },
-                'Facilitator failed to ask question',
-              );
-            },
-          );
+              },
+            );
         }
       },
     );
@@ -317,8 +357,8 @@ export function buildMessagePipeline(
   if (wants('storyFollowup')) {
     const followup = new FollowupAgent({
       dbClient,
-      provider: providers.followup as AIProvider,
-      model: models.followup as string,
+      provider: followupProvider,
+      model: followupModel,
       logger,
     });
     processor.setStoryFollowupHook(

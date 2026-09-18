@@ -21,7 +21,7 @@
  * scored behavior is exactly the persisted behavior.
  */
 
-import { wordTokens } from './name-match';
+import { wordTokens } from '@sobremesa/shared-utils';
 
 export type GroundingVerdict = 'grounded' | 'context_bleed' | 'unmatched';
 

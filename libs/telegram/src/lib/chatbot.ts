@@ -18,6 +18,7 @@ import {
 import {
   DEFAULT_LANGUAGE,
   familyPrimaryLanguage,
+  isFamilyPaused,
 } from '@sobremesa/shared-types';
 import type pino from 'pino';
 import type { BotHandler } from './types';
@@ -204,9 +205,7 @@ export class ChatbotHandler implements BotHandler {
     const family = await this.familyRepo.findByChatId(chatId);
     if (!family) return null;
 
-    // Check if paused
-    const config = (family.config || {}) as Record<string, unknown>;
-    if (config.paused === true) {
+    if (isFamilyPaused(family.config)) {
       return null;
     }
 

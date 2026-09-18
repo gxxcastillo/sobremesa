@@ -52,6 +52,7 @@ import { createLiveDbClient } from '../db-client';
 import { ImportJobRepository, ImportProcessor } from '@sobremesa/import';
 import {
   ConversationEventRepository,
+  IdentityRepository,
   ProcessingQueueRepository,
 } from '@sobremesa/database';
 import {
@@ -131,33 +132,27 @@ async function resolveIdentityId(
 ): Promise<string> {
   if (explicit) return explicit;
 
-  const { data, error } = await client
-    .from('identities')
-    .select('id, display_name, provider_username')
-    .limit(10);
-  if (error) {
-    throw new Error(`Failed to look up identities: ${error.message}`);
-  }
+  const identities = await new IdentityRepository(client).findAllActive();
 
-  if (!data || data.length === 0) {
+  if (identities.length === 0) {
     throw new Error(
       'No identities exist in the local DB yet, so there is no one to grant ' +
         'family access to. Log into Studio once (bun nx serve studio) to create ' +
         'your account, then re-run this command -- or pass --identity-id=<uuid>.',
     );
   }
-  if (data.length > 1) {
-    const listing = data
+  if (identities.length > 1) {
+    const listing = identities
       .map(
-        (r) =>
-          `  ${r['id']}  ${r['display_name'] ?? r['provider_username'] ?? '(unnamed)'}`,
+        (i) =>
+          `  ${i.id}  ${i.displayName ?? i.providerUsername ?? '(unnamed)'}`,
       )
       .join('\n');
     throw new Error(
       `Multiple identities exist; pass --identity-id=<uuid> to pick one:\n${listing}`,
     );
   }
-  return data[0]['id'] as string;
+  return identities[0].id;
 }
 
 const RUN_LOG_PATH = path.join(

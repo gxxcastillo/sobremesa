@@ -17,6 +17,7 @@ import {
   detectLanguage,
   Priorities,
   DEFAULT_FACILITATOR_NAME,
+  isFamilyPaused,
 } from '@sobremesa/shared-types';
 import {
   buildSystemPrompt,
@@ -199,6 +200,15 @@ export class FacilitatorAgent {
         return { success: false, error: 'Family not found' };
       }
 
+      // A paused family gets no unprompted sends -- ingestion already checks
+      // this (chatbot.ts's getActiveFamilyForChat); a pending question must
+      // not bypass it just because it was proposed before the pause (#6a).
+      // After expiry retirement (step 1) so a paused family's stale
+      // questions still retire; before anything below marks a send attempt.
+      if (isFamilyPaused(family.config)) {
+        return { success: true, skippedReason: 'Family is paused' };
+      }
+
       const chatId = family.chatId;
       if (!chatId) {
         return {
@@ -224,16 +234,16 @@ export class FacilitatorAgent {
 
       const question = pending[0];
 
-      // 5. A follow-up question waits for the chat to go quiet (D2) -- the
-      // model doesn't choose timing, this deterministic check does. Every
-      // other origin has no such gate.
+      // 5. A follow-up question waits for the chat to go quiet (D2), and is
+      // cancelled outright if anything happened since it was proposed
+      // (#6b, conservative policy) -- every other origin has no such gate.
       if (question.origin === 'followup') {
-        const isQuiet = await this.isChatQuiet(familyId);
-        if (!isQuiet) {
-          return {
-            success: true,
-            skippedReason: `Follow-up question waiting for ${FOLLOWUP_QUIET_MINUTES} minutes of quiet`,
-          };
+        const timingResult = await this.evaluateFollowupTiming(
+          familyId,
+          question,
+        );
+        if (timingResult) {
+          return timingResult;
         }
       }
 
@@ -461,17 +471,65 @@ export class FacilitatorAgent {
    * conversation event -- never its content, so ADR-007 holds. No activity
    * ever recorded means nothing to wait on.
    */
-  private async isChatQuiet(familyId: string): Promise<boolean> {
+  /**
+   * A follow-up question's timing gate. Returns a result to return early
+   * with (cancelled or still waiting), or `null` when it's eligible to send
+   * now.
+   *
+   * #6b, decided 2026-09-18 (conservative policy, not the bounded
+   * content-aware recheck): any chat activity recorded after the question
+   * was proposed cancels it outright, with no re-check of whether it would
+   * still fit -- a happy question proposed just before sad news arrives
+   * must not go out unchanged once the chat finally quiets down again.
+   * Facilitator stays activity-only (ADR-007); this reads only a timestamp,
+   * never content. Logged with the proposal-to-cancellation gap so a future
+   * session can measure how often this fires before building the smarter
+   * recheck the review also raised.
+   */
+  private async evaluateFollowupTiming(
+    familyId: string,
+    question: Question,
+  ): Promise<AskQuestionResult | null> {
     const lastEventAt =
       await this.conversationEventRepo.findMostRecentOccurredAt(familyId);
-    if (!lastEventAt) {
-      return true;
+
+    if (lastEventAt && lastEventAt > question.createdAt) {
+      await this.questionRepo.retire(familyId, question.id);
+      await this.eventLog.log({
+        familyId,
+        eventType: 'question_retired',
+        eventCategory: 'system_event',
+        actor: 'facilitator',
+        actorType: 'system',
+        conversationEventId: question.sourceMessageId,
+        eventData: {
+          questionId: question.id,
+          reason: 'superseded_by_activity',
+          proposedAt: question.createdAt.toISOString(),
+          lastActivityAt: lastEventAt.toISOString(),
+        },
+      });
+      this.logger.info(
+        { familyId, questionId: question.id },
+        'Follow-up question superseded by chat activity during the wait',
+      );
+      return {
+        success: true,
+        skippedReason: 'Follow-up question superseded by chat activity',
+      };
     }
 
-    const minutesSinceLastEvent =
-      (Date.now() - lastEventAt.getTime()) / (1000 * 60);
+    const minutesSinceLastEvent = lastEventAt
+      ? (Date.now() - lastEventAt.getTime()) / (1000 * 60)
+      : Infinity;
+    if (minutesSinceLastEvent < FOLLOWUP_QUIET_MINUTES) {
+      return {
+        success: true,
+        skippedReason: `Follow-up question waiting for ${FOLLOWUP_QUIET_MINUTES} minutes of quiet`,
+      };
+    }
 
-    return minutesSinceLastEvent >= FOLLOWUP_QUIET_MINUTES;
+    return null;
   }
 
   /**

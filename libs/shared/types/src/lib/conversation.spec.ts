@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { familyPrimaryLanguage, type FamilyConfig } from './conversation';
+import {
+  familyPrimaryLanguage,
+  isFamilyPaused,
+  type FamilyConfig,
+} from './conversation';
 
 describe('familyPrimaryLanguage', () => {
   it('reads defaultLanguage from an import-shaped config', () => {
@@ -37,5 +41,18 @@ describe('familyPrimaryLanguage', () => {
     expect(familyPrimaryLanguage({})).toBe(undefined);
     expect(familyPrimaryLanguage(undefined)).toBe(undefined);
     expect(familyPrimaryLanguage(null)).toBe(undefined);
+  });
+});
+
+describe('isFamilyPaused (#6a)', () => {
+  it('is true only when paused is exactly true', () => {
+    expect(isFamilyPaused({ paused: true })).toBe(true);
+  });
+
+  it('is false when unset, false, or the config is missing entirely', () => {
+    expect(isFamilyPaused({})).toBe(false);
+    expect(isFamilyPaused({ paused: false })).toBe(false);
+    expect(isFamilyPaused(undefined)).toBe(false);
+    expect(isFamilyPaused(null)).toBe(false);
   });
 });

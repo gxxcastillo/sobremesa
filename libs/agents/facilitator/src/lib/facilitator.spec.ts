@@ -21,6 +21,7 @@ const mockQuestionRepo = {
 const mockFamilyRepo = {
   findById: vi.fn(),
   findAll: vi.fn(),
+  findAllActive: vi.fn(),
 };
 
 const mockEventLog = {
@@ -102,6 +103,7 @@ describe('FacilitatorAgent - Participant Addressing', () => {
     mockQuestionRepo.retire.mockResolvedValue(undefined);
     mockFamilyRepo.findById.mockResolvedValue(baseFamily);
     mockFamilyRepo.findAll.mockResolvedValue([baseFamily]);
+    mockFamilyRepo.findAllActive.mockResolvedValue([baseFamily]);
     mockEventLog.log.mockResolvedValue(undefined);
     mockMessageSender.sendMessage.mockResolvedValue(12345);
     mockProvider.complete.mockResolvedValue({
@@ -532,6 +534,64 @@ describe('FacilitatorAgent - Participant Addressing', () => {
       });
     });
 
+    describe('#6b — conservative cancellation on intervening activity', () => {
+      it('cancels (retires) a follow-up question when the chat had activity after it was proposed', async () => {
+        const proposedAnHourAgo: Question = {
+          ...followupQuestion,
+          createdAt: new Date(Date.now() - 60 * 60 * 1000),
+        };
+        mockQuestionRepo.findPending.mockResolvedValue([proposedAnHourAgo]);
+        // 40 minutes ago: after the question was proposed, but still >= 30
+        // minutes ago -- would pass the plain quiet check if cancellation
+        // didn't take priority over it.
+        mockConversationEventRepo.findMostRecentOccurredAt.mockResolvedValue(
+          new Date(Date.now() - 40 * 60 * 1000),
+        );
+
+        const result = await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(result.success).toBe(true);
+        expect(result.skippedReason).toBe(
+          'Follow-up question superseded by chat activity',
+        );
+        expect(mockMessageSender.sendMessage).not.toHaveBeenCalled();
+        expect(mockQuestionRepo.markAsked).not.toHaveBeenCalled();
+        expect(mockQuestionRepo.retire).toHaveBeenCalledWith(
+          baseFamily.id,
+          proposedAnHourAgo.id,
+        );
+        expect(mockEventLog.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            familyId: baseFamily.id,
+            eventType: 'question_retired',
+            eventData: expect.objectContaining({
+              questionId: proposedAnHourAgo.id,
+              reason: 'superseded_by_activity',
+            }),
+          }),
+        );
+      });
+
+      it('does not cancel when the most recent activity is at or before the proposal time', async () => {
+        const proposedNow: Question = {
+          ...followupQuestion,
+          createdAt: new Date(Date.now() - 31 * 60 * 1000),
+        };
+        mockQuestionRepo.findPending.mockResolvedValue([proposedNow]);
+        // Same moment as proposal (e.g. the triggering message itself) --
+        // not activity that happened *after* it.
+        mockConversationEventRepo.findMostRecentOccurredAt.mockResolvedValue(
+          proposedNow.createdAt,
+        );
+
+        const result = await facilitator.askNextQuestion(baseFamily.id);
+
+        expect(result.success).toBe(true);
+        expect(mockMessageSender.sendMessage).toHaveBeenCalled();
+        expect(mockQuestionRepo.retire).not.toHaveBeenCalled();
+      });
+    });
+
     describe('verbatim send', () => {
       it('sends a follow-up question verbatim, without the warmth formula', async () => {
         mockQuestionRepo.findPending.mockResolvedValue([followupQuestion]);
@@ -564,6 +624,78 @@ describe('FacilitatorAgent - Participant Addressing', () => {
           expect.anything(),
         );
       });
+    });
+  });
+
+  describe('story-followups-plan.md #6a — pause suppresses sending', () => {
+    const pausedFamily: Family = {
+      ...baseFamily,
+      config: { ...baseFamily.config, paused: true },
+    };
+
+    it('suppresses a pending question for a paused family without sending', async () => {
+      mockFamilyRepo.findById.mockResolvedValue(pausedFamily);
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      const result = await facilitator.askNextQuestion(baseFamily.id);
+
+      expect(result.success).toBe(true);
+      expect(result.skippedReason).toBe('Family is paused');
+      expect(mockMessageSender.sendMessage).not.toHaveBeenCalled();
+      expect(mockQuestionRepo.markAsked).not.toHaveBeenCalled();
+      expect(mockEventLog.log).not.toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'question_asked' }),
+      );
+    });
+
+    it('still retires expired questions for a paused family (expiry still applies)', async () => {
+      mockFamilyRepo.findById.mockResolvedValue(pausedFamily);
+      mockQuestionRepo.findExpiredPending.mockResolvedValue([
+        { ...baseQuestion, id: 'q-expired-1' },
+      ]);
+      mockQuestionRepo.findPending.mockResolvedValue([]);
+
+      await facilitator.askNextQuestion(baseFamily.id);
+
+      expect(mockQuestionRepo.retire).toHaveBeenCalledWith(
+        baseFamily.id,
+        'q-expired-1',
+      );
+    });
+
+    it('sends normally once a family is no longer paused', async () => {
+      mockFamilyRepo.findById.mockResolvedValue({
+        ...pausedFamily,
+        config: { ...pausedFamily.config, paused: false },
+      });
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      const result = await facilitator.askNextQuestion(baseFamily.id);
+
+      expect(result.success).toBe(true);
+      expect(mockMessageSender.sendMessage).toHaveBeenCalled();
+    });
+
+    it('suppresses every family in a batch sweep, not just the first (askQuestionsForAllFamilies)', async () => {
+      const otherFamily: Family = { ...pausedFamily, id: 'family-999' };
+      mockFamilyRepo.findAllActive.mockResolvedValue([
+        pausedFamily,
+        otherFamily,
+      ]);
+      mockFamilyRepo.findById.mockImplementation(async (id: string) =>
+        id === pausedFamily.id ? pausedFamily : otherFamily,
+      );
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      const results = await facilitator.askQuestionsForAllFamilies();
+
+      expect(results.get(pausedFamily.id)?.skippedReason).toBe(
+        'Family is paused',
+      );
+      expect(results.get(otherFamily.id)?.skippedReason).toBe(
+        'Family is paused',
+      );
+      expect(mockMessageSender.sendMessage).not.toHaveBeenCalled();
     });
   });
 });

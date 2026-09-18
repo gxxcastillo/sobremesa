@@ -3,3 +3,4 @@ export * from './lib/date-utils';
 export * from './lib/text-utils';
 export * from './lib/result';
 export * from './lib/person-name';
+export * from './lib/name-match';

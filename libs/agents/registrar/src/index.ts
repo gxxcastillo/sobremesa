@@ -5,10 +5,10 @@ export {
 } from './lib/registrar';
 export {
   detectClaimConflict,
+  isExactDuplicateClaim,
   subjectsMatch,
   canClaimTypeConflict,
 } from './lib/conflict-detector';
-export { textMentionsName, wordTokens } from './lib/name-match';
 export {
   createGrounder,
   groundEvidence,

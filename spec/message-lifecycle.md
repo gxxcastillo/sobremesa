@@ -103,7 +103,9 @@ proposed → asked → answered
 ```
 
 Facilitator asks the highest-priority eligible question, records the external message id, and logs
-`question_asked`. A reply to that message marks the question `answered`, logs `question_answered`,
+`question_asked`. A paused family (§4.5) is skipped before anything is sent or marked asked —
+pausing intake without also pausing this outbound path would leave a family "paused" in appearance
+only (#6a). A reply to that message marks the question `answered`, logs `question_answered`,
 adds the original question as an explicit Scribe context block, and then flows through normal
 extraction. Intern's deterministic filter (§3.2 of [`agent-pipeline.md`](./agent-pipeline.md))
 normally discards an empty, too-short, or emoji-only message without ever calling Scribe or the LLM
@@ -121,16 +123,25 @@ branch on expiry rather than only on manual retirement, and only one such questi
 `proposed` or recently `asked` for a family at a time (`QuestionRepository.hasWaitingOrRecent`,
 24-hour pacing) — a second candidate message is simply never formulated while that holds. Proposal
 happens inline in the live pipeline (§3.6). Asking one goes through Facilitator's ordinary
-`proposed → asked` path (§3.5), plus its own additional 30-minute chat-quiet gate and expiry
-retirement, and is sent verbatim rather than through the warmth formula (`spec/product/warmth.md`,
+`proposed → asked` path (§3.5), plus its own additional 30-minute chat-quiet gate, expiry
+retirement, and a conservative-cancellation check (any conversation activity recorded after the
+question was proposed retires it outright, logged `question_retired` with
+`reason: 'superseded_by_activity'`, checked before the quiet gate so it applies even once the chat
+has since gone quiet again) — a deliberately activity-only policy (ADR-007) rather than a
+content-aware recheck of whether the question still fits; the retirement log is meant to be mined
+later for how often this actually fires. It is sent verbatim rather than through the warmth formula
+(`spec/product/warmth.md`,
 ADR-033). Nothing requests the `storyFollowup` proposal stage in production yet, so none of this
 runs live today regardless.
 
 ## 4.5 Family Activation
 
 A family is created by `/sobremesa` registration in an allow-listed chat by a Telegram admin.
-Ingestion accepts messages only when the family is active and not paused. Chat commands can pause,
-resume, show status/help, set primary language, and create Studio links.
+Ingestion accepts messages only when the family is active and not paused. Pause (`config.paused`,
+`isFamilyPaused` in `shared-types`) also suppresses Facilitator's outbound question sends (§4.4) —
+both the per-message nudge and a batch sweep, since both share `askNextQuestion` — so a paused
+family receives nothing unprompted either. Chat commands can pause, resume, show status/help, set
+primary language, and create Studio links.
 
 ## 4.6 Imported History
 

@@ -27,18 +27,19 @@ import {
   LlmEvaluationQueueRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
-import { createLogger, isSpeakerRelativeTerm } from '@sobremesa/shared-utils';
-import type pino from 'pino';
 import {
-  detectClaimConflict,
-  findBestSubjectMatch,
-  subjectsMatch,
-} from './conflict-detector';
-import {
+  createLogger,
+  isSpeakerRelativeTerm,
   MEANINGLESS_TOKENS,
   nameMentionedInTokens,
   wordTokens,
-} from './name-match';
+} from '@sobremesa/shared-utils';
+import type pino from 'pino';
+import {
+  findBestSubjectMatch,
+  isExactDuplicateClaim,
+  subjectsMatch,
+} from './conflict-detector';
 import { createGrounder } from './grounding';
 import {
   EntityMatcherService,
@@ -1197,7 +1198,11 @@ export class RegistrarAgent {
             (existing) =>
               existing.claimType === claim.claimType &&
               subjectsMatch(existing.subject, claim.subject) &&
-              !detectClaimConflict(existing.claimValue, claim.claimValue),
+              isExactDuplicateClaim(
+                existing.claimValue,
+                claim.claimValue,
+                claim.claimType,
+              ),
           );
 
           if (exactDuplicate) {
@@ -1274,12 +1279,15 @@ export class RegistrarAgent {
             'Claim marked as disputed due to existing stronger or similar claims',
           );
 
-          // If existing claim is significantly stronger, skip creating new claim
-          const maxExistingStrength = Math.max(
-            ...conflictingClaimsWithStrength.map((c) => c.claimStrength ?? 0.5),
-          );
-
-          if (strengthResult.score < maxExistingStrength - 0.2) {
+          if (resolution.existingSignificantlyStronger) {
+            // Existing claim is significantly stronger -- skip creating the
+            // new claim. "Significantly" is resolveConflicts's own
+            // threshold, not re-derived here.
+            const maxExistingStrength = Math.max(
+              ...conflictingClaimsWithStrength.map(
+                (c) => c.claimStrength ?? 0.5,
+              ),
+            );
             this.logger.info(
               {
                 familyId,

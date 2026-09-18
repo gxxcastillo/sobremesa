@@ -7,6 +7,13 @@ import {
 } from '../conflict-detector.js';
 
 /**
+ * Claim-strength gap (0.0-1.0 scale) that `resolveConflicts` treats as
+ * "significantly" different -- above it one side supersedes or is
+ * disputed-and-skipped; within it both sides are disputed and kept.
+ */
+const STRENGTH_DIFF_THRESHOLD = 0.2;
+
+/**
  * Result of conflict detection.
  */
 export interface ConflictResult {
@@ -22,6 +29,15 @@ export interface ConflictResult {
 export interface ConflictResolutionResult {
   action: 'create_new' | 'supersede_existing' | 'mark_disputed';
   supersededClaimIds?: string[]; // Claims to mark as superseded
+  /**
+   * Only meaningful when `action` is 'mark_disputed': whether an existing
+   * claim is significantly stronger than the new one, meaning the caller
+   * should dispute AND skip creating the new claim rather than create it
+   * alongside the existing one. The threshold this reflects belongs solely
+   * to `resolveConflicts` -- callers must read this instead of re-deriving
+   * "significantly stronger" from the claim strengths themselves.
+   */
+  existingSignificantlyStronger?: boolean;
   reasoning: string;
 }
 
@@ -95,6 +111,7 @@ export class ConflictDetectorService {
       const hasValueConflict = detectClaimConflict(
         existing.claimValue,
         newClaim.claimValue,
+        newClaim.claimType,
       );
 
       if (hasValueConflict) {
@@ -187,8 +204,8 @@ export class ConflictDetectorService {
    * Resolve conflicts between new claim and existing claims.
    *
    * Resolution strategy:
-   * 1. If new claim has much higher strength (>0.2 difference): supersede existing
-   * 2. If strengths are close (<0.2 difference): mark both as disputed
+   * 1. If new claim has much higher strength (>STRENGTH_DIFF_THRESHOLD difference): supersede existing
+   * 2. If strengths are close (<STRENGTH_DIFF_THRESHOLD difference): mark both as disputed
    * 3. If existing claim has much higher strength: don't create new claim
    *
    * @param newClaimStrength - Strength of the new claim (0.0-1.0)
@@ -213,8 +230,8 @@ export class ConflictDetectorService {
 
     const strengthDiff = newClaimStrength - maxExistingStrength;
 
-    // Strategy 1: New claim is significantly stronger (>0.2 difference)
-    if (strengthDiff > 0.2) {
+    // Strategy 1: New claim is significantly stronger
+    if (strengthDiff > STRENGTH_DIFF_THRESHOLD) {
       return {
         action: 'supersede_existing',
         supersededClaimIds: conflicts.map((c) => c.claimId),
@@ -223,10 +240,11 @@ export class ConflictDetectorService {
     }
 
     // Strategy 2: Existing claim is significantly stronger
-    if (strengthDiff < -0.2) {
+    if (strengthDiff < -STRENGTH_DIFF_THRESHOLD) {
       // Don't create new claim - existing is more reliable
       return {
         action: 'mark_disputed',
+        existingSignificantlyStronger: true,
         reasoning: `Existing claim strength (${maxExistingStrength.toFixed(2)}) significantly higher than new claim (${newClaimStrength.toFixed(2)}) - consider this claim disputed`,
       };
     }
@@ -234,6 +252,7 @@ export class ConflictDetectorService {
     // Strategy 3: Strengths are close - mark both as disputed
     return {
       action: 'mark_disputed',
+      existingSignificantlyStronger: false,
       reasoning: `Claim strengths are similar (new: ${newClaimStrength.toFixed(2)}, existing max: ${maxExistingStrength.toFixed(2)}) - requires manual review or LLM evaluation`,
     };
   }

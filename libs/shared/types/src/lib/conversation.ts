@@ -266,6 +266,20 @@ export interface FamilyConfig {
   culturalTerms?: string[];
   /** Project display name */
   projectName?: string;
+  /**
+   * Set via `/sobremesa pause`. Ingestion checks this directly
+   * (`getActiveFamilyForChat`); anything that sends unprompted to the family
+   * (a pending question, a nudge) must check it too via `isFamilyPaused` --
+   * pausing intake without also pausing outbound sends is not really paused.
+   */
+  paused?: boolean;
+}
+
+/** True when the family has been paused (`/sobremesa pause`). */
+export function isFamilyPaused(
+  config: FamilyConfig | null | undefined,
+): boolean {
+  return config?.paused === true;
 }
 
 /**

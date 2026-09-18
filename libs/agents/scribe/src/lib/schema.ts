@@ -54,13 +54,30 @@ const IMAGE_REFERENCE_TYPES = [
   'asks_about',
 ] as const;
 
-const DateNumberSchema = z.preprocess((value) => {
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : value;
-  }
-  return value;
-}, z.number().optional());
+/**
+ * Scribe frequently emits an explicit JSON `null` for a field it has no value
+ * for, rather than omitting the key. Zod's `.optional()` only accepts
+ * `undefined`, so a raw `null` fails the whole response's schema validation
+ * (`ScribeParseError`), discarding an otherwise-valid extraction. Normalize
+ * `null` to `undefined` before validating instead of loosening the field's
+ * type.
+ */
+function optionalNullable<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess(
+    (value) => (value === null ? undefined : value),
+    schema.optional(),
+  );
+}
+
+const DateNumberSchema = optionalNullable(
+  z.preprocess((value) => {
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : value;
+    }
+    return value;
+  }, z.number()),
+);
 
 function normalizeVocabularyValue(
   value: unknown,
@@ -137,41 +154,41 @@ const ImageReferenceTypeSchema = z
 const PersonSchema = z.object({
   name: z.string(),
   aliases: z.array(z.string()).default([]),
-  birth_year: z.number().optional(),
-  death_year: z.number().optional(),
+  birth_year: optionalNullable(z.number()),
+  death_year: optionalNullable(z.number()),
 });
 
 const PlaceSchema = z.object({
   name: z.string(),
   type: PlaceTypeSchema,
-  city: z.string().optional(),
-  region: z.string().optional(),
-  country: z.string().optional(),
+  city: optionalNullable(z.string()),
+  region: optionalNullable(z.string()),
+  country: optionalNullable(z.string()),
 });
 
 const EventSchema = z.object({
   title: z.string(),
   event_type: EventTypeSchema,
-  date: z
-    .union([
+  date: optionalNullable(
+    z.union([
       z.string(),
       z.object({
         year: DateNumberSchema,
         month: DateNumberSchema,
         day: DateNumberSchema,
-        text: z.string().optional(),
+        text: optionalNullable(z.string()),
       }),
-    ])
-    .optional(),
+    ]),
+  ),
   people_involved: z.array(z.string()).default([]),
-  place: z.string().optional(),
+  place: optionalNullable(z.string()),
 });
 
 const StorySchema = z.object({
-  title: z.string().optional(),
+  title: optionalNullable(z.string()),
   content: z.string(),
   themes: z.array(z.string()).default([]),
-  timeframe: z.string().optional(),
+  timeframe: optionalNullable(z.string()),
 });
 
 const RelationshipSchema = z.object({
@@ -208,9 +225,9 @@ const ClaimSchema = z.object({
   // see spec/agent-pipeline.md §3.4). A missing span fails the parse loud
   // rather than silently persisting an ungroundable claim.
   evidence: z.string(),
-  certainty_language: z.string().optional(),
+  certainty_language: optionalNullable(z.string()),
   claimed_by_source: z.enum(['direct', 'attributed', 'hearsay']),
-  attributed_to: z.string().optional(),
+  attributed_to: optionalNullable(z.string()),
   referenced_people: z.array(z.string()).default([]),
   referenced_places: z.array(z.string()).default([]),
 });
@@ -219,7 +236,7 @@ const ImageReferenceSchema = z.object({
   image_id: z.string(),
   reference_type: ImageReferenceTypeSchema,
   people_identified: z.array(z.string()).default([]),
-  context_provided: z.string().optional(),
+  context_provided: optionalNullable(z.string()),
 });
 
 /**

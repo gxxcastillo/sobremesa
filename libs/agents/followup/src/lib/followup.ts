@@ -4,7 +4,7 @@ import {
   type DatabaseClient,
 } from '@sobremesa/database';
 import type { AIProvider } from '@sobremesa/ai-provider';
-import { createLogger } from '@sobremesa/shared-utils';
+import { createLogger, textMentionsName } from '@sobremesa/shared-utils';
 import {
   familyPrimaryLanguage,
   DEFAULT_LANGUAGE,
@@ -138,7 +138,7 @@ export class FollowupAgent {
         false,
         message.sequenceNumber,
       ),
-      this.recordContext.build(familyId, eventId),
+      this.recordContext.build(familyId, eventId, message.contentOriginal),
       this.familyRepo.findById(familyId),
     ]);
     // findRecent orders newest-first; the prompt wants oldest-first context.
@@ -215,10 +215,12 @@ export class FollowupAgent {
     }
 
     // Deterministic guard (story-followups-plan.md #3): every named person,
-    // place or event must appear in what the model was actually shown.
-    const shown = userPrompt.toLowerCase();
+    // place or event must appear in what the model was actually shown. Whole
+    // -word matching (not raw substring containment) so a hallucinated name
+    // that merely happens to be a substring of something shown (e.g. "Ana"
+    // inside "Mariana") is still caught.
     const ungroundedNames = parsed.names_used.filter(
-      (name) => !shown.includes(name.toLowerCase()),
+      (name) => !textMentionsName(userPrompt, name),
     );
     if (ungroundedNames.length) {
       this.logger.warn(

@@ -12,13 +12,47 @@ import type {
   Place,
   TimelineEvent,
 } from '@sobremesa/shared-types';
-import { classifyPersonName } from '@sobremesa/shared-utils';
+import {
+  classifyPersonName,
+  normalizeNameKey,
+  textMentionsName,
+} from '@sobremesa/shared-utils';
 import type { RecordContext } from './types';
 
 /** Cap on how many of an entity's claims (each side of the message split) go
  * into the prompt -- an unbounded record for a long-tracked person would
  * blow the prompt budget. */
 const CLAIMS_PER_ENTITY_CAP = 8;
+
+/**
+ * Cap on how many people/places a text-only fallback lookup (#10) adds to
+ * the record, each -- a context budget so a common name shared by many
+ * family members can't balloon the prompt.
+ */
+const FALLBACK_LOOKUP_CAP = 3;
+
+/**
+ * Groups entities by exact normalized name and drops any group with more
+ * than one member. Two different real people can share a literal name (e.g.
+ * two "Michel Vega"s); a text-only mention can't tell them apart, and
+ * guessing either one risks attaching the wrong person's history to a story
+ * (#10) -- precision over recall (AGENTS.md), so an ambiguous name is
+ * excluded rather than resolved by assumption.
+ */
+function excludingAmbiguousNames<T extends { name: string }>(
+  entities: T[],
+): T[] {
+  const byName = new Map<string, T[]>();
+  for (const entity of entities) {
+    const key = normalizeNameKey(entity.name);
+    const group = byName.get(key) ?? [];
+    group.push(entity);
+    byName.set(key, group);
+  }
+  return [...byName.values()]
+    .filter((group) => group.length === 1)
+    .map((group) => group[0]);
+}
 
 export interface RecordContextBuilderOptions {
   dbClient?: DatabaseClient;
@@ -95,8 +129,31 @@ export class RecordContextBuilder {
     }
   }
 
-  async build(familyId: string, eventId: string): Promise<RecordContext> {
-    const named = await this.fetchNamedEntities(familyId, eventId);
+  /**
+   * `messageText` is used only as a bounded, read-only fallback (#10) when
+   * the current event produced no claims at all -- an Intern-ignored
+   * message never reaches Scribe, so `fetchNamedEntities` (claim-linked)
+   * always comes back empty even when the text names a well-documented
+   * person. Never merges entities or writes claims.
+   */
+  async build(
+    familyId: string,
+    eventId: string,
+    messageText?: string,
+  ): Promise<RecordContext> {
+    let named = await this.fetchNamedEntities(familyId, eventId);
+
+    if (
+      messageText &&
+      !named.people.length &&
+      !named.places.length &&
+      !named.events.length
+    ) {
+      const fallback = await this.fallbackNamedEntities(familyId, messageText);
+      if (fallback.people.length || fallback.places.length) {
+        named = { ...named, ...fallback };
+      }
+    }
 
     const lines: string[] = [];
     const hints: string[] = [];
@@ -223,6 +280,36 @@ export class RecordContextBuilder {
     ]);
 
     return { people, places, events, disputedHere };
+  }
+
+  /**
+   * Bounded, read-only text-mention fallback (#10) for when
+   * `fetchNamedEntities` found nothing to link from -- scans every active,
+   * non-placeholder person/place the family has and keeps the ones the
+   * message text actually names (whole-word, `textMentionsName`). Never
+   * touches the database beyond these reads: no entity match is created,
+   * merged, or otherwise persisted.
+   */
+  private async fallbackNamedEntities(
+    familyId: string,
+    messageText: string,
+  ): Promise<{ people: Person[]; places: Place[] }> {
+    const [people, places] = await Promise.all([
+      this.personRepo.findAllActive(familyId),
+      this.placeRepo.findAllActive(familyId),
+    ]);
+
+    const matchedPeople = excludingAmbiguousNames(
+      people.filter(
+        (p) => !p.isPlaceholder && textMentionsName(messageText, p.name),
+      ),
+    ).slice(0, FALLBACK_LOOKUP_CAP);
+
+    const matchedPlaces = excludingAmbiguousNames(
+      places.filter((p) => textMentionsName(messageText, p.name)),
+    ).slice(0, FALLBACK_LOOKUP_CAP);
+
+    return { people: matchedPeople, places: matchedPlaces };
   }
 
   /**

@@ -1,4 +1,4 @@
-import { MEANINGLESS_TOKENS, wordTokens } from './name-match';
+import { MEANINGLESS_TOKENS, wordTokens } from '@sobremesa/shared-utils';
 
 /**
  * Conflict detection utilities for the Registrar agent.
@@ -52,19 +52,132 @@ function normalizeClaimValue(
 }
 
 /**
+ * Free-text fields that cite or explain a fact rather than assert it (e.g. a
+ * date claim's `text: "at age 43"` alongside its structured `year`). Wording
+ * differences here must not create a conflict on their own (#5d) — only when
+ * one is the *only* value either side has does it become the fact itself.
+ */
+const CITATION_FIELDS = new Set(['text']);
+
+function hasNonCitationField(value: Record<string, unknown>): boolean {
+  return Object.keys(value).some((key) => !CITATION_FIELDS.has(key));
+}
+
+/**
+ * Scribe's relationship claims encode their counterparty in a free-text field
+ * whose key isn't standardized (`to`, `relative`, `relatedTo`, `brothers`,
+ * seen in real extractions) — only `relationshipType` itself is a fixed key.
+ * Concatenate every other string-valued field into one descriptor to compare.
+ */
+function relationshipTargetText(value: Record<string, unknown>): string {
+  return Object.entries(value)
+    .filter(([key, v]) => key !== 'relationshipType' && typeof v === 'string')
+    .map(([, v]) => v as string)
+    .join(' ');
+}
+
+/**
+ * A relationship claim only conflicts with another when both name the same
+ * counterparty and disagree on the relationship type — "sibling to her
+ * brothers" and "great-grandchild to our grandparents" are compatible facts
+ * about different people, not a contradiction (#5d). Missing or ambiguous
+ * target evidence on either side must not become a contradiction by
+ * assumption: it makes the pair not comparable, not a conflict. Reuses
+ * `subjectsMatch`'s whole-word-token Jaccard bar (verified live against a
+ * real corpus: raw token-set overlap alone let a shared surname, "Enrique
+ * Najlis" vs. "Jenny Najlis", read as the same person).
+ */
+function detectRelationshipConflict(
+  existing: Record<string, unknown>,
+  newVal: Record<string, unknown>,
+): boolean {
+  const existingType = existing['relationshipType'];
+  const newType = newVal['relationshipType'];
+  if (typeof existingType !== 'string' || typeof newType !== 'string') {
+    return false;
+  }
+  if (existingType.toLowerCase().trim() === newType.toLowerCase().trim()) {
+    return false;
+  }
+
+  const existingTarget = relationshipTargetText(existing);
+  const newTarget = relationshipTargetText(newVal);
+  if (!existingTarget || !newTarget) {
+    return false;
+  }
+
+  return subjectsMatch(existingTarget, newTarget);
+}
+
+/**
+ * Whether two claim values are the literal same fact, for deciding whether to
+ * skip creating a claim as an exact duplicate of one that already exists.
+ * This is *not* the same question as "do these conflict": for relationship
+ * claims, `detectClaimConflict`'s "no conflict" result (#5d) also covers
+ * compatible-but-different facts about the same subject (e.g. "sibling to her
+ * brothers" and "great-grandchild to our grandparents") — those must not be
+ * treated as duplicates of each other, or the second, distinct fact is
+ * silently dropped instead of persisted.
+ */
+export function isExactDuplicateClaim(
+  existingValue: string | Record<string, unknown>,
+  newValue: string | Record<string, unknown>,
+  claimType: string,
+): boolean {
+  if (claimType.toLowerCase() !== 'relationship') {
+    return !detectClaimConflict(existingValue, newValue, claimType);
+  }
+
+  const existing = normalizeClaimValue(existingValue);
+  const newVal = normalizeClaimValue(newValue);
+
+  const existingType = existing['relationshipType'];
+  const newType = newVal['relationshipType'];
+  if (typeof existingType !== 'string' || typeof newType !== 'string') {
+    return false;
+  }
+  if (existingType.toLowerCase().trim() !== newType.toLowerCase().trim()) {
+    return false;
+  }
+
+  const existingTarget = relationshipTargetText(existing);
+  const newTarget = relationshipTargetText(newVal);
+  if (!existingTarget || !newTarget) {
+    // Same type, but no comparable counterparty evidence on one or both
+    // sides -- not confirmed as the same fact, so don't skip it.
+    return existingTarget === newTarget;
+  }
+
+  return subjectsMatch(existingTarget, newTarget);
+}
+
+/**
  * Detect if two claim values represent a conflict.
  * Returns true if values are contradictory, false if compatible.
  */
 export function detectClaimConflict(
   existingValue: string | Record<string, unknown>,
   newValue: string | Record<string, unknown>,
+  claimType: string,
 ): boolean {
   const existing = normalizeClaimValue(existingValue);
   const newVal = normalizeClaimValue(newValue);
 
+  if (claimType.toLowerCase() === 'relationship') {
+    return detectRelationshipConflict(existing, newVal);
+  }
+
   // Compare key fields for contradiction
   for (const key of Object.keys(newVal)) {
     if (key in existing) {
+      if (
+        CITATION_FIELDS.has(key) &&
+        hasNonCitationField(existing) &&
+        hasNonCitationField(newVal)
+      ) {
+        continue;
+      }
+
       const existingField = existing[key];
       const newField = newVal[key];
 

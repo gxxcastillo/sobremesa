@@ -280,5 +280,60 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
 
       expect(() => parse(raw)).toThrow(ScribeParseError);
     });
+
+    it('normalizes explicit null on optional fields instead of failing the parse (#9)', () => {
+      // Reproduces the two real messages that exhausted all retries: Scribe
+      // emits an explicit JSON `null` for a field it has no value for
+      // (birth/death years, place, date, certainty_language, attributed_to)
+      // rather than omitting the key.
+      const raw = JSON.stringify({
+        people: [{ name: 'Angelita', birth_year: 1918, death_year: null }],
+        places: [
+          { name: 'Somewhere', city: null, region: null, country: null },
+        ],
+        events: [
+          {
+            title: "Angelita's birthday",
+            date: { year: null, month: 7, day: 3, text: null },
+            place: null,
+          },
+          { title: 'Undated event', date: null },
+        ],
+        stories: [{ content: 'A long story', title: null, timeframe: null }],
+        claims: [
+          {
+            claim_type: 'detail',
+            subject: 'Angelita',
+            claim_value: 'Family matriarch',
+            evidence: 'Felicidades a nuestra Mamalita',
+            claimed_by_source: 'direct',
+            certainty_language: null,
+            attributed_to: null,
+          },
+        ],
+        image_references: [
+          {
+            image_id: 'img-1',
+            reference_type: 'describes',
+            context_provided: null,
+          },
+        ],
+      });
+
+      const model = parse(raw);
+
+      expect(model.people[0].deathYear).toBeUndefined();
+      expect(model.places[0].city).toBeUndefined();
+      expect(model.places[0].region).toBeUndefined();
+      expect(model.places[0].country).toBeUndefined();
+      expect(model.events[0].dateYear).toBeUndefined();
+      expect(model.events[0].placeName).toBeUndefined();
+      expect(model.events[1].dateText).toBeUndefined();
+      expect(model.story?.title).toBeUndefined();
+      expect(model.story?.timeframe).toBeUndefined();
+      expect(model.claims[0].certaintyLanguage).toBeUndefined();
+      expect(model.claims[0].attributedTo).toBeUndefined();
+      expect(model.imageReferences[0].contextProvided).toBeUndefined();
+    });
   });
 });

@@ -37,7 +37,10 @@ import {
   type DatabaseClient,
   ClaimRepository,
 } from '@sobremesa/database';
-import { canClaimTypeConflict } from '@sobremesa/agents-registrar';
+import {
+  canClaimTypeConflict,
+  detectClaimConflict,
+} from '@sobremesa/agents-registrar';
 import type { Claim } from '@sobremesa/shared-types';
 import {
   assertLocalUnlessAllowed,
@@ -47,6 +50,7 @@ import {
 interface ClaimRow {
   id: string;
   subject: string;
+  claimType: string;
   claimValue: unknown;
   claimedAt: string;
   status: string;
@@ -126,28 +130,27 @@ async function resolveFamilyId(
 }
 
 async function fetchClaimsByIds(
-  client: DatabaseClient,
+  claimRepo: ClaimRepository,
   familyId: string,
   ids: string[],
 ): Promise<Map<string, ClaimRow>> {
   const map = new Map<string, ClaimRow>();
   if (ids.length === 0) return map;
 
-  const { data, error } = await client
-    .from('claims')
-    .select('id, subject, claim_value, claimed_at, status')
-    .eq('family_id', familyId)
-    .in('id', ids);
-  if (error) {
-    throw new Error(`Failed to fetch claims by id: ${error.message}`);
-  }
-  for (const row of data ?? []) {
-    map.set(row['id'], {
-      id: row['id'],
-      subject: row['subject'],
-      claimValue: row['claim_value'],
-      claimedAt: row['claimed_at'],
-      status: row['status'],
+  // Reuses ClaimRepository.findByIds (already family-scoped and excluding
+  // 'redacted' claims) instead of a raw query, so a redacted claim in a
+  // persisted conflict pair doesn't silently show up in this report.
+  const claims = await claimRepo.findByIds(familyId, ids);
+  for (const claim of claims) {
+    map.set(claim.id, {
+      id: claim.id,
+      subject: claim.subject,
+      claimType: claim.claimType,
+      claimValue: claim.claimValue,
+      // Claim.claimedAt is typed as Date but the repository mapper leaves it
+      // as the raw string Supabase returns -- don't assume a Date instance.
+      claimedAt: String(claim.claimedAt),
+      status: claim.status,
     });
   }
   return map;
@@ -220,12 +223,15 @@ function unionPairs(
 function reportPersistedPairs(
   pairs: ConflictPair[],
   claimsById: Map<string, ClaimRow>,
-): void {
+): { comparatorReevaluated: number; comparatorStillFlags: number } {
   console.log(`\n=== Persisted conflict pairs (${pairs.length} total) ===\n`);
   if (pairs.length === 0) {
     console.log('  (none)');
-    return;
+    return { comparatorReevaluated: 0, comparatorStillFlags: 0 };
   }
+
+  let comparatorReevaluated = 0;
+  let comparatorStillFlags = 0;
 
   for (const pair of pairs) {
     const a = claimsById.get(pair.claimAId);
@@ -266,8 +272,28 @@ function reportPersistedPairs(
       `    auto-hint: ${formattingOnly ? 'looks like formatting-only (probably not a real disagreement)' : 'values differ beyond formatting'}` +
         '  [hint only -- fill in manual read-through judgment separately]',
     );
+
+    // agent-hygiene-plan.md #5d: replay this already-persisted pair's
+    // recorded values through the fixed write-time comparator, read-only.
+    // A new writer cannot repair an old stored link automatically -- this
+    // only reports what the current code would decide, it never rewrites
+    // claim_conflicts/claim_relationships.
+    if (a.claimType === b.claimType) {
+      comparatorReevaluated++;
+      const stillFlagged = detectClaimConflict(
+        a.claimValue as string | Record<string, unknown>,
+        b.claimValue as string | Record<string, unknown>,
+        a.claimType,
+      );
+      if (stillFlagged) comparatorStillFlags++;
+      console.log(
+        `    #5d comparator: ${stillFlagged ? 'STILL flags this pair as a conflict' : 'no longer flags this pair (legacy link, not a current decision)'}`,
+      );
+    }
     console.log('');
   }
+
+  return { comparatorReevaluated, comparatorStillFlags };
 }
 
 async function simulateCrudeDetector(
@@ -402,8 +428,17 @@ async function main(): Promise<void> {
   const allClaimIds = [
     ...new Set(pairs.flatMap((p) => [p.claimAId, p.claimBId])),
   ];
-  const claimsById = await fetchClaimsByIds(client, familyId, allClaimIds);
-  reportPersistedPairs(pairs, claimsById);
+  const claimsById = await fetchClaimsByIds(claimRepo, familyId, allClaimIds);
+  const { comparatorReevaluated, comparatorStillFlags } = reportPersistedPairs(
+    pairs,
+    claimsById,
+  );
+  console.log(
+    `\n=== #5d comparator re-check summary ===\n\n` +
+      `  Persisted pairs re-evaluated: ${comparatorReevaluated}\n` +
+      `  Still flagged by the current comparator: ${comparatorStillFlags}\n` +
+      `  No longer flagged (legacy link from the pre-#5d comparator): ${comparatorReevaluated - comparatorStillFlags}\n`,
+  );
 
   await simulateCrudeDetector(claimRepo, familyId);
 }

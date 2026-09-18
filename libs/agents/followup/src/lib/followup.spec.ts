@@ -185,6 +185,31 @@ describe('FollowupAgent.formulate', () => {
     expect(result.question).toBeUndefined();
   });
 
+  it('declines a hallucinated name that is only a substring of something actually shown (regression)', async () => {
+    // The message mentions "Mariana", not "Ana" -- a naive substring check
+    // on the lowercased prompt would wrongly treat "Ana" as grounded.
+    eventRepo.findById.mockResolvedValue(
+      makeMessage({ contentOriginal: 'Mariana fue a la playa con su prima.' }),
+    );
+    provider.complete.mockResolvedValue(
+      jsonResponse({
+        ask: true,
+        question: '¿Qué recuerdas de Ana en la playa?',
+        names_used: ['Ana'],
+        story_context: 'A beach trip.',
+        reason: 'Worth asking.',
+      }),
+    );
+
+    const result = await agent.formulate({
+      familyId: 'fam1',
+      domainModel: { conversationEventId: 'evt-1' },
+    });
+
+    expect(result.ask).toBe(false);
+    expect(result.reason).toContain('Ana');
+  });
+
   it('declines when the model asks but writes no question text', async () => {
     provider.complete.mockResolvedValue(
       jsonResponse({

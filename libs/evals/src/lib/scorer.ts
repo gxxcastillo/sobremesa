@@ -1,4 +1,5 @@
-import { createGrounder, textMentionsName } from '@sobremesa/agents-registrar';
+import { createGrounder } from '@sobremesa/agents-registrar';
+import { textMentionsName } from '@sobremesa/shared-utils';
 import type {
   ExtractedClaim,
   ExtractedEvent,

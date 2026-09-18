@@ -679,11 +679,7 @@ export class MessageProcessor {
       if (routingAction === 'ignore') {
         // Message should be ignored - report success; the queue loop completes the item
         this.logger.info({ eventId }, 'Message ignored by router');
-        await this.runStoryFollowupHook(
-          eventId,
-          familyId,
-          routingResult?.language,
-        );
+        this.runStoryFollowupHook(eventId, familyId, routingResult?.language);
         return {
           success: true,
           duration: Date.now() - startTime,
@@ -776,11 +772,7 @@ export class MessageProcessor {
       // message also runs the block above (extraction), but a question to
       // the bot isn't itself a story to follow up.
       if (routingAction === 'scribe') {
-        await this.runStoryFollowupHook(
-          eventId,
-          familyId,
-          routingResult?.language,
-        );
+        this.runStoryFollowupHook(eventId, familyId, routingResult?.language);
       }
 
       // Log processing complete
@@ -1062,24 +1054,26 @@ export class MessageProcessor {
   }
 
   /**
-   * Run the story follow-up hook, if configured. Never throws: an error
-   * must not fail or retry a message that otherwise succeeded.
+   * Run the story follow-up hook, if configured. Fire-and-forget, like the
+   * Facilitator nudge in build-message-pipeline.ts: the queue drains one
+   * item at a time across all families (MessageQueue.processOne awaits the
+   * whole handler), so awaiting this hook's own LLM call here would add
+   * that latency to every message, not just this family's. Never throws:
+   * an error must not fail or retry a message that otherwise succeeded.
    */
-  private async runStoryFollowupHook(
+  private runStoryFollowupHook(
     eventId: string,
     familyId: string,
     routedLanguage?: LanguageCode,
-  ): Promise<void> {
+  ): void {
     if (!this.storyFollowupHook) return;
 
-    try {
-      await this.storyFollowupHook(eventId, familyId, routedLanguage);
-    } catch (error) {
+    this.storyFollowupHook(eventId, familyId, routedLanguage).catch((error) => {
       this.logger.warn(
         { eventId, familyId, error },
         'Story follow-up hook failed (non-fatal)',
       );
-    }
+    });
   }
 
   /**
