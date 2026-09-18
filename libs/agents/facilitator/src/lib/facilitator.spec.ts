@@ -105,7 +105,10 @@ describe('FacilitatorAgent - Participant Addressing', () => {
     mockFamilyRepo.findAll.mockResolvedValue([baseFamily]);
     mockFamilyRepo.findAllActive.mockResolvedValue([baseFamily]);
     mockEventLog.log.mockResolvedValue(undefined);
-    mockMessageSender.sendMessage.mockResolvedValue(12345);
+    mockMessageSender.sendMessage.mockResolvedValue({
+      status: 'sent',
+      messageId: 12345,
+    });
     mockProvider.complete.mockResolvedValue({
       content: 'Warmly formatted question!',
     });

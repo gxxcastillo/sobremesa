@@ -54,7 +54,9 @@ describe('AdminAgent - handleConsolidatedJoin', () => {
       findPendingByEventIds: vi.fn().mockResolvedValue([]),
       completeMany: vi.fn().mockResolvedValue(undefined),
     };
-    mockMessageSender = { sendMessage: vi.fn().mockResolvedValue(1) };
+    mockMessageSender = {
+      sendMessage: vi.fn().mockResolvedValue({ status: 'sent', messageId: 1 }),
+    };
 
     agent = new AdminAgent({
       messageSender: mockMessageSender as any,

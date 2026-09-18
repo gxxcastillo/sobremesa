@@ -306,7 +306,9 @@ export class FacilitatorAgent {
   /**
    * Send a question to the family chat.
    * Applies warmth formula via AI if Anthropic client is available.
-   * Returns the Telegram message_id of the sent message.
+   * Returns the Telegram message_id of the sent message, or `undefined` if
+   * the outcome was a duplicate with no recorded id or was unconfirmed
+   * (ambiguous outcome -- never resent; see `outbound-send-reliability-plan.md`).
    * Caller (`askNextQuestion`) already verified `family.chatId` is present
    * and passes it as `chatId`.
    */
@@ -314,7 +316,7 @@ export class FacilitatorAgent {
     family: Family,
     question: Question,
     chatId: string,
-  ): Promise<number> {
+  ): Promise<number | undefined> {
     // Apply warmth formula via AI if available. A story follow-up is sent
     // verbatim -- provisional exception to the warmth formula, see
     // spec/product/warmth.md and ADR-033.
@@ -351,7 +353,7 @@ export class FacilitatorAgent {
     }
 
     // Bot-initiated question, low priority (shouldn't interrupt user interactions)
-    return await this.messageSender.sendMessage(
+    const outcome = await this.messageSender.sendMessage(
       'facilitator',
       {
         chatId,
@@ -359,6 +361,9 @@ export class FacilitatorAgent {
       },
       { priority: Priorities.BOT_QUESTION },
     );
+    return outcome.status === 'sent' || outcome.status === 'duplicate'
+      ? outcome.messageId
+      : undefined;
   }
 
   /**

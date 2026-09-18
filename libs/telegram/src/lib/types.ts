@@ -1,7 +1,10 @@
 import type { Telegraf } from 'telegraf';
 import type pino from 'pino';
 import type { BotRole, OutgoingMessage } from '@sobremesa/shared-types';
-import type { DatabaseClient } from '@sobremesa/database';
+import type {
+  DatabaseClient,
+  OutboundMessageRepository,
+} from '@sobremesa/database';
 
 // Re-export from shared-types for consumers
 export type { BotRole, OutgoingMessage };
@@ -40,6 +43,12 @@ export interface BotManagerConfig {
   logger?: pino.Logger;
   /** Message spacing configuration */
   messageSpacing?: MessageSpacingConfig;
+  /**
+   * Outbound send ledger repository. Defaults to
+   * `new OutboundMessageRepository(dbClient)`; override in tests with an
+   * in-memory fake.
+   */
+  outboundMessageRepo?: OutboundMessageRepository;
 }
 
 /**

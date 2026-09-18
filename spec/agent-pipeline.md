@@ -137,6 +137,12 @@ Historian retrieves merge-aware context and returns an answer with source attrib
 awareness. It does not send directly. Facilitator formats/sends the answer in the original question's
 language and applies the warmth/personality layer.
 
+The send itself goes through `BotManager`'s classified, at-most-once-per-dedup-key contract
+(`message-lifecycle.md` §4.3): Facilitator reads back the delivered message id from a `'sent'`/
+`'duplicate'` outcome (still used to record which external message a question was asked as) and
+otherwise treats a definitive delivery failure and an ambiguous one differently, never resending into
+a possible duplicate.
+
 Within one retrieval, claims are ordered by `claim_analysis.claim_strength` (recency as tiebreak)
 before any per-query cap is applied, so a subject with more claims than the cap surfaces its
 strongest evidence rather than whatever was recorded most recently.

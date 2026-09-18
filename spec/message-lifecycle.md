@@ -89,9 +89,34 @@ one back to `queued` (resets attempts) for retry.
 
 ## 4.3 Outbound Messages
 
-`BotManager.sendMessage()` maintains an in-memory priority queue per chat, serializes sends, spaces
-messages to avoid flooding, and returns the Telegram message id. Facilitator stores that id on asked
-questions so replies can be matched as answers.
+`BotManager.sendMessage()` maintains an in-memory priority queue per chat, serializes sends, and
+spaces messages to avoid flooding. It resolves with a `SendOutcome` rather than a bare message id:
+`{ status: 'sent'; messageId }`, `{ status: 'duplicate'; messageId? }` (a prior claim on the same
+dedup key already delivered -- not resent), or `{ status: 'unconfirmed' }` (an ambiguous outcome --
+also not resent). It throws only `MessageDeliveryError` for a definitive, provably-not-delivered
+failure. Facilitator stores the `sent`/`duplicate` message id on asked questions so replies can be
+matched as answers.
+
+Telegram's Bot API has no idempotency keys, so a send's outcome is classified, not made
+deterministic: a `TelegramError` with a 4xx code (including 429) is provably not delivered and is
+thrown as `MessageDeliveryError`; a 5xx or network/timeout error is irreducibly ambiguous and is
+never thrown -- callers must not treat it as a failure requiring a retry-driven resend. This is the
+outbound analog of precision-over-recall: **prefer a lost message over a duplicate.** A lost answer
+is recoverable (the user asks again); a duplicate is not.
+
+When a caller passes `options.dedup` (a family-scoped key plus optional `conversationEventId`/
+`questionId` provenance), `sendMessage()` claims that key in the durable `outbound_messages` ledger
+(`data-model.md` §2.5) _before_ attempting delivery and confirms the outcome after: a key whose prior
+claim already reached `'sent'` short-circuits to `'duplicate'` with no second Telegram call; a key
+whose prior claim is still `'pending'`/`'unknown'` (outcome not yet known) short-circuits to
+`'unconfirmed'`, also with no call -- an unresolved outcome is never resent. This makes delivery
+at-most-once per dedup key even across a crash-and-retry of the caller. No live call site passes
+`options.dedup` yet (`outbound-send-reliability-plan.md` #3); until then, every send is classified as
+above but untracked, exactly as it always has been.
+
+Bot-authored text is deliberately never written to `conversation_events` -- the grounding check
+(§3.4 of `agent-pipeline.md`) depends on bot text never being extractable, and this holds for both
+the untracked send path and the ledger.
 
 ## 4.4 Questions
 

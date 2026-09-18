@@ -63,16 +63,27 @@ export interface OutgoingMessage {
  * Options for sending a message.
  * Re-exported from outgoing-queue for convenience.
  */
-export type { SendOptions } from './outgoing-queue';
+export type {
+  SendOptions,
+  SendDedupOptions,
+  SendOutcome,
+} from './outgoing-queue';
+export { MessageDeliveryError } from './outgoing-queue';
 
 /**
  * Interface for sending messages via a bot.
  * Agents should use this interface to send messages.
+ *
+ * Resolves with a `SendOutcome` -- 'sent', 'duplicate' (the ledger already
+ * shows this dedup key delivered; not resent), or 'unconfirmed' (an
+ * ambiguous 5xx/network outcome; also not resent). Throws only
+ * `MessageDeliveryError` for a definitive, provably-not-delivered (4xx)
+ * failure. See `outbound-send-reliability-plan.md`.
  */
 export interface MessageSender {
   sendMessage(
     role: BotRole,
     message: OutgoingMessage,
     options?: import('./outgoing-queue').SendOptions,
-  ): Promise<number>;
+  ): Promise<import('./outgoing-queue').SendOutcome>;
 }
