@@ -626,6 +626,56 @@ describe('PersonRepository - durable aliases', () => {
 
     expect(chain.update).toHaveBeenCalledWith({ aliases: ['Gerie'] });
   });
+
+  it('does not store a speaker-relative description on a new placeholder', async () => {
+    // Stored, it would be the key findPlaceholderByDescription reuses, so a
+    // second speaker's "mi papá" would merge into the first speaker's father.
+    const chain = createChainableMock({
+      data: {
+        id: 'p1',
+        family_id: 'fam1',
+        name: 'Unknown',
+        aliases: ['related-to:r1'],
+        redacted: false,
+        is_placeholder: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      error: null,
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await personRepo.createPlaceholder('fam1', 'mi papá', ['r1']);
+
+    expect(chain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ aliases: ['related-to:r1'] }),
+    );
+  });
+
+  it('keeps a relational description on a new placeholder', async () => {
+    const chain = createChainableMock({
+      data: {
+        id: 'p1',
+        family_id: 'fam1',
+        name: 'Unknown',
+        aliases: ["Ricardo's father", 'related-to:r1'],
+        redacted: false,
+        is_placeholder: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      error: null,
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await personRepo.createPlaceholder('fam1', "Ricardo's father", ['r1']);
+
+    expect(chain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aliases: ["Ricardo's father", 'related-to:r1'],
+      }),
+    );
+  });
 });
 
 describe('PersonRepository - updateName', () => {
