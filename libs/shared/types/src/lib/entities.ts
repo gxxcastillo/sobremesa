@@ -277,7 +277,7 @@ export interface Question {
   familyId: string;
   contentOriginal: string;
   languageOriginal: LanguageCode;
-  origin: 'curator' | 'human';
+  origin: 'curator' | 'human' | 'followup';
   status: 'proposed' | 'asked' | 'answered' | 'retired';
   priority: number;
   sourceMessageId?: string;
@@ -287,6 +287,8 @@ export interface Question {
   askedAt?: Date;
   answeredAt?: Date;
   answerMessageId?: string;
+  /** An unasked question past this point is retired rather than asked. */
+  expiresAt?: Date;
   askedExternalMessageId?: string; // External message ID for answer detection
   /** Name of the person this question should be directed to */
   targetPerson?: string;

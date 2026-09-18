@@ -84,7 +84,7 @@ export interface GeneratedQuestion {
   content: string;
   language: LanguageCode;
   priority: number;
-  origin: 'curator';
+  origin: 'curator' | 'followup';
   targetPerson?: string;
   targetEvent?: string;
   targetPlace?: string;

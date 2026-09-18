@@ -36,7 +36,8 @@ export class QuestionRepository {
   }
 
   /**
-   * Find pending (proposed) questions by priority.
+   * Find pending (proposed) questions by priority, excluding any that have
+   * expired -- an expired question is retired, never asked.
    */
   async findPending(familyId: string, limit = 10): Promise<Question[]> {
     const { data, error } = await this.client
@@ -44,6 +45,7 @@ export class QuestionRepository {
       .select('*')
       .eq('family_id', familyId)
       .eq('status', 'proposed')
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
       .order('priority', { ascending: false })
       .order('created_at', { ascending: true })
       .limit(limit);
@@ -53,6 +55,47 @@ export class QuestionRepository {
     }
 
     return (data || []).map((row) => this.mapFromDb(row));
+  }
+
+  /**
+   * Find proposed questions that are past their expiry, for retirement.
+   */
+  async findExpiredPending(familyId: string): Promise<Question[]> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('status', 'proposed')
+      .not('expires_at', 'is', null)
+      .lte('expires_at', new Date().toISOString());
+
+    if (error) {
+      throw new Error(
+        `Failed to find expired pending questions: ${error.message}`,
+      );
+    }
+
+    return (data || []).map((row) => this.mapFromDb(row));
+  }
+
+  /**
+   * True if a follow-up question would collide with the family's pacing: a
+   * non-expired question is already waiting, or one was asked within the
+   * last `hours`. The pacing pre-check before a formulation call.
+   */
+  async hasWaitingOrRecent(familyId: string, hours: number): Promise<boolean> {
+    const pending = await this.findPending(familyId, 1);
+    if (pending.length > 0) {
+      return true;
+    }
+
+    const mostRecentAskedAt = await this.findMostRecentAskedAt(familyId);
+    if (!mostRecentAskedAt) {
+      return false;
+    }
+
+    const cutoff = Date.now() - hours * 60 * 60 * 1000;
+    return mostRecentAskedAt.getTime() > cutoff;
   }
 
   /**
@@ -123,6 +166,7 @@ export class QuestionRepository {
     familyId: string,
     generated: GeneratedQuestion,
     sourceMessageId?: string,
+    expiresAt?: Date,
   ): Promise<Question> {
     const record = {
       family_id: familyId,
@@ -136,6 +180,7 @@ export class QuestionRepository {
       target_event: generated.targetEvent,
       target_place: generated.targetPlace,
       story_context: generated.storyContext,
+      expires_at: expiresAt?.toISOString(),
     };
 
     const { data, error } = await this.client

@@ -105,7 +105,9 @@ Imports:
 - `images`: media catalog and optional Curator analysis fields. The live app records media but does
   not attach Curator analysis.
 - `questions`: Facilitator question lifecycle: `proposed → asked → answered`, with `retired` as an
-  exit state.
+  exit state. `origin IN ('curator', 'human', 'followup')`. `expires_at` is nullable; a `proposed`
+  question past its `expires_at` is excluded from `findPending` and is retired rather than asked
+  (Phase A story follow-ups use this; other origins leave it null, with no expiry).
 - `outbound_messages`: durable send ledger for the outbound Telegram path -- claim-before-send,
   confirm-after dedup keyed on `(family_id, dedup_key)`, `status IN ('pending','sent','failed',
 'unknown')`. `conversation_event_id` (reactive: Historian answers, admin replies) and `question_id`
