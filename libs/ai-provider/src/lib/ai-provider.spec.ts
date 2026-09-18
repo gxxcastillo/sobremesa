@@ -84,6 +84,28 @@ describe('loadAIConfig', () => {
       config.agentModels.scribe?.model,
     );
   });
+
+  it('pins followup to Sonnet 5 on Anthropic without changing the standard tier default', () => {
+    const config = loadAIConfig({ ANTHROPIC_API_KEY: 'sk-ant-test' });
+
+    expect(config.agentModels.followup?.model).toBe('claude-sonnet-5');
+    expect(config.agentModels.scribe?.model).toBe(
+      DEFAULT_MODELS.anthropic.standard,
+    );
+    expect(config.agentModels.followup?.model).not.toBe(
+      DEFAULT_MODELS.anthropic.standard,
+    );
+  });
+
+  it('an explicit provider default model still wins over the followup pin', () => {
+    const config = loadAIConfig({
+      LOCAL_LLM_BASE_URL: 'http://localhost:11434/v1',
+      LOCAL_LLM_MODEL: 'llama3.2:latest',
+      AI_PROVIDER_DEFAULT: 'local',
+    });
+
+    expect(config.agentModels.followup?.model).toBe('llama3.2:latest');
+  });
 });
 
 describe('validateConfig', () => {

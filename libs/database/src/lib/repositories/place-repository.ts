@@ -37,6 +37,30 @@ export class PlaceRepository extends BaseRepository<Place> {
   }
 
   /**
+   * Find several places by id at once (skips redacted rows). Ordered by id
+   * for determinism.
+   */
+  async findByIds(familyId: string, ids: string[]): Promise<Place[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('redacted', false)
+      .in('id', ids)
+      .order('id', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to find places by id: ${error.message}`);
+    }
+
+    return (data || []).map((row) => this.mapFromDb(row));
+  }
+
+  /**
    * Find a place by location hierarchy.
    */
   async findByLocation(

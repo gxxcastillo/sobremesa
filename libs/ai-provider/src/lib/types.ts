@@ -140,6 +140,7 @@ export interface AIConfig {
     historian?: AgentModelConfig;
     facilitator?: AgentModelConfig;
     curator?: AgentModelConfig;
+    followup?: AgentModelConfig;
   };
   /** Default provider for agents not explicitly configured */
   defaultProvider: string;

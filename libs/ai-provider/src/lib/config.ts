@@ -14,7 +14,8 @@ export type AgentName =
   | 'scribe'
   | 'historian'
   | 'facilitator'
-  | 'curator';
+  | 'curator'
+  | 'followup';
 
 export type AgentTier = 'fast' | 'standard' | 'vision';
 
@@ -34,11 +35,17 @@ export const DEFAULT_MODELS = {
 } as const;
 
 /**
- * Default model recommendations per agent.
+ * Default model recommendations per agent. `modelPin` overrides the tier
+ * default for one provider type without changing `DEFAULT_MODELS` (e.g.
+ * `followup` needs Sonnet 5 specifically, not "whatever `standard` is").
+ * An explicit `provider.defaultModel` (env-configured) still wins over a pin.
  */
 export const AGENT_MODEL_RECOMMENDATIONS: Record<
   AgentName,
-  { tier: AgentTier }
+  {
+    tier: AgentTier;
+    modelPin?: Partial<Record<'anthropic' | 'openai-compatible', string>>;
+  }
 > = {
   /**
    * Simple classification (route to admin/scribe/ignore)
@@ -64,6 +71,13 @@ export const AGENT_MODEL_RECOMMENDATIONS: Record<
    * Image understanding for photo descriptions
    */
   curator: { tier: 'vision' },
+
+  /**
+   * Decide whether to ask a story follow-up and write it. Pinned to Sonnet 5
+   * specifically (story-followups-plan.md D2): it isn't `DEFAULT_MODELS`'
+   * `standard` model (still Sonnet 4.5, until spin-off 10's re-baseline).
+   */
+  followup: { tier: 'standard', modelPin: { anthropic: 'claude-sonnet-5' } },
 };
 
 /**
@@ -79,6 +93,7 @@ const ENV_KEYS = {
   AI_PROVIDER_HISTORIAN: 'AI_PROVIDER_HISTORIAN',
   AI_PROVIDER_FACILITATOR: 'AI_PROVIDER_FACILITATOR',
   AI_PROVIDER_CURATOR: 'AI_PROVIDER_CURATOR',
+  AI_PROVIDER_FOLLOWUP: 'AI_PROVIDER_FOLLOWUP',
 
   // Anthropic config
   ANTHROPIC_API_KEY: 'ANTHROPIC_API_KEY',
@@ -165,6 +180,7 @@ function buildAgentModels(
     'historian',
     'facilitator',
     'curator',
+    'followup',
   ];
 
   const result: AIConfig['agentModels'] = {};
@@ -181,7 +197,11 @@ function buildAgentModels(
     }
 
     const recommendation = AGENT_MODEL_RECOMMENDATIONS[agent];
-    const model = getModelForTier(provider, recommendation.tier);
+    const model = getModelForTier(
+      provider,
+      recommendation.tier,
+      recommendation.modelPin,
+    );
 
     result[agent] = {
       provider: providerName,
@@ -195,10 +215,23 @@ function buildAgentModels(
 /**
  * Get the appropriate model for a tier from a provider config.
  */
-function getModelForTier(provider: ProviderConfig, tier: AgentTier): string {
+function getModelForTier(
+  provider: ProviderConfig,
+  tier: AgentTier,
+  modelPin?: Partial<Record<'anthropic' | 'openai-compatible', string>>,
+): string {
   // If provider has a default model, use it
   if (provider.defaultModel) {
     return provider.defaultModel;
+  }
+
+  // An agent-specific pin beside the tier (e.g. followup -> Sonnet 5) wins
+  // over the tier's own default for that provider type.
+  if (provider.type === 'anthropic' || provider.type === 'openai-compatible') {
+    const pinned = modelPin?.[provider.type];
+    if (pinned) {
+      return pinned;
+    }
   }
 
   // Otherwise use defaults based on provider type
@@ -255,6 +288,7 @@ export function validateConfig(config: AIConfig): string[] {
     'historian',
     'facilitator',
     'curator',
+    'followup',
   ];
 
   for (const agent of agents) {

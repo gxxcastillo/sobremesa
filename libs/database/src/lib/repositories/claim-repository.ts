@@ -34,6 +34,33 @@ export class ClaimRepository extends BaseRepository<Claim> {
   }
 
   /**
+   * Find claims extracted from one conversation event (skips redacted claims,
+   * matching every other read path here). Ordered by id for determinism --
+   * an unordered query can return the same rows in a different order between
+   * calls, which matters once a cap truncates the result.
+   */
+  async findByConversationEvent(
+    familyId: string,
+    conversationEventId: string,
+  ): Promise<Claim[]> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('conversation_event_id', conversationEventId)
+      .neq('status', 'redacted')
+      .order('id', { ascending: true });
+
+    if (error) {
+      throw new Error(
+        `Failed to find claims by conversation event: ${error.message}`,
+      );
+    }
+
+    return (data || []).map((row) => this.mapFromDb(row));
+  }
+
+  /**
    * Find active claims by subject (for conflict detection).
    */
   async findActiveBySubject(

@@ -17,6 +17,7 @@ const createChainableMock = (finalResult: { data: any; error: any }) => {
   chain.or = vi.fn().mockReturnValue(chain);
   chain.ilike = vi.fn().mockReturnValue(chain);
   chain.contains = vi.fn().mockReturnValue(chain);
+  chain.in = vi.fn().mockReturnValue(chain);
   chain.order = vi.fn().mockReturnValue(chain);
   chain.limit = vi.fn().mockReturnValue(chain);
   chain.single = vi.fn().mockResolvedValue(finalResult);
@@ -815,5 +816,46 @@ describe('PersonRepository - updateName', () => {
     await expect(
       personRepo.updateName('fam1', 'nonexistent', 'New Name'),
     ).rejects.toThrow('Person not found: nonexistent');
+  });
+});
+
+describe('PersonRepository - findByIds', () => {
+  let personRepo: PersonRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    personRepo = new PersonRepository(mockSupabaseClient as any);
+  });
+
+  it('returns [] without querying when given no ids', async () => {
+    const result = await personRepo.findByIds('fam1', []);
+
+    expect(result).toEqual([]);
+    expect(mockSupabaseClient.from).not.toHaveBeenCalled();
+  });
+
+  it('queries people scoped to the family, excluding redacted ones', async () => {
+    const rows = [{ id: 'p1', family_id: 'fam1', name: 'Ricardo' }];
+    const chain = createChainableMock({ data: rows, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await personRepo.findByIds('fam1', ['p1', 'p2']);
+
+    expect(chain.eq).toHaveBeenCalledWith('family_id', 'fam1');
+    expect(chain.eq).toHaveBeenCalledWith('redacted', false);
+    expect(chain.in).toHaveBeenCalledWith('id', ['p1', 'p2']);
+    expect(result).toHaveLength(1);
+  });
+
+  it('throws on a database error', async () => {
+    const chain = createChainableMock({
+      data: null,
+      error: { message: 'boom' },
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await expect(personRepo.findByIds('fam1', ['p1'])).rejects.toThrow(
+      'Failed to find people by id: boom',
+    );
   });
 });

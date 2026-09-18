@@ -413,3 +413,44 @@ describe('TimelineEventRepository - findOrCreate', () => {
     expect(result.event.id).toBe('event-new');
   });
 });
+
+describe('TimelineEventRepository - findByIds', () => {
+  let eventRepo: TimelineEventRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    eventRepo = new TimelineEventRepository(mockSupabaseClient as any);
+  });
+
+  it('returns [] without querying when given no ids', async () => {
+    const result = await eventRepo.findByIds('fam1', []);
+
+    expect(result).toEqual([]);
+    expect(mockSupabaseClient.from).not.toHaveBeenCalled();
+  });
+
+  it('queries events scoped to the family, excluding redacted ones', async () => {
+    const rows = [makeEventRow()];
+    const chain = createChainableMock({ data: rows, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await eventRepo.findByIds('fam1', ['event-1', 'event-2']);
+
+    expect(chain.eq).toHaveBeenCalledWith('family_id', 'fam1');
+    expect(chain.eq).toHaveBeenCalledWith('redacted', false);
+    expect(chain.in).toHaveBeenCalledWith('id', ['event-1', 'event-2']);
+    expect(result).toHaveLength(1);
+  });
+
+  it('throws on a database error', async () => {
+    const chain = createChainableMock({
+      data: null,
+      error: { message: 'boom' },
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await expect(eventRepo.findByIds('fam1', ['event-1'])).rejects.toThrow(
+      'Failed to find events by id: boom',
+    );
+  });
+});

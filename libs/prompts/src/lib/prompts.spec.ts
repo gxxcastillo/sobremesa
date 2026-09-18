@@ -5,6 +5,7 @@ describe('prompts', () => {
     it('should load all agent prompts', () => {
       expect(loadPrompt('curator')).toBeDefined();
       expect(loadPrompt('facilitator')).toBeDefined();
+      expect(loadPrompt('followup')).toBeDefined();
       expect(loadPrompt('historian')).toBeDefined();
       expect(loadPrompt('internFilter')).toBeDefined();
       expect(loadPrompt('internImageLink')).toBeDefined();

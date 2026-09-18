@@ -55,6 +55,30 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
   }
 
   /**
+   * Find several events by id at once (skips redacted rows). Ordered by id
+   * for determinism.
+   */
+  async findByIds(familyId: string, ids: string[]): Promise<TimelineEvent[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('redacted', false)
+      .in('id', ids)
+      .order('id', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to find events by id: ${error.message}`);
+    }
+
+    return (data || []).map((row) => this.mapFromDb(row));
+  }
+
+  /**
    * Find events by time range.
    */
   async findByTimeRange(

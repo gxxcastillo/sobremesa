@@ -609,6 +609,43 @@ describe('ClaimRepository - findByIds', () => {
   });
 });
 
+describe('ClaimRepository - findByConversationEvent', () => {
+  let claimRepo: ClaimRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    claimRepo = new ClaimRepository(mockSupabaseClient as any);
+  });
+
+  it('queries claims scoped to the family and event, excluding redacted ones, ordered by id', async () => {
+    const rows = [
+      { id: 'claim-1', family_id: 'fam1', conversation_event_id: 'evt-1' },
+    ];
+    const chain = createChainableMock({ data: rows, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await claimRepo.findByConversationEvent('fam1', 'evt-1');
+
+    expect(chain.eq).toHaveBeenCalledWith('family_id', 'fam1');
+    expect(chain.eq).toHaveBeenCalledWith('conversation_event_id', 'evt-1');
+    expect(chain.neq).toHaveBeenCalledWith('status', 'redacted');
+    expect(chain.order).toHaveBeenCalledWith('id', { ascending: true });
+    expect(result).toHaveLength(1);
+  });
+
+  it('throws on a database error', async () => {
+    const chain = createChainableMock({
+      data: null,
+      error: { message: 'boom' },
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await expect(
+      claimRepo.findByConversationEvent('fam1', 'evt-1'),
+    ).rejects.toThrow('Failed to find claims by conversation event: boom');
+  });
+});
+
 describe('ClaimRepository - addConflict', () => {
   let claimRepo: ClaimRepository;
 

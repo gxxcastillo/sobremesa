@@ -33,6 +33,32 @@ export class ClaimEntityRepository {
   }
 
   /**
+   * Find entities for several claims at once (batch of `findByClaim`).
+   * Ordered by id for determinism.
+   */
+  async findByClaims(
+    familyId: string,
+    claimIds: string[],
+  ): Promise<ClaimEntity[]> {
+    if (claimIds.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .in('claim_id', claimIds)
+      .order('id', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to find claim entities: ${error.message}`);
+    }
+
+    return (data || []).map((row) => this.mapFromDb(row));
+  }
+
+  /**
    * Find claims for an entity.
    */
   async findByEntity(

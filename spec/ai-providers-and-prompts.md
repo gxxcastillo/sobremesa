@@ -31,6 +31,12 @@ Agent tiers:
 Provider resolution: `AI_PROVIDER_DEFAULT`, then Anthropic if `ANTHROPIC_API_KEY` exists, then local if
 `LOCAL_LLM_BASE_URL` exists, then mock. Per-agent overrides use `AI_PROVIDER_{AGENT}`.
 
+Followup (story-followups-plan.md, Phase A) is pinned to `claude-sonnet-5` on Anthropic specifically,
+via an optional `modelPin` on its `AGENT_MODEL_RECOMMENDATIONS` entry (`libs/ai-provider`) — not the
+`standard` tier, which stays Sonnet 4.5 (`DEFAULT_MODELS.anthropic.standard`) until spin-off 10's
+re-baseline. An explicit `AI_PROVIDER_FOLLOWUP`-selected provider's own `defaultModel` still wins over
+the pin, matching every other agent's resolution order.
+
 The chatbots app does not wire AI routing/extraction/Q&A agents when the resolved default provider is
 mock.
 
@@ -43,6 +49,10 @@ Prompt templates are filled from family config and runtime values:
 - `historian.txt`: Q&A language/persona.
 - `facilitator.txt`, `facilitator-response.txt`: warm questions and answer sending.
 - `curator.txt`: image analysis.
+- `followup.txt`: decide whether a live message deserves a story follow-up question and write it
+  (`FollowupAgent.formulate()`, `libs/agents/followup`). Fixed system prompt (v3.1,
+  story-followups-plan.md #0); the per-message user prompt carries the source message, the 5
+  preceding messages, and the family record on the people/places/events the message names.
 
 Admin has no prompt: every response (`/status`, DM help, join/leave, mentions) is a deterministic
 formatted template, never an LLM call. An `admin.txt` prompt existed with no caller until it was
@@ -57,6 +67,12 @@ the provider default, so identical messages extract identically and eval run-to-
 the pipeline rather than the sampler. The same pinned value applies in production and in Tier-1
 evals — scored sampling behavior is production sampling behavior. Intern's filter call pins
 `temperature: 0` the same way, so a message's relevance verdict doesn't vary by re-run.
+
+Sonnet 5 rejects an explicit `temperature` outright (HTTP 400), so Followup's request never sets one
+— its output is sampled, not pinned. Sonnet 5 also isn't on `AnthropicProvider`'s native
+structured-output model list, so a `json_schema` response format for it falls back automatically to
+embedding the schema in the system prompt (`buildAnthropicRequestParams`); callers don't need to
+special-case the model.
 
 ## 5.5 Evaluation
 

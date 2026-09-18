@@ -1,6 +1,7 @@
 import curatorPrompt from '../agents/curator.txt?raw';
 import facilitatorPrompt from '../agents/facilitator.txt?raw';
 import facilitatorResponsePrompt from '../agents/facilitator-response.txt?raw';
+import followupPrompt from '../agents/followup.txt?raw';
 import historianPrompt from '../agents/historian.txt?raw';
 import internFilterPrompt from '../agents/intern-filter.txt?raw';
 import internImageLinkPrompt from '../agents/intern-image-link.txt?raw';
@@ -12,6 +13,7 @@ const prompts = {
   curator: curatorPrompt,
   facilitator: facilitatorPrompt,
   facilitatorResponse: facilitatorResponsePrompt,
+  followup: followupPrompt,
   historian: historianPrompt,
   internFilter: internFilterPrompt,
   internImageLink: internImageLinkPrompt,
