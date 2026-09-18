@@ -720,11 +720,14 @@ export async function runProcess(options: ProcessOptions): Promise<void> {
           // concurrent worker (the live poller, or another `sbm process`)
           // could claim and process this same event at the same time, which
           // -- per the comment above -- is a real duplicate-data risk, not
-          // just untidy bookkeeping.
-          if (
-            queueItem &&
-            (queueItem.status === 'queued' || queueItem.status === 'error')
-          ) {
+          // just untidy bookkeeping. A row already 'processing' means some
+          // other worker owns it right now; only settle (complete/fail) a
+          // row this invocation actually claimed, so it never clobbers that
+          // worker's in-flight row out from under it.
+          const claimed =
+            !!queueItem &&
+            (queueItem.status === 'queued' || queueItem.status === 'error');
+          if (claimed) {
             await queueRepo.markProcessing(
               familyId,
               queueItem.id,
@@ -733,7 +736,7 @@ export async function runProcess(options: ProcessOptions): Promise<void> {
             );
           }
           const itemResult = await runOne(eventId, familyId);
-          if (queueItem) {
+          if (claimed && queueItem) {
             if (itemResult.success) {
               await queueRepo.complete(familyId, queueItem.id);
             } else {

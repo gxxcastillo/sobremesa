@@ -157,8 +157,12 @@ export class ImportJobRepository {
     if (progress) {
       updateData.progress = progress;
     }
-    if (extra?.error !== undefined) {
-      updateData.error = extra.error;
+    // `extra.error` may be passed as `undefined` deliberately, to clear a
+    // stale error left over from a previous failure (e.g. on resume). Use
+    // `in` rather than `!== undefined` so that intent is distinguishable
+    // from the caller simply not passing `error` at all.
+    if (extra && 'error' in extra) {
+      updateData.error = extra.error ?? null;
     }
     if (extra?.completedAt) {
       updateData.completed_at = extra.completedAt.toISOString();

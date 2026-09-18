@@ -103,7 +103,16 @@ export function importRoutes(dbClient: DatabaseClient) {
           ? 'No AI provider configured (ANTHROPIC_API_KEY missing)'
           : null;
     if (precondition) {
-      await jobRepo.update(jobId, { status: 'failed', error: precondition });
+      // Same atomic guard as the completion/catch paths below -- a
+      // concurrent cancel landing in this window must not be silently
+      // clobbered back to 'failed'.
+      await jobRepo.transitionStatus(
+        jobId,
+        ['processing'],
+        'failed',
+        undefined,
+        { error: precondition },
+      );
       return;
     }
 
