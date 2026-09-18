@@ -389,8 +389,16 @@ export class PersonRepository extends BaseRepository<Person> {
     const record: Omit<Person, 'id' | 'createdAt' | 'updatedAt'> = {
       familyId,
       name: 'Unknown',
+      // `description` is kept in `aliases` even when it's a speaker-relative
+      // term (e.g. "mi papá") -- unlike a real person's aliases, this array
+      // is never fed into general alias-based matching (`findBestMatch`
+      // excludes placeholders), so the invariant against durable
+      // speaker-relative aliases doesn't apply here. `description` is also
+      // the lookup key `findPlaceholderByDescription` uses below to avoid
+      // minting a duplicate placeholder; dropping it here would silently
+      // break that dedup for every speaker-relative description.
       aliases: [
-        ...(!isSpeakerRelativeTerm(description) ? [description] : []),
+        description,
         ...relatedToPersonIds.map((id) => `related-to:${id}`),
       ],
       isPlaceholder: true,
