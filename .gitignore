@@ -61,3 +61,7 @@ vitest.config.*.timestamp*
 .nx/polygraph
 .nx/self-healing
 .nx/migrate-runs
+
+# Local environment files (keep committed templates)
+.env.*
+!.env.example
