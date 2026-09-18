@@ -101,9 +101,8 @@ what's shown is the real judgment.
 
 ## Notes
 
-- Supersedes the import-triage half of `.agents/analysis/deterministic-semantic-layer-2026-09-02.md`
-  (a local/deterministic embedding classifier proposal for the same decision point) and retires
-  `.agents/plans/agent-hygiene-plan.md #3c`'s import-triage rename recommendation, whose premise
+- Supersedes an earlier import-triage proposal to use a local/deterministic embedding classifier at
+  the same decision point, and retires a related import-triage rename recommendation whose premise
   ("real Intern classification already happens downstream of import") this ADR's own investigation
   found false.
 - Full implementation detail: `spec/message-lifecycle.md` §4.6, `spec/data-model.md` §2.3.
