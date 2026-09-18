@@ -337,8 +337,19 @@ export class InternAgent {
       }
 
       // heuristicResult only returns null past the non-text/empty/too-short
-      // checks, so this is always a non-empty string here.
-      const messageText = (event.contentOriginal as string).trim();
+      // checks, so this is always a non-empty string here. For a media
+      // event this must be the same stripped caption internFilterHeuristic
+      // derived to decide whether to defer here -- otherwise the model
+      // sees the platform's own placeholder text (e.g. "<Media omitted>")
+      // still glued onto the caption.
+      const rawContent = (event.contentOriginal as string).trim();
+      const messageText =
+        event.eventType !== 'message'
+          ? rawContent
+              .replace(INVISIBLE_MARK_PATTERN, '')
+              .replace(MEDIA_PLACEHOLDER_PATTERN, '')
+              .trim()
+          : rawContent;
 
       // Use pre-fetched context if provided, otherwise fetch from DB
       let contextMessages: string;
