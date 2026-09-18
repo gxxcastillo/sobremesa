@@ -17,6 +17,7 @@ import {
   type SupportedLanguage,
   DEFAULT_LANGUAGE,
   Priorities,
+  familyPrimaryLanguage,
 } from '@sobremesa/shared-types';
 import {
   formatHelpMessage,
@@ -711,6 +712,6 @@ export class AdminAgent {
   private getLanguageFromConfig(
     config: FamilyConfig | undefined,
   ): SupportedLanguage {
-    return config?.languages?.primary ?? DEFAULT_LANGUAGE;
+    return familyPrimaryLanguage(config) ?? DEFAULT_LANGUAGE;
   }
 }

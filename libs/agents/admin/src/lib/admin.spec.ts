@@ -126,4 +126,20 @@ describe('AdminAgent - handleConsolidatedJoin', () => {
     // "Alice" should appear once in the notification, not twice.
     expect(payload.text.split('Alice').length - 1).toBe(1);
   });
+
+  it('speaks the language chosen at import to an imported family', async () => {
+    // Import writes `defaultLanguage`, never `languages.primary`.
+    mockFamilyRepo.findById.mockResolvedValue({
+      id: FAMILY_ID,
+      name: 'The Smiths',
+      config: { defaultLanguage: 'es' },
+    });
+    const event = createJoinEvent();
+    mockEventRepo.findById.mockResolvedValue(event);
+
+    await agent.handle(event.id, FAMILY_ID, 'member_event');
+
+    const [, payload] = mockMessageSender.sendMessage.mock.calls[0];
+    expect(payload.text).toContain('Alice se unió al chat de The Smiths.');
+  });
 });

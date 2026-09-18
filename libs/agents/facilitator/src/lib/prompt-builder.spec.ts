@@ -206,6 +206,17 @@ describe('buildSystemPrompt', () => {
     const prompt = buildSystemPrompt(config);
     expect(prompt).toBeTruthy();
   });
+
+  it('addresses an imported family in the language chosen at import', () => {
+    // Import writes `defaultLanguage`, never `languages.primary`.
+    const prompt = buildSystemPrompt({ defaultLanguage: 'es' });
+
+    expect(prompt).toContain('Primary Language: es');
+  });
+
+  it('falls back to English when no language is configured', () => {
+    expect(buildSystemPrompt({})).toContain('Primary Language: en');
+  });
 });
 
 describe('buildResponseSystemPrompt', () => {
@@ -229,5 +240,11 @@ describe('buildResponseSystemPrompt', () => {
     const prompt = buildResponseSystemPrompt(config, 'en');
 
     expect(prompt).toContain('Abuelita');
+  });
+
+  it('addresses an imported family in the language chosen at import', () => {
+    const prompt = buildResponseSystemPrompt({ defaultLanguage: 'es' }, 'en');
+
+    expect(prompt).toContain('Primary Language: es');
   });
 });

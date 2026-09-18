@@ -1,4 +1,8 @@
-import { LanguageCode, type SupportedLanguage } from './languages';
+import {
+  LanguageCode,
+  isSupportedLanguage,
+  type SupportedLanguage,
+} from './languages';
 
 /**
  * Supported chat providers.
@@ -249,12 +253,33 @@ export interface FamilyBotConfig {
 export interface FamilyConfig {
   /** Language settings */
   languages?: FamilyLanguageConfig;
+  /**
+   * Language chosen when the family was created by an import (Studio or
+   * `sbm import`), which writes this key instead of `languages.primary`.
+   * Read the family's language through `familyPrimaryLanguage`, never either
+   * key directly.
+   */
+  defaultLanguage?: LanguageCode;
   /** Bot personality configurations */
   bots?: FamilyBotConfig;
   /** Cultural terms to preserve (never translate) */
   culturalTerms?: string[];
   /** Project display name */
   projectName?: string;
+}
+
+/**
+ * The family's configured primary language: `languages.primary` (set from the
+ * chat), else `defaultLanguage` (set by import), else `undefined` when neither
+ * holds a supported language. Callers pick their own fallback.
+ */
+export function familyPrimaryLanguage(
+  config: FamilyConfig | null | undefined,
+): SupportedLanguage | undefined {
+  for (const lang of [config?.languages?.primary, config?.defaultLanguage]) {
+    if (lang && isSupportedLanguage(lang)) return lang;
+  }
+  return undefined;
 }
 
 /**

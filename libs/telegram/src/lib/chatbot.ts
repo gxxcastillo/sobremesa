@@ -15,7 +15,10 @@ import {
   buildAccessPassUrl,
   determineRoleFromAdminStatus,
 } from '@sobremesa/auth';
-import { DEFAULT_LANGUAGE } from '@sobremesa/shared-types';
+import {
+  DEFAULT_LANGUAGE,
+  familyPrimaryLanguage,
+} from '@sobremesa/shared-types';
 import type pino from 'pino';
 import type { BotHandler } from './types';
 import {
@@ -899,10 +902,7 @@ export class ChatbotHandler implements BotHandler {
       if (args === 'status') {
         const config = (existingFamily.config || {}) as Record<string, unknown>;
         const isPaused = config.paused === true;
-        const languages = config.languages as
-          | Record<string, unknown>
-          | undefined;
-        const primaryLang = languages?.primary as string | undefined;
+        const primaryLang = familyPrimaryLanguage(existingFamily.config);
 
         const langNames: Record<string, string> = {
           en: 'English',

@@ -88,7 +88,11 @@ logging, and production admin-login secret. `.env.example` is the complete list.
 
 Runtime behaviour is configured **per family**, primarily via a JSONB `config` carried with the
 family record (languages, bot display names, personality levers, cultural terms). A separate
-`family_config` table stores optional JSONB config snapshots. Agent personas and tone are therefore
+`family_config` table stores optional JSONB config snapshots. A family's primary language is
+`config.languages.primary` (set from the chat) or, for a family created by import, the
+`config.defaultLanguage` chosen at import; every reader goes through `familyPrimaryLanguage`
+(`libs/shared/types/src/lib/conversation.ts`), which checks them in that order, and falls back to
+English when neither is set. Agent personas and tone are therefore
 not hard-coded — prompts contain placeholders (`{SCRIBE_NAME}`, `{FACILITATOR_NAME}`,
 `{CULTURAL_TERMS}`, `{FORMALITY}`, …) filled from family config at runtime, falling back to
 `DEFAULT_FACILITATOR_NAME` (`Carmencita`, `libs/shared/types/src/lib/conversation.ts`) when a
