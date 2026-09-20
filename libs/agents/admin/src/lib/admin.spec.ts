@@ -144,4 +144,38 @@ describe('AdminAgent - handleConsolidatedJoin', () => {
     const [, payload] = mockMessageSender.sendMessage.mock.calls[0];
     expect(payload.text).toContain('Alice se unió al chat de The Smiths.');
   });
+
+  describe('outbound-send-reliability-plan.md #3 -- dedup key', () => {
+    it('claims a dedup key scoped to the triggering event id', async () => {
+      const event = createJoinEvent();
+      mockEventRepo.findById.mockResolvedValue(event);
+
+      await agent.handle(event.id, FAMILY_ID, 'member_event');
+
+      const [, , options] = mockMessageSender.sendMessage.mock.calls[0];
+      expect(options.dedup).toEqual({
+        familyId: FAMILY_ID,
+        key: `admin:join:${event.id}`,
+        conversationEventId: event.id,
+      });
+    });
+
+    it('a "duplicate" outcome from the ledger (retried join already sent) still reports success with one send call', async () => {
+      const event = createJoinEvent();
+      mockEventRepo.findById.mockResolvedValue(event);
+      mockMessageSender.sendMessage.mockResolvedValue({
+        status: 'duplicate',
+        messageId: 42,
+      });
+
+      const result = await agent.handle(event.id, FAMILY_ID, 'member_event');
+
+      expect(result).toEqual({
+        success: true,
+        action: 'member_event',
+        messageSent: true,
+      });
+      expect(mockMessageSender.sendMessage).toHaveBeenCalledTimes(1);
+    });
+  });
 });

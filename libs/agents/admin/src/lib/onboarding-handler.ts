@@ -7,7 +7,11 @@ import {
   IdentityRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
-import type { MessageSender, SupportedLanguage } from '@sobremesa/shared-types';
+import {
+  MessageDeliveryError,
+  type MessageSender,
+  type SupportedLanguage,
+} from '@sobremesa/shared-types';
 import { createLogger } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 import {
@@ -99,11 +103,20 @@ export class OnboardingHandler {
 
       // Try to send DM to the user
       try {
-        await this.messageSender.sendMessage('admin', {
-          chatId: identity.providerUserId, // Telegram user ID for DM
-          text: dmMessage,
-          replyMarkup: TIMEZONE_KEYBOARD,
-        });
+        await this.messageSender.sendMessage(
+          'admin',
+          {
+            chatId: identity.providerUserId, // Telegram user ID for DM
+            text: dmMessage,
+            replyMarkup: TIMEZONE_KEYBOARD,
+          },
+          {
+            dedup: {
+              familyId,
+              key: `admin:onboarding:${identityId}:${familyId}`,
+            },
+          },
+        );
 
         // Update onboarding state to dm_sent
         await this.familyAccessRepo.updateOnboardingState(
@@ -119,7 +132,17 @@ export class OnboardingHandler {
 
         return { success: true, dmSent: true };
       } catch (dmError) {
-        // DM failed - user probably hasn't started chat with bot
+        // Only a definitive, provably-not-delivered failure (4xx) falls
+        // back to the group reminder -- an ambiguous outcome never throws
+        // (see MessageSender), so this can no longer conflate "maybe
+        // delivered" with "not delivered" the way it used to. Anything else
+        // (e.g. a repository failure after a successful send) propagates
+        // to the outer catch instead of triggering a possibly-duplicate
+        // reminder.
+        if (!(dmError instanceof MessageDeliveryError)) {
+          throw dmError;
+        }
+
         this.logger.warn(
           { identityId, error: dmError },
           'Failed to send onboarding DM, sending group reminder',
@@ -128,10 +151,19 @@ export class OnboardingHandler {
         // Send reminder in group chat
         const reminderMessage = formatGroupReminder(language, userName);
 
-        await this.messageSender.sendMessage('admin', {
-          chatId: groupChatId,
-          text: reminderMessage,
-        });
+        await this.messageSender.sendMessage(
+          'admin',
+          {
+            chatId: groupChatId,
+            text: reminderMessage,
+          },
+          {
+            dedup: {
+              familyId,
+              key: `admin:onboarding-reminder:${identityId}:${familyId}`,
+            },
+          },
+        );
 
         // Keep state as not_started so we can retry later
         return {

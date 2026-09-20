@@ -237,7 +237,14 @@ export class AdminAgent {
             ? externalMessageId
             : undefined,
       },
-      { priority: Priorities.USER_RESPONSE },
+      {
+        priority: Priorities.USER_RESPONSE,
+        dedup: {
+          familyId,
+          key: `admin:status:${eventId}`,
+          conversationEventId: eventId,
+        },
+      },
     );
 
     // Log the action. Best-effort: the reply above already reached the
@@ -287,7 +294,14 @@ export class AdminAgent {
         chatId: event.conversationId,
         text: helpMessage,
       },
-      { priority: Priorities.USER_RESPONSE },
+      {
+        priority: Priorities.USER_RESPONSE,
+        dedup: {
+          familyId,
+          key: `admin:dm:${eventId}`,
+          conversationEventId: eventId,
+        },
+      },
     );
 
     return { success: true, action: 'dm', messageSent: true };
@@ -341,7 +355,14 @@ export class AdminAgent {
           chatId: event.conversationId,
           text: notificationMessage,
         },
-        { priority: Priorities.MEMBER_NOTIFICATION },
+        {
+          priority: Priorities.MEMBER_NOTIFICATION,
+          dedup: {
+            familyId,
+            key: `admin:leave:${eventId}`,
+            conversationEventId: eventId,
+          },
+        },
       );
 
       this.logger.info(
@@ -430,14 +451,24 @@ export class AdminAgent {
       familyName,
     );
 
-    // Send the notification
+    // Send the notification. Dedup-keyed on the triggering event (not the
+    // full sibling list, which can grow between a failed attempt and its
+    // retry) -- outbound-send-reliability-plan.md #3. The completeMany/send
+    // ordering itself (FM4's non-atomicity) is #4, not changed here.
     await this.messageSender.sendMessage(
       'admin',
       {
         chatId: conversationId,
         text: notificationMessage,
       },
-      { priority: Priorities.MEMBER_NOTIFICATION },
+      {
+        priority: Priorities.MEMBER_NOTIFICATION,
+        dedup: {
+          familyId,
+          key: `admin:join:${currentEvent.id}`,
+          conversationEventId: currentEvent.id,
+        },
+      },
     );
 
     this.logger.info(
@@ -628,7 +659,14 @@ export class AdminAgent {
             ? externalMessageId
             : undefined,
       },
-      { priority: Priorities.USER_RESPONSE },
+      {
+        priority: Priorities.USER_RESPONSE,
+        dedup: {
+          familyId,
+          key: `admin:mention:${eventId}`,
+          conversationEventId: eventId,
+        },
+      },
     );
 
     // Best-effort: the reply above already reached the family, so a logging

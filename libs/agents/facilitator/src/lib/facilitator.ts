@@ -101,6 +101,13 @@ export interface SendResponseOptions {
   chatId: string;
   /** Message ID to reply to (optional) */
   replyToMessageId?: number;
+  /**
+   * The conversation event carrying the user's question. Used as the
+   * outbound-ledger dedup key (`historian-answer:<conversationEventId>`) so
+   * a retried historian pass (fresh answer, different wording) never
+   * resends a reply that already went out -- outbound-send-reliability-plan.md #3.
+   */
+  conversationEventId: string;
 }
 
 /**
@@ -352,14 +359,28 @@ export class FacilitatorAgent {
       message = question.contentOriginal;
     }
 
-    // Bot-initiated question, low priority (shouldn't interrupt user interactions)
+    // Bot-initiated question, low priority (shouldn't interrupt user
+    // interactions). Dedup-keyed on the question id: a re-ask nudge that
+    // arrives after a successful send but a failed `markAsked` (FM6) claims
+    // the same key, gets `duplicate` back with the already-recorded message
+    // id, and skips the resend -- `askNextQuestion` below then retries
+    // `markAsked` with that id, self-healing instead of double-asking. Two
+    // concurrent triggers (sweep + nudge) racing the same question resolve
+    // the same way: only one claims and sends.
     const outcome = await this.messageSender.sendMessage(
       'facilitator',
       {
         chatId,
         text: message,
       },
-      { priority: Priorities.BOT_QUESTION },
+      {
+        priority: Priorities.BOT_QUESTION,
+        dedup: {
+          familyId: family.id,
+          key: `facilitator:question:${question.id}`,
+          questionId: question.id,
+        },
+      },
     );
     return outcome.status === 'sent' || outcome.status === 'duplicate'
       ? outcome.messageId
@@ -601,6 +622,7 @@ export class FacilitatorAgent {
       historianAnswer,
       chatId,
       replyToMessageId,
+      conversationEventId,
     } = options;
 
     this.logger.info({ familyId }, 'Formatting historian response');
@@ -634,7 +656,10 @@ export class FacilitatorAgent {
         formattedResponse = historianAnswer;
       }
 
-      // 3. Send the response via Facilitator bot (bot-initiated, low priority)
+      // 3. Send the response via Facilitator bot (bot-initiated, low priority).
+      // Dedup-keyed on the question's conversation event: a retry that
+      // re-runs historian.answer() and calls sendResponse again reuses the
+      // same key, so a prior successful send is never repeated.
       await this.messageSender.sendMessage(
         'facilitator',
         {
@@ -642,7 +667,14 @@ export class FacilitatorAgent {
           text: formattedResponse,
           replyToMessageId,
         },
-        { priority: Priorities.BOT_QUESTION },
+        {
+          priority: Priorities.BOT_QUESTION,
+          dedup: {
+            familyId,
+            key: `historian-answer:${conversationEventId}`,
+            conversationEventId,
+          },
+        },
       );
 
       // 4. Log the event. Best-effort: the response above already reached

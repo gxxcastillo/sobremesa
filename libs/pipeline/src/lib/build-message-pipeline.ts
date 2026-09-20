@@ -307,6 +307,7 @@ export function buildMessagePipeline(
         historianAnswer: result.answer,
         chatId: result.chatId,
         replyToMessageId: result.replyToMessageId,
+        conversationEventId: eventId,
       });
 
       return { success: responseResult.success, error: responseResult.error };

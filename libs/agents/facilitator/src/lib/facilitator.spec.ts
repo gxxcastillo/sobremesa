@@ -409,6 +409,176 @@ describe('FacilitatorAgent - Participant Addressing', () => {
     });
   });
 
+  describe('outbound-send-reliability-plan.md #3 -- dedup keys', () => {
+    it('claims a dedup key scoped to the question id when asking', async () => {
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      await facilitator.askNextQuestion(baseFamily.id);
+
+      const [, , options] = mockMessageSender.sendMessage.mock.calls[0];
+      expect(options.dedup).toEqual({
+        familyId: baseFamily.id,
+        key: `facilitator:question:${baseQuestion.id}`,
+        questionId: baseQuestion.id,
+      });
+    });
+
+    it('uses the same dedup key on a retried nudge for the same question (still proposed)', async () => {
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      await facilitator.askNextQuestion(baseFamily.id);
+      await facilitator.askNextQuestion(baseFamily.id);
+
+      const keys = mockMessageSender.sendMessage.mock.calls.map(
+        (call: any[]) => call[2]?.dedup?.key,
+      );
+      expect(keys).toEqual([
+        `facilitator:question:${baseQuestion.id}`,
+        `facilitator:question:${baseQuestion.id}`,
+      ]);
+    });
+
+    it('sweep/nudge overlap: two concurrent triggers for the same family claim the same dedup key', async () => {
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      await Promise.all([
+        facilitator.askNextQuestion(baseFamily.id),
+        facilitator.askNextQuestion(baseFamily.id),
+      ]);
+
+      const keys = mockMessageSender.sendMessage.mock.calls.map(
+        (call: any[]) => call[2]?.dedup?.key,
+      );
+      expect(keys).toEqual([
+        `facilitator:question:${baseQuestion.id}`,
+        `facilitator:question:${baseQuestion.id}`,
+      ]);
+      // The real collision handling (only one actually reaches Telegram) is
+      // BotManager's job, covered in bot-manager.spec.ts -- this only pins
+      // that both triggers present the ledger with the same key to collide
+      // on.
+    });
+
+    it('FM6 self-heal: a "duplicate" outcome (send succeeded, markAsked failed last time) still marks the question asked with the recovered message id', async () => {
+      mockMessageSender.sendMessage.mockResolvedValue({
+        status: 'duplicate',
+        messageId: 555,
+      });
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      await facilitator.askNextQuestion(baseFamily.id);
+
+      expect(mockQuestionRepo.markAsked).toHaveBeenCalledWith(
+        baseFamily.id,
+        baseQuestion.id,
+        undefined,
+        555,
+        'Carmencita',
+      );
+    });
+
+    it('an "unconfirmed" outcome still marks the question asked, with no recorded message id (lost-over-duplicate policy: never resend an ambiguous send)', async () => {
+      mockMessageSender.sendMessage.mockResolvedValue({
+        status: 'unconfirmed',
+      });
+      mockQuestionRepo.findPending.mockResolvedValue([baseQuestion]);
+
+      await facilitator.askNextQuestion(baseFamily.id);
+
+      expect(mockQuestionRepo.markAsked).toHaveBeenCalledWith(
+        baseFamily.id,
+        baseQuestion.id,
+        undefined,
+        undefined,
+        'Carmencita',
+      );
+    });
+
+    describe('sendResponse (Historian answer)', () => {
+      it('claims a dedup key scoped to the question conversation event', async () => {
+        const result = await facilitator.sendResponse({
+          familyId: baseFamily.id,
+          originalQuestion: 'What was grandma like?',
+          historianAnswer: 'She was warm and funny.',
+          chatId: baseFamily.chatId as string,
+          conversationEventId: 'evt-1',
+        });
+
+        expect(result.success).toBe(true);
+        const [, , options] = mockMessageSender.sendMessage.mock.calls[0];
+        expect(options.dedup).toEqual({
+          familyId: baseFamily.id,
+          key: 'historian-answer:evt-1',
+          conversationEventId: 'evt-1',
+        });
+      });
+
+      it('uses the same dedup key on a retried pass even though the reworded answer differs', async () => {
+        await facilitator.sendResponse({
+          familyId: baseFamily.id,
+          originalQuestion: 'What was grandma like?',
+          historianAnswer: 'She was warm and funny.',
+          chatId: baseFamily.chatId as string,
+          conversationEventId: 'evt-1',
+        });
+        await facilitator.sendResponse({
+          familyId: baseFamily.id,
+          originalQuestion: 'What was grandma like?',
+          historianAnswer: 'She loved to laugh and tell stories.',
+          chatId: baseFamily.chatId as string,
+          conversationEventId: 'evt-1',
+        });
+
+        const keys = mockMessageSender.sendMessage.mock.calls.map(
+          (call: any[]) => call[2]?.dedup?.key,
+        );
+        expect(keys).toEqual([
+          'historian-answer:evt-1',
+          'historian-answer:evt-1',
+        ]);
+      });
+
+      it('retried historian event that already reached "sent" reports success with no second real send', async () => {
+        // BotManager's ledger is what actually prevents the second Telegram
+        // call (bot-manager.spec.ts); here we simulate its outcome for an
+        // already-delivered dedup key and assert the caller treats it as
+        // success, never as a failure to retry.
+        mockMessageSender.sendMessage.mockResolvedValue({
+          status: 'duplicate',
+          messageId: 111,
+        });
+
+        const result = await facilitator.sendResponse({
+          familyId: baseFamily.id,
+          originalQuestion: 'q',
+          historianAnswer: 'a',
+          chatId: baseFamily.chatId as string,
+          conversationEventId: 'evt-2',
+        });
+
+        expect(result.success).toBe(true);
+        expect(mockMessageSender.sendMessage).toHaveBeenCalledTimes(1);
+      });
+
+      it('an ambiguous ("unconfirmed") outcome still reports success and logs, never resending', async () => {
+        mockMessageSender.sendMessage.mockResolvedValue({
+          status: 'unconfirmed',
+        });
+
+        const result = await facilitator.sendResponse({
+          familyId: baseFamily.id,
+          originalQuestion: 'q',
+          historianAnswer: 'a',
+          chatId: baseFamily.chatId as string,
+          conversationEventId: 'evt-3',
+        });
+
+        expect(result.success).toBe(true);
+        expect(mockEventLog.log).toHaveBeenCalled();
+      });
+    });
+  });
+
   describe('story-followups-plan.md #5', () => {
     const followupQuestion: Question = {
       id: 'q-followup-1',
