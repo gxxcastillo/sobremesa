@@ -70,6 +70,11 @@ export interface QueueItem {
   lastError?: string;
   priority: QueuePriorityLevel;
   intent: QueueIntent;
+  /**
+   * Set only on a member-join row another join's consolidated welcome
+   * absorbed: the triggering join event's id.
+   */
+  consolidatedIntoEventId?: string;
 }
 
 /**

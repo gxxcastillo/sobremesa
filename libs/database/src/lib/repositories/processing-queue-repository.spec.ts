@@ -657,6 +657,23 @@ describe('ProcessingQueueRepository - completeMany', () => {
     expect(chain.in).toHaveBeenCalledWith('id', ['q1', 'q2', 'q3']);
   });
 
+  it('links the items to the event that absorbed them, in the same update', async () => {
+    const chain = createChainableMock({ data: null, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await queueRepo.completeMany('fam1', ['q2'], {
+      consolidatedIntoEventId: 'event-1',
+    });
+
+    expect(chain.update).toHaveBeenCalledTimes(1);
+    expect(chain.update).toHaveBeenCalledWith({
+      status: 'done',
+      consolidated_into_event_id: 'event-1',
+    });
+    expect(chain.eq).toHaveBeenCalledWith('family_id', 'fam1');
+    expect(chain.in).toHaveBeenCalledWith('id', ['q2']);
+  });
+
   it('should do nothing for empty array', async () => {
     await queueRepo.completeMany('fam1', []);
 

@@ -80,7 +80,12 @@ Queues:
   poller (`['live']`) never claims an `'import'`-owned row (§4.6 of
   [`message-lifecycle.md`](./message-lifecycle.md)) — import deliberately never wires
   `admin`/`historian`/`facilitatorNudge`, so a historical message must never be processed by the live
-  pipeline instead.
+  pipeline instead. Admin's consolidated join welcome sends one welcome for every still-queued join in
+  the conversation. Before sending, it marks the other joins' rows `done` without running them. In the
+  same update, it records the triggering join event in `consolidated_into_event_id`. Every later
+  attempt of that trigger re-gathers those rows, following the links transitively. Examples are a
+  queue retry after a failed send, a stale-lock re-lease, or an operator requeue. Each member keeps
+  their place in the welcome and in onboarding.
 - `llm_evaluation_queue`: async review queue for uncertain claim strength, entity matches, or
   conflict resolution. Claims can be enqueued today; no live worker drains it.
 

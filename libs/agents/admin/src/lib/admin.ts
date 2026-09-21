@@ -30,6 +30,15 @@ import { OnboardingHandler } from './onboarding-handler';
 
 export type { MessageSender };
 
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
 /**
  * Options for AdminAgent.
  */
@@ -418,7 +427,7 @@ export class AdminAgent {
   ): Promise<AdminHandleResult> {
     // `dequeueAny` already flipped the triggering queue item to 'processing'
     // before this handler ran, so `findUnprocessedByType` (which only
-    // matches 'queued'/null queue status) never returns `currentEvent` —
+    // matches 'queued' queue status) never returns `currentEvent` —
     // only *other*, still-queued join events for the same conversation.
     // Explicitly include `currentEvent` below; otherwise a solo join never
     // sends a welcome message at all (0 other pending joins -> early
@@ -429,9 +438,19 @@ export class AdminAgent {
       conversationId,
       'join',
     );
-    const joinEvents = otherJoinEvents.some((e) => e.id === currentEvent.id)
-      ? otherJoinEvents
-      : [currentEvent, ...otherJoinEvents];
+    // Joins an earlier attempt already absorbed: their rows are 'done', so
+    // the query above no longer returns them. Without these, a retry after a
+    // failed send would drop those members from the welcome and from
+    // onboarding.
+    const absorbedJoinEvents = await this.findAbsorbedJoinEvents(familyId, [
+      currentEvent.id,
+      ...otherJoinEvents.map((e) => e.id),
+    ]);
+    const joinEvents = uniqueById([
+      currentEvent,
+      ...absorbedJoinEvents,
+      ...otherJoinEvents,
+    ]);
 
     // Extract member names (deduplicate by external ID)
     const seenIds = new Set<string>();
@@ -444,17 +463,41 @@ export class AdminAgent {
       }
     }
 
-    // Format the consolidated message
+    // Format the consolidated message. Frozen here, before any side effect
+    // below -- outbound-send-reliability-plan.md #4.
     const notificationMessage = formatMemberJoinPluralMessage(
       language,
       memberNames,
       familyName,
     );
+    const eventIds = joinEvents.map((e) => e.id);
+
+    // Complete sibling queue items *before* sending -- FM4's non-atomicity
+    // (outbound-send-reliability-plan.md #4). Fail-loud, not best-effort:
+    // nothing has been sent yet, so a failure here safely propagates through
+    // `handle()`'s catch to the caller's queue retry. The retry re-gathers
+    // the join list and reaches an unclaimed dedup key below, so it proceeds
+    // normally -- unlike the old post-send ordering, a failure here can no
+    // longer leave siblings stuck 'queued' while reporting the batch sent.
+    //
+    // The same UPDATE links each sibling to this event, so if the send below
+    // throws, the retry finds them again via `findAbsorbedJoinEvents` instead
+    // of dropping them.
+    const queueItems = await this.queueRepo.findPendingByEventIds(
+      familyId,
+      eventIds,
+    );
+    if (queueItems.length > 0) {
+      await this.queueRepo.completeMany(
+        familyId,
+        queueItems.map((q) => q.id),
+        { consolidatedIntoEventId: currentEvent.id },
+      );
+    }
 
     // Send the notification. Dedup-keyed on the triggering event (not the
     // full sibling list, which can grow between a failed attempt and its
-    // retry) -- outbound-send-reliability-plan.md #3. The completeMany/send
-    // ordering itself (FM4's non-atomicity) is #4, not changed here.
+    // retry) -- outbound-send-reliability-plan.md #3.
     await this.messageSender.sendMessage(
       'admin',
       {
@@ -484,41 +527,11 @@ export class AdminAgent {
     // Everything below is best-effort bookkeeping: the notification above
     // already reached the family, so a failure here must not turn into a
     // reported failure — `handle()`'s caller retries on failure, which would
-    // resend the (already-delivered) join notification. The three steps
-    // below are independent of each other (no ordering dependency), so they
-    // run concurrently and each is wrapped separately: one step's failure
-    // must not skip the others (a bundled try/catch would mean a
-    // completeMany failure silently skips onboarding for this batch forever,
-    // since nothing retries once success is reported).
-    const eventIds = joinEvents.map((e) => e.id);
-
+    // resend the (already-delivered) join notification. The two steps below
+    // are independent of each other (no ordering dependency), so they run
+    // concurrently and each is wrapped separately: one step's failure must
+    // not skip the other.
     await Promise.all([
-      logBestEffort(
-        this.logger,
-        async () => {
-          const queueItems = await this.queueRepo.findPendingByEventIds(
-            familyId,
-            eventIds,
-          );
-          if (queueItems.length > 0) {
-            await this.queueRepo.completeMany(
-              familyId,
-              queueItems.map((q) => q.id),
-            );
-          }
-        },
-        { familyId, conversationId },
-        'Failed to mark consolidated join queue items complete (message already sent, sibling queue items may resurface and re-notify)',
-        // ERROR, not warn: a failed `completeMany` leaves the sibling join
-        // queue items un-completed and still 'queued' — they will resurface
-        // on a later independent dequeue and can trigger a second, duplicate
-        // consolidated notification. That's a pre-existing gap in this
-        // feature's non-atomic multi-item completion (predates this
-        // try/catch), not fixed here; this is only about making it loud
-        // enough for an operator to notice instead of silently swallowed.
-        'error',
-      ),
-
       logBestEffort(
         this.logger,
         () =>
@@ -559,6 +572,36 @@ export class AdminAgent {
     ]);
 
     return { success: true, action: 'member_event', messageSent: true };
+  }
+
+  /**
+   * Join events absorbed into any of `rootEventIds`, followed transitively.
+   * A still-queued sibling can itself be a trigger waiting on a retry, with
+   * members of its own absorbed, e.g. Bob absorbed into Alice, then Alice
+   * absorbed into Carol. Carol's welcome has to name Bob too.
+   */
+  private async findAbsorbedJoinEvents(
+    familyId: string,
+    rootEventIds: string[],
+  ): Promise<ConversationEvent[]> {
+    const seen = new Set(rootEventIds);
+    const absorbed: ConversationEvent[] = [];
+    let frontier = rootEventIds;
+
+    while (frontier.length > 0) {
+      const found = await this.eventRepo.findConsolidatedInto(
+        familyId,
+        frontier,
+      );
+      const fresh = found.filter((e) => !seen.has(e.id));
+      for (const e of fresh) {
+        seen.add(e.id);
+        absorbed.push(e);
+      }
+      frontier = fresh.map((e) => e.id);
+    }
+
+    return absorbed;
   }
 
   /**

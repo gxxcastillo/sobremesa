@@ -451,13 +451,26 @@ export class ProcessingQueueRepository {
 
   /**
    * Mark multiple items as completed in a single operation.
+   *
+   * `consolidatedIntoEventId` records, in the same UPDATE, the event whose
+   * handling absorbed these items (e.g. a consolidated join welcome), so
+   * that event's later attempts can re-gather them.
    */
-  async completeMany(familyId: string, ids: string[]): Promise<void> {
+  async completeMany(
+    familyId: string,
+    ids: string[],
+    options: { consolidatedIntoEventId?: string } = {},
+  ): Promise<void> {
     if (ids.length === 0) return;
 
     const { error } = await this.client
       .from(this.tableName)
-      .update({ status: 'done' })
+      .update({
+        status: 'done',
+        ...(options.consolidatedIntoEventId
+          ? { consolidated_into_event_id: options.consolidatedIntoEventId }
+          : {}),
+      })
       .eq('family_id', familyId)
       .in('id', ids);
 

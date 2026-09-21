@@ -529,11 +529,26 @@ CREATE TABLE IF NOT EXISTS processing_queue (
   intent VARCHAR(20) NOT NULL DEFAULT 'live'
     CHECK (intent IN ('live','import')),
 
+  -- Set only on a member-join row that another join's consolidated welcome
+  -- absorbed: the triggering join event, written in the same UPDATE that
+  -- marks this row 'done'. The trigger's every later attempt (queue retry,
+  -- stale-lock re-lease, operator requeue) re-gathers the rows absorbed
+  -- into it, so a send that fails after absorption can't drop this member
+  -- from the welcome or from onboarding.
+  consolidated_into_event_id UUID,
+
   CONSTRAINT uq_processing_queue_event UNIQUE(family_id, conversation_event_id),
 
   -- Composite FK enforces tenant integrity
   CONSTRAINT fk_processing_queue_event
-    FOREIGN KEY (family_id, conversation_event_id) REFERENCES conversation_events(family_id, id) ON DELETE CASCADE
+    FOREIGN KEY (family_id, conversation_event_id) REFERENCES conversation_events(family_id, id) ON DELETE CASCADE,
+
+  -- A second FK to conversation_events makes an unhinted PostgREST embed
+  -- between the two tables ambiguous -- embeds must name
+  -- fk_processing_queue_event explicitly.
+  CONSTRAINT fk_processing_queue_consolidated_into
+    FOREIGN KEY (family_id, consolidated_into_event_id) REFERENCES conversation_events(family_id, id)
+    ON DELETE SET NULL (consolidated_into_event_id)
 );
 
 COMMENT ON TABLE processing_queue IS 'Ordered processing queue for Scribe pipeline.';
@@ -557,6 +572,11 @@ CREATE INDEX IF NOT EXISTS idx_processing_queue_global_ready
 CREATE INDEX IF NOT EXISTS idx_processing_queue_inflight_family
   ON processing_queue(family_id, locked_at)
   WHERE status = 'processing';
+
+-- Index for a consolidated join re-gathering the rows it absorbed.
+CREATE INDEX IF NOT EXISTS idx_processing_queue_consolidated_into
+  ON processing_queue(family_id, consolidated_into_event_id)
+  WHERE consolidated_into_event_id IS NOT NULL;
 
 -- ----------------------------------------------------------------------------
 -- Per-family dequeue serialization

@@ -30,7 +30,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       .select(
         `
         *,
-        queue:processing_queue(status),
+        queue:processing_queue!fk_processing_queue_event(status),
         redacted:conversation_redactions(id)
       `,
       )
@@ -221,9 +221,19 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
   }
 
   /**
-   * Find unprocessed events of a specific type for a conversation.
+   * Find still-queued events of a specific type for a conversation.
    * Useful for consolidating events (e.g., multiple join events).
-   * Uses processing_queue for processing status and excludes redacted events.
+   * Excludes redacted events.
+   *
+   * Only an event whose processing_queue row is 'queued' matches. An event
+   * not yet enqueued is left out on purpose: a consolidating caller can't
+   * complete a row that doesn't exist, so the event would later run on its
+   * own as well.
+   *
+   * `!inner` plus a filter on the embed restricts the parent rows, and
+   * `.is('redacted', null)` is PostgREST's anti-join. A filter on an
+   * embedded column without `!inner` (e.g. `redacted.id`) only filters the
+   * embedded array, never the events themselves.
    */
   async findUnprocessedByType(
     familyId: string,
@@ -235,23 +245,54 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       .select(
         `
         *,
-        queue:processing_queue(status),
+        queue:processing_queue!fk_processing_queue_event!inner(status),
         redacted:conversation_redactions(id)
       `,
       )
       .eq('family_id', familyId)
       .eq('conversation_id', conversationId)
       .eq('event_type', eventType)
-      .or('queue.status.is.null,queue.status.eq.queued', {
-        foreignTable: 'processing_queue',
-      })
-      .is('redacted.id', null)
+      .eq('queue.status', 'queued')
+      .is('redacted', null)
       .order('occurred_at', { ascending: true });
 
     if (error) {
       throw new Error(
         `Failed to find unprocessed events by type: ${error.message}`,
       );
+    }
+
+    return (data || []).map((row) => this.filterJoinedFields(row));
+  }
+
+  /**
+   * Find events whose processing_queue row was absorbed into the handling of
+   * one of `eventIds` (`processing_queue.consolidated_into_event_id`), e.g.
+   * the joins an earlier attempt of a consolidated welcome already marked
+   * done. Excludes redacted events.
+   */
+  async findConsolidatedInto(
+    familyId: string,
+    eventIds: string[],
+  ): Promise<ConversationEvent[]> {
+    if (eventIds.length === 0) return [];
+
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select(
+        `
+        *,
+        queue:processing_queue!fk_processing_queue_event!inner(consolidated_into_event_id),
+        redacted:conversation_redactions(id)
+      `,
+      )
+      .eq('family_id', familyId)
+      .in('queue.consolidated_into_event_id', eventIds)
+      .is('redacted', null)
+      .order('occurred_at', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to find consolidated events: ${error.message}`);
     }
 
     return (data || []).map((row) => this.filterJoinedFields(row));
