@@ -8,6 +8,12 @@ import {
 
 /**
  * Repository for conversation events (raw message ingestion).
+ *
+ * Methods that exclude redacted events embed `conversation_redactions` as
+ * `redacted` and filter with `.is('redacted', null)`. That is PostgREST's
+ * anti-join: it drops every event that has a redaction row. Filtering an
+ * embedded column instead (`.is('redacted.id', null)`) only filters the
+ * embedded array and leaves every event in the result.
  */
 export class ConversationEventRepository extends BaseRepository<ConversationEvent> {
   constructor(client: DatabaseClient) {
@@ -38,7 +44,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       .or('queue.status.is.null,queue.status.eq.queued', {
         foreignTable: 'processing_queue',
       })
-      .is('redacted.id', null)
+      .is('redacted', null)
       .order('occurred_at', { ascending: true })
       .limit(limit);
 
@@ -51,7 +57,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
 
   /**
    * Find recent events for context.
-   * Excludes redacted events using LEFT JOIN.
+   * Excludes redacted events.
    * Optionally includes preprocessing data from conversation_event_processing.
    */
   async findRecent(
@@ -77,7 +83,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       .select(selectFields)
       .eq('family_id', familyId)
       .eq('conversation_id', conversationId)
-      .is('redacted.id', null);
+      .is('redacted', null);
 
     if (beforeSequenceNumber !== undefined) {
       query = query.lt('sequence_number', beforeSequenceNumber);
@@ -128,8 +134,8 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
    * Find every (non-redacted) event id in a conversation, oldest first.
    * Unlike `findRecent`, this has no application-level cap -- it's meant for
    * enumerating a bounded, known set of events to process (e.g. the import
-   * drain), not for context windows. Excludes redacted events using the same
-   * LEFT JOIN pattern as `findRecent`/`findUnprocessed`.
+   * drain), not for context windows. Excludes redacted events, like
+   * `findRecent`.
    *
    * PostgREST caps any single response at `db.max_rows` (1000 in this
    * project's config) regardless of app intent, so this pages through
@@ -150,7 +156,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
         .select('id, redacted:conversation_redactions(id)')
         .eq('family_id', familyId)
         .eq('conversation_id', conversationId)
-        .is('redacted.id', null)
+        .is('redacted', null)
         // `occurred_at` is not unique -- imported conversations routinely
         // have many events sharing the same second/minute timestamp, which
         // makes offset/limit pagination on it alone non-deterministic
@@ -205,7 +211,7 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
       .eq('external_event_id', externalEventId);
 
     if (visibleOnly) {
-      query = query.is('redacted.id', null);
+      query = query.is('redacted', null);
     }
 
     const { data, error } = await query.single();
@@ -230,10 +236,8 @@ export class ConversationEventRepository extends BaseRepository<ConversationEven
    * complete a row that doesn't exist, so the event would later run on its
    * own as well.
    *
-   * `!inner` plus a filter on the embed restricts the parent rows, and
-   * `.is('redacted', null)` is PostgREST's anti-join. A filter on an
-   * embedded column without `!inner` (e.g. `redacted.id`) only filters the
-   * embedded array, never the events themselves.
+   * `!inner` is what makes the `queue.status` filter restrict the events
+   * themselves, not just the embedded queue row.
    */
   async findUnprocessedByType(
     familyId: string,

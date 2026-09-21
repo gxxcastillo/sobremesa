@@ -164,6 +164,10 @@ Redaction is non-destructive:
 
 - Entity redaction marks rows as redacted.
 - Conversation redaction creates `conversation_redactions` records while preserving the raw event.
+  Redacted events are left out of the conversation-event reads that feed agents, including
+  recent-message context windows, reply-to lookups, import-drain enumeration and consolidated-join
+  gathering. Ingestion dedup still sees a redacted event, so a redelivered message is not
+  re-ingested. No app code creates conversation redactions yet.
 
 ## 2.7 Table Catalogue
 

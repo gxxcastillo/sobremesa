@@ -163,3 +163,100 @@ describe('ConversationEventRepository - consolidated join lookups', () => {
     });
   });
 });
+
+describe('ConversationEventRepository - redaction exclusion', () => {
+  let repo: ConversationEventRepository;
+
+  // Every builder method returns the chain; awaiting it (or `.single()`)
+  // resolves the result.
+  const createQueryChain = (finalResult: { data: any; error: any }) => {
+    const chain: any = {};
+    for (const method of [
+      'select',
+      'eq',
+      'is',
+      'lt',
+      'order',
+      'limit',
+      'range',
+    ]) {
+      chain[method] = vi.fn().mockReturnValue(chain);
+    }
+    chain.single = vi.fn().mockResolvedValue(finalResult);
+    chain.then = (resolve: (value: unknown) => void) => resolve(finalResult);
+    return chain;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    repo = new ConversationEventRepository(mockSupabaseClient as any);
+  });
+
+  // `.is('redacted.id', null)` filters only the embedded array and returns
+  // redacted events too; `.is('redacted', null)` is the anti-join that drops
+  // them.
+  function expectAntiJoin(chain: any) {
+    expect(chain.select).toHaveBeenCalledWith(
+      expect.stringContaining('redacted:conversation_redactions(id)'),
+    );
+    expect(chain.is).toHaveBeenCalledWith('redacted', null);
+    expect(chain.is).not.toHaveBeenCalledWith('redacted.id', null);
+  }
+
+  it('findRecent excludes redacted events from context', async () => {
+    const chain = createQueryChain({ data: [], error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await repo.findRecent('fam-1', 'conv-1', 20, true, 42);
+
+    expectAntiJoin(chain);
+    expect(chain.lt).toHaveBeenCalledWith('sequence_number', 42);
+  });
+
+  it('findAllIdsInConversation excludes redacted events', async () => {
+    const chain = createQueryChain({ data: [{ id: 'evt-1' }], error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const ids = await repo.findAllIdsInConversation('fam-1', 'conv-1');
+
+    expectAntiJoin(chain);
+    expect(ids).toEqual(['evt-1']);
+  });
+
+  it('findByExternalId excludes a redacted event when visibleOnly', async () => {
+    const chain = createQueryChain({
+      data: null,
+      error: { code: 'PGRST116', message: 'no rows' },
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await repo.findByExternalId(
+      'fam-1',
+      'telegram',
+      'conv-1',
+      '102',
+      true,
+    );
+
+    expectAntiJoin(chain);
+    expect(result).toBeNull();
+  });
+
+  it('findByExternalId still finds a redacted event for ingestion dedup', async () => {
+    const chain = createQueryChain({
+      data: { id: 'evt-2', redacted: { id: 'red-1' } },
+      error: null,
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await repo.findByExternalId(
+      'fam-1',
+      'telegram',
+      'conv-1',
+      '102',
+    );
+
+    expect(chain.is).not.toHaveBeenCalled();
+    expect(result).toEqual({ id: 'evt-2' });
+  });
+});
