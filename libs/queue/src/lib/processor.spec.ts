@@ -34,6 +34,10 @@ const mockQueueRepo = {
   fail: vi.fn(),
 };
 
+const mockRedactionRepo = {
+  isRedacted: vi.fn(),
+};
+
 const silentLogger = {
   info: vi.fn(),
   debug: vi.fn(),
@@ -93,6 +97,7 @@ function createProcessor(): MessageProcessor {
     questionRepo: mockQuestionRepo as any,
     imageRepo: mockImageRepo as any,
     queueRepo: mockQueueRepo as any,
+    redactionRepo: mockRedactionRepo as any,
     logger: silentLogger as any,
   });
 }
@@ -106,6 +111,7 @@ describe('MessageProcessor', () => {
     mockImageRepo.findRecentInConversation.mockResolvedValue([]);
     mockQueueRepo.findByEventId.mockResolvedValue({ ...baseQueueItem });
     mockEventLog.log.mockResolvedValue(undefined);
+    mockRedactionRepo.isRedacted.mockResolvedValue(false);
   });
 
   it('returns recent message context oldest first after selecting the newest window', async () => {
@@ -819,6 +825,74 @@ describe('MessageProcessor', () => {
       const ignoreResult = await ignoreProcessor.process(EVENT_ID, FAMILY_ID);
 
       expect(ignoreResult.success).toBe(true);
+    });
+  });
+
+  describe('redacted events', () => {
+    it('skips a redacted event before answer detection, routing or extraction, and reports success', async () => {
+      mockRedactionRepo.isRedacted.mockResolvedValue(true);
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        externalReplyToId: 'bot-question-1',
+      });
+      const processor = createProcessor();
+      const router = vi.fn();
+      processor.setRouter(router);
+      const adminProcessor = vi.fn();
+      processor.setAdminProcessor(adminProcessor);
+      const scribe = vi.fn();
+      processor.setScribe(scribe);
+
+      const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+      expect(result.success).toBe(true);
+      expect(mockRedactionRepo.isRedacted).toHaveBeenCalledWith(
+        FAMILY_ID,
+        EVENT_ID,
+      );
+      expect(mockQuestionRepo.findByExternalMessageId).not.toHaveBeenCalled();
+      expect(mockEventRepo.findRecent).not.toHaveBeenCalled();
+      expect(router).not.toHaveBeenCalled();
+      expect(adminProcessor).not.toHaveBeenCalled();
+      expect(scribe).not.toHaveBeenCalled();
+      expect(mockEventLog.log).toHaveBeenCalledTimes(1);
+      expect(mockEventLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'event_processed',
+          conversationEventId: EVENT_ID,
+          eventData: { status: 'skipped_redacted', eventType: 'message' },
+        }),
+      );
+    });
+
+    it('fails, so the queue retries, when the redaction lookup errors', async () => {
+      mockRedactionRepo.isRedacted.mockRejectedValue(
+        new Error('Failed to check redaction: db down'),
+      );
+      const processor = createProcessor();
+      const router = vi.fn();
+      processor.setRouter(router);
+
+      const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('db down');
+      expect(router).not.toHaveBeenCalled();
+    });
+
+    it('processes an event that is not redacted', async () => {
+      const processor = createProcessor();
+      const router = vi.fn().mockResolvedValue({
+        action: 'ignore',
+        reason: 'small talk',
+        method: 'deterministic',
+      });
+      processor.setRouter(router);
+
+      const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+      expect(result.success).toBe(true);
+      expect(router).toHaveBeenCalled();
     });
   });
 });

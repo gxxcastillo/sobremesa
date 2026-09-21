@@ -166,8 +166,12 @@ Redaction is non-destructive:
 - Conversation redaction creates `conversation_redactions` records while preserving the raw event.
   Redacted events are left out of the conversation-event reads that feed agents, including
   recent-message context windows, reply-to lookups, import-drain enumeration and consolidated-join
-  gathering. Ingestion dedup still sees a redacted event, so a redelivered message is not
-  re-ingested. No app code creates conversation redactions yet.
+  gathering. They are also left out of the admin reprocess endpoint. A redacted event that is still
+  queued is skipped by `MessageProcessor` (§4.2 of [`message-lifecycle.md`](./message-lifecycle.md)).
+  Ingestion dedup still sees a redacted event, so a redelivered message is not re-ingested.
+  Redacting an event that was already processed does not retract what was extracted from it: its
+  claims and the people, places and stories they support stay live. No app code creates
+  conversation redactions yet.
 
 ## 2.7 Table Catalogue
 

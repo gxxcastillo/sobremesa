@@ -246,7 +246,8 @@ export function familyRoutes(dbClient: DatabaseClient) {
     .use(requireFamilyAdmin)
     /**
      * POST /api/family/:familyId/reprocess
-     * Enqueue all unprocessed messages for Scribe processing
+     * Enqueue all unprocessed messages for Scribe processing. Redacted
+     * messages are never enqueued.
      */
     .post(
       '/api/family/:familyId/reprocess',
@@ -255,11 +256,13 @@ export function familyRoutes(dbClient: DatabaseClient) {
           body || {};
 
         try {
-          // Get all conversation events for this family
+          // Get all non-redacted conversation events for this family.
+          // `.is('redacted', null)` is PostgREST's anti-join on the embed.
           const { data: events, error: eventsError } = await dbClient
             .from('conversation_events')
-            .select('id')
+            .select('id, redacted:conversation_redactions(id)')
             .eq('family_id', familyId)
+            .is('redacted', null)
             .order('occurred_at', { ascending: true });
 
           if (eventsError) {

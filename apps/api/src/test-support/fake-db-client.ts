@@ -12,7 +12,7 @@
  *
  * This fake supports exactly the query-builder chain shapes those calls (and
  * the handful of simple lookups used by the "guard passes" test cases, e.g.
- * `families.findAllActive()`) need: `select/eq/neq/in/order/limit/range/ilike/or`
+ * `families.findAllActive()`) need: `select/eq/neq/in/is/order/limit/range/ilike/or`
  * as no-op-or-filter chain steps, `single()` for a single-row result, and
  * plain `await` (via `.then()`) for a list result. It does NOT implement
  * `.insert()`/`.update()`/`.rpc()` with real semantics — those are only
@@ -52,6 +52,12 @@ function createQueryBuilder(rows: FakeRow[]) {
     },
     in: (col: string, vals: unknown[]) => {
       filtered = filtered.filter((r) => vals.includes(r[col]));
+      return builder;
+    },
+    // Mirrors PostgREST's embed anti-join (`.is('redacted', null)`): a
+    // fixture row carries the embed as a field, null or absent when empty.
+    is: (col: string, val: unknown) => {
+      filtered = filtered.filter((r) => (r[col] ?? null) === val);
       return builder;
     },
     gte: () => builder,

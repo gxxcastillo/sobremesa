@@ -11,6 +11,7 @@ import {
 import {
   ConversationEventRepository,
   ConversationEventProcessingRepository,
+  ConversationRedactionRepository,
   EventLogRepository,
   QuestionRepository,
   ImageRepository,
@@ -295,6 +296,7 @@ export class MessageProcessor {
   private questionRepo!: QuestionRepository;
   private imageRepo!: ImageRepository;
   private queueRepo!: ProcessingQueueRepository;
+  private redactionRepo!: ConversationRedactionRepository;
   private router?: RouterProcessor;
   private adminProcessor?: AdminProcessor;
   private historianProcessor?: HistorianProcessor;
@@ -315,6 +317,7 @@ export class MessageProcessor {
     questionRepo?: QuestionRepository;
     imageRepo?: ImageRepository;
     queueRepo?: ProcessingQueueRepository;
+    redactionRepo?: ConversationRedactionRepository;
     logger?: pino.Logger;
   }) {
     const { dbClient } = options;
@@ -355,13 +358,23 @@ export class MessageProcessor {
       this.queueRepo = new ProcessingQueueRepository(dbClient);
     }
 
+    if (options.redactionRepo) {
+      this.redactionRepo = options.redactionRepo;
+    } else if (dbClient) {
+      this.redactionRepo = new ConversationRedactionRepository(
+        dbClient,
+        this.eventLog,
+      );
+    }
+
     if (
       !this.eventRepo ||
       !this.processingRepo ||
       !this.eventLog ||
       !this.questionRepo ||
       !this.imageRepo ||
-      !this.queueRepo
+      !this.queueRepo ||
+      !this.redactionRepo
     ) {
       throw new Error(
         'MessageProcessor requires either dbClient or all repository instances',
@@ -581,6 +594,28 @@ export class MessageProcessor {
         return {
           success: false,
           error: `Queue item not found for event: ${eventId}`,
+          duration: Date.now() - startTime,
+        };
+      }
+
+      // A redacted event never reaches an agent: no answer detection,
+      // routing, extraction or bot reply. Reported as success so the queue
+      // marks it done. The check fails loud -- a lookup error retries the
+      // event rather than processing content that may be redacted. It does
+      // not cover a redaction that lands after this point.
+      if (await this.redactionRepo.isRedacted(familyId, eventId)) {
+        this.logger.info({ eventId, familyId }, 'Skipping redacted event');
+        await this.eventLog.log({
+          familyId,
+          eventType: 'event_processed',
+          eventCategory: 'system_event',
+          actor: 'processor',
+          actorType: 'system',
+          conversationEventId: eventId,
+          eventData: { status: 'skipped_redacted', eventType: event.eventType },
+        });
+        return {
+          success: true,
           duration: Date.now() - startTime,
         };
       }

@@ -195,3 +195,47 @@ describe('familyRoutes active-family summary route (requireAuth + inline hasAcce
     expect(res.status).toBe(200);
   });
 });
+
+describe('familyRoutes reprocess route', () => {
+  const url = `http://localhost/api/family/${FAMILY_ID}/reprocess`;
+
+  it('never enqueues a redacted message', async () => {
+    const spec = {
+      userId: 'user-8',
+      identityId: 'identity-8',
+      familyAccess: [{ familyId: FAMILY_ID, role: 'admin' as const }],
+    };
+    const dbClient = createFakeDbClient(
+      buildAuthFixtures(spec, {
+        // `redacted` is the embedded conversation_redactions row, as
+        // PostgREST returns it: null when the event has none.
+        conversation_events: [
+          { id: 'evt-1', family_id: FAMILY_ID, redacted: null },
+          { id: 'evt-2', family_id: FAMILY_ID, redacted: { id: 'red-1' } },
+        ],
+        // The fake's insert is a no-op; `enqueue()`'s `.single()` returns
+        // this row so the enqueue counts as a success.
+        processing_queue: [
+          {
+            id: 'queue-1',
+            family_id: FAMILY_ID,
+            conversation_event_id: 'evt-1',
+          },
+        ],
+      }),
+    );
+    const token = await signTestToken(spec);
+    const app = buildTestApp(dbClient);
+
+    const res = await app.handle(
+      new Request(url, {
+        method: 'POST',
+        headers: { ...authHeader(token), 'content-type': 'application/json' },
+        body: JSON.stringify({ skipInQueue: false }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ total: 1, enqueued: 1 });
+  });
+});

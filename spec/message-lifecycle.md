@@ -60,7 +60,11 @@ row the same way before processing it directly, for the same reason.
 
 `MessageProcessor`:
 
-1. Loads the event and shared recent context.
+1. Loads the event. A redacted event (one with a `conversation_redactions` row) stops here: nothing
+   runs for it, meaning no answer detection, routing, extraction or bot reply. It is logged as
+   `event_processed` with status `skipped_redacted` and reported as success, so its row is marked
+   `done`. The redaction check fails loud, so a lookup error retries the event rather than risk
+   processing redacted content. Otherwise the processor loads the shared recent context.
 2. Marks answered bot questions when the event replies to a tracked question and carries that
    question text forward as extraction context.
 3. Creates image records for media.
