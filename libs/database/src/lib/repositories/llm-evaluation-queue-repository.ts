@@ -220,24 +220,6 @@ export class LlmEvaluationQueueRepository {
   }
 
   /**
-   * Clean up expired locks.
-   * Call this periodically or use database function.
-   *
-   * @returns Number of locks released
-   */
-  async cleanupExpiredLocks(): Promise<number> {
-    const { data, error } = await this.client.rpc(
-      'cleanup_expired_evaluation_locks',
-    );
-
-    if (error) {
-      throw new Error(`Failed to cleanup locks: ${error.message}`);
-    }
-
-    return (data as number) ?? 0;
-  }
-
-  /**
    * Get queue statistics.
    */
   async getStats(familyId?: string): Promise<QueueStats> {

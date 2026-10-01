@@ -192,7 +192,8 @@ export class FamilyRepository {
 
   /**
    * Update a specific field in family configuration using JSON path.
-   * Uses PostgreSQL's jsonb_set to update nested paths without overwriting.
+   * Atomic (row-locked jsonb_set in `update_family_config_path`), so
+   * concurrent updates to sibling keys don't overwrite each other.
    *
    * @param id - Family ID
    * @param path - JSON path as array (e.g., ['languages', 'primary'])
@@ -203,35 +204,20 @@ export class FamilyRepository {
     path: string[],
     value: unknown,
   ): Promise<Family> {
-    // Build the path for jsonb_set: '{languages,primary}'
-    const pathStr = `{${path.join(',')}}`;
+    if (path.length === 0) {
+      throw new Error('Config path must not be empty');
+    }
 
-    const { data, error } = await this.client.rpc('update_family_config_path', {
-      family_id: id,
-      config_path: pathStr,
-      config_value: JSON.stringify(value),
-    });
+    const { data, error } = await this.client
+      .rpc('update_family_config_path', {
+        p_family_id: id,
+        p_path: path,
+        p_value: value,
+      })
+      .single<Record<string, unknown>>();
 
     if (error) {
-      // Fallback: read-modify-write if RPC doesn't exist
-      const family = await this.findById(id);
-      if (!family) {
-        throw new Error('Family not found');
-      }
-
-      const config = (family.config || {}) as Record<string, unknown>;
-      let current = config;
-
-      // Navigate to parent and set value
-      for (let i = 0; i < path.length - 1; i++) {
-        if (!(path[i] in current)) {
-          current[path[i]] = {};
-        }
-        current = current[path[i]] as Record<string, unknown>;
-      }
-      current[path[path.length - 1]] = value;
-
-      return this.updateConfig(id, config);
+      throw new Error(`Failed to update family config: ${error.message}`);
     }
 
     return mapRowToCamelCase<Family>(data);

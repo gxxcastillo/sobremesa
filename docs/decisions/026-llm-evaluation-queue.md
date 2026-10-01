@@ -9,6 +9,10 @@ into `llm_evaluation_queue`, but no worker acquires/drains them (`acquireBatch` 
 no `LlmEvaluationService` exists). Whether to build a drain worker or retire the queue is open
 work.
 
+**Note (2026-10-01):** The unused `cleanup_expired_evaluation_locks()` function and its
+`cleanupExpiredLocks()` repository wrapper were removed; a future drain worker would need to
+reintroduce expired-lock release.
+
 ## Date
 
 2026-01-26

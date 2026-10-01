@@ -138,17 +138,6 @@ SET search_path = '';
 
 COMMENT ON FUNCTION has_family_access IS 'Check if user has any access to a specific family (admin, member, or viewer)';
 
--- Alias for backwards compatibility
-CREATE OR REPLACE FUNCTION is_family_member(target_family_id UUID)
-RETURNS BOOLEAN AS $$
-BEGIN
-  RETURN public.has_family_access(target_family_id);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
-SET search_path = '';
-
-COMMENT ON FUNCTION is_family_member IS 'Deprecated: Use has_family_access() instead. Alias for backwards compatibility.';
-
 -- ============================================================================
 -- FAMILIES (Family Spaces / Tenants)
 -- ============================================================================
@@ -210,6 +199,62 @@ COMMENT ON FUNCTION delete_family_cascade IS 'Approved whole-family hard delete 
 REVOKE ALL ON FUNCTION delete_family_cascade(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION delete_family_cascade(UUID) FROM anon, authenticated;
 GRANT EXECUTE ON FUNCTION delete_family_cascade(UUID) TO service_role;
+
+-- Set one nested key in families.config without touching its siblings.
+-- Locks the row and rewrites config in the same transaction, so two
+-- concurrent writers to different keys (e.g. /sobremesa pause and lang:es)
+-- can't overwrite each other the way a client-side read-modify-write can.
+-- Missing intermediate objects are created; an intermediate that exists but
+-- is not an object raises rather than being silently replaced.
+CREATE OR REPLACE FUNCTION update_family_config_path(
+  p_family_id UUID,
+  p_path TEXT[],
+  p_value JSONB
+)
+RETURNS SETOF families
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_config JSONB;
+  v_node JSONB;
+BEGIN
+  IF COALESCE(array_length(p_path, 1), 0) = 0 THEN
+    RAISE EXCEPTION 'config path must not be empty';
+  END IF;
+
+  SELECT f.config INTO v_config
+  FROM public.families f
+  WHERE f.id = p_family_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Family % not found', p_family_id
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  FOR i IN 1 .. array_length(p_path, 1) - 1 LOOP
+    v_node := v_config #> p_path[1:i];
+    IF v_node IS NULL THEN
+      v_config := jsonb_set(v_config, p_path[1:i], '{}'::jsonb, true);
+    ELSIF jsonb_typeof(v_node) <> 'object' THEN
+      RAISE EXCEPTION 'config path % is not an object', p_path[1:i];
+    END IF;
+  END LOOP;
+
+  RETURN QUERY
+  UPDATE public.families
+  SET config = jsonb_set(v_config, p_path, p_value, true)
+  WHERE id = p_family_id
+  RETURNING *;
+END;
+$$;
+
+COMMENT ON FUNCTION update_family_config_path IS 'Atomically sets one nested families.config key (row-locked), creating missing intermediate objects.';
+-- Same per-role revoke as delete_family_cascade above: backend-only.
+REVOKE ALL ON FUNCTION update_family_config_path(UUID, TEXT[], JSONB) FROM PUBLIC;
+REVOKE ALL ON FUNCTION update_family_config_path(UUID, TEXT[], JSONB) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION update_family_config_path(UUID, TEXT[], JSONB) TO service_role;
 
 -- ============================================================================
 -- FAMILY CONFIG (Optional separate table)
@@ -450,45 +495,6 @@ CREATE TRIGGER set_event_sequence_number
   BEFORE INSERT ON conversation_events
   FOR EACH ROW
   EXECUTE FUNCTION assign_event_sequence_number();
-
--- ----------------------------------------------------------------------------
--- Generic sequence number helper function
--- ----------------------------------------------------------------------------
--- Reusable function for getting the next sequence number for any scope/counter
--- Can be called from application code or other triggers
-CREATE OR REPLACE FUNCTION get_next_sequence(
-  p_scope_type VARCHAR(50),
-  p_scope_id UUID,
-  p_counter_name VARCHAR(50)
-) RETURNS BIGINT AS $$
-DECLARE
-  assigned_sequence BIGINT;
-BEGIN
-  -- Atomically increment and return the sequence number
-  UPDATE public.sequence_counters
-  SET next_sequence = next_sequence + 1,
-      last_updated_at = NOW()
-  WHERE scope_type = p_scope_type
-    AND scope_id = p_scope_id
-    AND counter_name = p_counter_name
-  RETURNING next_sequence - 1 INTO assigned_sequence;
-
-  -- If no counter exists yet, create one
-  IF assigned_sequence IS NULL THEN
-    INSERT INTO public.sequence_counters (scope_type, scope_id, counter_name, next_sequence)
-    VALUES (p_scope_type, p_scope_id, p_counter_name, 2)
-    ON CONFLICT (scope_type, scope_id, counter_name)
-    DO UPDATE SET next_sequence = public.sequence_counters.next_sequence + 1,
-                  last_updated_at = NOW()
-    RETURNING next_sequence - 1 INTO assigned_sequence;
-  END IF;
-
-  RETURN assigned_sequence;
-END;
-$$ LANGUAGE plpgsql
-SET search_path = '';
-
-COMMENT ON FUNCTION get_next_sequence IS 'Atomically gets the next sequence number for any scope/counter combination. Thread-safe with row-level locking.';
 
 -- ============================================================================
 -- PROCESSING QUEUE (Ordered processing support)
@@ -2187,7 +2193,7 @@ CREATE TABLE IF NOT EXISTS llm_evaluation_queue (
 
 COMMENT ON TABLE llm_evaluation_queue IS 'Queue for LLM evaluation tasks (claim strength, entity matching, conflict resolution). Supports prioritization, distributed processing with locks, and retry logic.';
 COMMENT ON COLUMN llm_evaluation_queue.priority IS '0-100, higher = more urgent. High-stakes claims (birth/death) get priority 100.';
-COMMENT ON COLUMN llm_evaluation_queue.locked_until IS 'Lock expiration time. Auto-cleanup via cleanup_expired_evaluation_locks() function.';
+COMMENT ON COLUMN llm_evaluation_queue.locked_until IS 'Lock expiration time.';
 
 -- Efficient query for workers to acquire pending items
 CREATE INDEX IF NOT EXISTS idx_llm_queue_pending
@@ -2206,46 +2212,6 @@ CREATE INDEX IF NOT EXISTS idx_llm_queue_entity
 -- Stats and monitoring
 CREATE INDEX IF NOT EXISTS idx_llm_queue_stats
   ON llm_evaluation_queue(family_id, status, created_at);
-
--- Auto-cleanup function for expired locks
-CREATE OR REPLACE FUNCTION cleanup_expired_evaluation_locks()
-RETURNS INTEGER AS $$
-DECLARE
-  rows_updated INTEGER;
-BEGIN
-  UPDATE llm_evaluation_queue
-  SET status = 'pending',
-      locked_at = NULL,
-      locked_by = NULL,
-      locked_until = NULL,
-      updated_at = NOW()
-  WHERE status = 'locked'
-    AND locked_until < NOW();
-
-  GET DIAGNOSTICS rows_updated = ROW_COUNT;
-  RETURN rows_updated;
-END;
-$$ LANGUAGE plpgsql;
-
-COMMENT ON FUNCTION cleanup_expired_evaluation_locks IS 'Release expired locks and return claims to pending status. Run periodically (e.g., every minute) via cron or scheduler.';
-
--- Auto-cleanup function for expired access passes
-CREATE OR REPLACE FUNCTION cleanup_expired_access_passes()
-RETURNS INTEGER AS $$
-DECLARE
-  rows_updated INTEGER;
-BEGIN
-  UPDATE access_passes
-  SET status = 'expired'
-  WHERE status = 'pending'
-    AND expires_at < NOW();
-
-  GET DIAGNOSTICS rows_updated = ROW_COUNT;
-  RETURN rows_updated;
-END;
-$$ LANGUAGE plpgsql;
-
-COMMENT ON FUNCTION cleanup_expired_access_passes IS 'Mark expired pending access passes as expired. Run periodically (e.g., every hour) via cron or scheduler.';
 
 -- ============================================================================
 -- CLAIMS IMMUTABILITY (Core fields never change after creation)
@@ -3644,210 +3610,6 @@ $$ LANGUAGE plpgsql STABLE;
 
 COMMENT ON FUNCTION is_person_participant IS
   'Check if a person is a verified conversation participant (their identity has sent messages).';
-
--- Get all verified participants in a conversation
-CREATE OR REPLACE FUNCTION get_conversation_participants(
-  p_family_id UUID,
-  p_conversation_id TEXT
-) RETURNS TABLE (
-  person_id UUID,
-  person_name TEXT,
-  identity_id UUID,
-  identity_display_name TEXT
-) AS $$
-BEGIN
-  RETURN QUERY
-  SELECT DISTINCT
-    p.id AS person_id,
-    p.name AS person_name,
-    i.id AS identity_id,
-    i.display_name AS identity_display_name
-  FROM conversation_events ce
-  JOIN identities i ON i.provider = ce.source
-    AND i.provider_user_id = ce.actor_external_id
-  JOIN family_access fa ON fa.identity_id = i.id
-    AND fa.family_id = ce.family_id
-  JOIN people p ON p.id = fa.person_id
-    AND p.family_id = fa.family_id
-  WHERE ce.family_id = p_family_id
-    AND ce.conversation_id = p_conversation_id
-    AND fa.status = 'active'
-    AND fa.person_id IS NOT NULL
-    AND p.redacted = false
-  ORDER BY p.name;
-END;
-$$ LANGUAGE plpgsql STABLE;
-
-COMMENT ON FUNCTION get_conversation_participants IS
-  'Get all verified participants (people whose identities have sent messages).';
-
--- Get participants with their family relationships (for question targeting context)
-CREATE OR REPLACE FUNCTION get_participants_with_relationships(
-  p_family_id UUID,
-  p_conversation_id TEXT
-) RETURNS TABLE (
-  person_id UUID,
-  person_name TEXT,
-  relationship_type TEXT,
-  related_person_id UUID,
-  related_person_name TEXT
-) AS $$
-BEGIN
-  RETURN QUERY
-  WITH participants AS (
-    SELECT DISTINCT p.id AS participant_id, p.name AS participant_name
-    FROM conversation_events ce
-    JOIN identities i ON i.provider = ce.source
-      AND i.provider_user_id = ce.actor_external_id
-    JOIN family_access fa ON fa.identity_id = i.id
-      AND fa.family_id = ce.family_id
-    JOIN people p ON p.id = fa.person_id
-      AND p.family_id = fa.family_id
-    WHERE ce.family_id = p_family_id
-      AND ce.conversation_id = p_conversation_id
-      AND fa.status = 'active'
-      AND fa.person_id IS NOT NULL
-      AND p.redacted = false
-  )
-  SELECT
-    pt.participant_id AS person_id,
-    pt.participant_name AS person_name,
-    -- Relationship type from participant's perspective
-    CASE
-      WHEN r.person_a_id = pt.participant_id THEN
-        CASE r.relationship_type WHEN 'parent' THEN 'parent' ELSE r.relationship_type END
-      WHEN r.person_b_id = pt.participant_id THEN
-        CASE r.relationship_type WHEN 'parent' THEN 'child' ELSE r.relationship_type END
-      ELSE NULL
-    END AS relationship_type,
-    CASE
-      WHEN r.person_a_id = pt.participant_id THEN r.person_b_id
-      WHEN r.person_b_id = pt.participant_id THEN r.person_a_id
-      ELSE NULL
-    END AS related_person_id,
-    rp.name AS related_person_name
-  FROM participants pt
-  LEFT JOIN relationships r ON r.family_id = p_family_id
-    AND (r.person_a_id = pt.participant_id OR r.person_b_id = pt.participant_id)
-    AND r.status = 'active'
-  LEFT JOIN people rp ON rp.family_id = p_family_id
-    AND rp.id = CASE
-      WHEN r.person_a_id = pt.participant_id THEN r.person_b_id
-      WHEN r.person_b_id = pt.participant_id THEN r.person_a_id
-    END
-    AND rp.redacted = false
-  ORDER BY pt.participant_name, rp.name;
-END;
-$$ LANGUAGE plpgsql STABLE;
-
-COMMENT ON FUNCTION get_participants_with_relationships IS
-  'Get participants with family relationships (one row per relationship, includes participants without relationships).';
-
--- Find participants connected to a specific subject (person/event/place/story)
-CREATE OR REPLACE FUNCTION get_participants_related_to_subject(
-  p_family_id UUID,
-  p_conversation_id TEXT,
-  p_subject_type TEXT,  -- 'person', 'event', 'place', 'story'
-  p_subject_id UUID
-) RETURNS TABLE (
-  person_id UUID,
-  person_name TEXT,
-  connection_reason TEXT,
-  connection_type TEXT
-) AS $$
-BEGIN
-  RETURN QUERY
-  WITH verified_participants AS (
-    SELECT DISTINCT p.id AS participant_id, p.name AS participant_name
-    FROM conversation_events ce
-    JOIN identities i ON i.provider = ce.source
-      AND i.provider_user_id = ce.actor_external_id
-    JOIN family_access fa ON fa.identity_id = i.id
-      AND fa.family_id = ce.family_id
-    JOIN people p ON p.id = fa.person_id
-      AND p.family_id = fa.family_id
-    WHERE ce.family_id = p_family_id
-      AND ce.conversation_id = p_conversation_id
-      AND fa.status = 'active'
-      AND fa.person_id IS NOT NULL
-      AND p.redacted = false
-  )
-  SELECT * FROM (
-    -- Subject is PERSON: find participants with relationships
-    SELECT
-      vp.participant_id AS person_id,
-      vp.participant_name AS person_name,
-      CASE
-        WHEN r.person_a_id = vp.participant_id THEN
-          CASE r.relationship_type
-            WHEN 'parent' THEN 'parent of ' ELSE r.relationship_type || ' of '
-          END || subject_person.name
-        ELSE
-          CASE r.relationship_type
-            WHEN 'parent' THEN 'child of ' ELSE r.relationship_type || ' of '
-          END || subject_person.name
-      END AS connection_reason,
-      'relationship'::TEXT AS connection_type
-    FROM verified_participants vp
-    JOIN relationships r ON r.family_id = p_family_id
-      AND (r.person_a_id = vp.participant_id OR r.person_b_id = vp.participant_id)
-      AND (r.person_a_id = p_subject_id OR r.person_b_id = p_subject_id)
-      AND r.person_a_id != r.person_b_id
-      AND r.status = 'active'
-    JOIN people subject_person ON subject_person.id = p_subject_id
-      AND subject_person.family_id = p_family_id
-    WHERE p_subject_type = 'person'
-      AND vp.participant_id != p_subject_id
-
-    UNION ALL
-
-    -- Subject is PERSON: include if participant IS the subject (direct match)
-    SELECT vp.participant_id, vp.participant_name,
-      'is this person'::TEXT, 'direct'::TEXT
-    FROM verified_participants vp
-    WHERE p_subject_type = 'person' AND vp.participant_id = p_subject_id
-
-    UNION ALL
-
-    -- Subject is EVENT: find participants involved
-    SELECT vp.participant_id, vp.participant_name,
-      'involved in event: ' || e.title, 'event_participant'::TEXT
-    FROM verified_participants vp
-    JOIN event_people ep ON ep.family_id = p_family_id
-      AND ep.person_id = vp.participant_id AND ep.event_id = p_subject_id
-    JOIN events e ON e.id = p_subject_id AND e.family_id = p_family_id
-    WHERE p_subject_type = 'event'
-
-    UNION ALL
-
-    -- Subject is PLACE: find participants via events at that place
-    SELECT DISTINCT vp.participant_id, vp.participant_name,
-      'connected via event: ' || e.title, 'event_participant'::TEXT
-    FROM verified_participants vp
-    JOIN event_people ep ON ep.family_id = p_family_id
-      AND ep.person_id = vp.participant_id
-    JOIN event_places epl ON epl.family_id = p_family_id
-      AND epl.event_id = ep.event_id AND epl.place_id = p_subject_id
-    JOIN events e ON e.id = ep.event_id AND e.family_id = p_family_id
-    WHERE p_subject_type = 'place'
-
-    UNION ALL
-
-    -- Subject is STORY: find participants mentioned
-    SELECT vp.participant_id, vp.participant_name,
-      'mentioned in story: ' || s.title, 'story_mention'::TEXT
-    FROM verified_participants vp
-    JOIN story_people sp ON sp.family_id = p_family_id
-      AND sp.person_id = vp.participant_id AND sp.story_id = p_subject_id
-    JOIN stories s ON s.id = p_subject_id AND s.family_id = p_family_id
-    WHERE p_subject_type = 'story'
-  ) combined
-  ORDER BY person_name;
-END;
-$$ LANGUAGE plpgsql STABLE;
-
-COMMENT ON FUNCTION get_participants_related_to_subject IS
-  'Find participants connected to a subject (person/event/place/story) for focused question targeting.';
 
 -- ============================================================================
 -- IMPORT JOBS TABLE

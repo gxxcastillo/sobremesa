@@ -170,7 +170,10 @@ Ingestion accepts messages only when the family is active and not paused. Pause 
 `isFamilyPaused` in `shared-types`) also suppresses Facilitator's outbound question sends (§4.4) —
 both the per-message nudge and a batch sweep, since both share `askNextQuestion` — so a paused
 family receives nothing unprompted either. Chat commands can pause, resume, show status/help, set
-primary language, and create Studio links.
+primary language, and create Studio links. Pause, resume, and language changes write a single
+`families.config` key atomically (`FamilyRepository.updateConfigPath` → the row-locking
+`update_family_config_path` function), so concurrent changes to sibling keys cannot overwrite
+each other.
 
 ## 4.6 Imported History
 
