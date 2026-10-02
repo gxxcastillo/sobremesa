@@ -13,6 +13,9 @@ COPY libs ./libs
 COPY apps/chatbots/package.json ./apps/chatbots/package.json
 COPY apps/studio/package.json ./apps/studio/package.json
 COPY apps/db/package.json ./apps/db/package.json
+COPY apps/cli/package.json ./apps/cli/package.json
+COPY apps/eval/package.json ./apps/eval/package.json
+COPY tests/package.json ./tests/package.json
 
 # Copy workspace configuration
 COPY package.json bun.lock ./

@@ -402,6 +402,19 @@
         "tslib": "^2.3.0",
       },
     },
+    "tests": {
+      "name": "@sobremesa/tests",
+      "version": "0.0.1",
+      "dependencies": {
+        "@sobremesa/agents-admin": "workspace:*",
+        "@sobremesa/agents-registrar": "workspace:*",
+        "@sobremesa/database": "workspace:*",
+        "@sobremesa/ingester": "workspace:*",
+        "@sobremesa/shared-types": "workspace:*",
+        "dotenv": "^17.2.3",
+        "telegraf": "^4.16.3",
+      },
+    },
   },
   "trustedDependencies": [
     "esbuild",
@@ -1015,6 +1028,8 @@
     "@sobremesa/studio": ["@sobremesa/studio@workspace:apps/studio"],
 
     "@sobremesa/telegram": ["@sobremesa/telegram@workspace:libs/telegram"],
+
+    "@sobremesa/tests": ["@sobremesa/tests@workspace:tests"],
 
     "@solidjs/router": ["@solidjs/router@0.15.4", "", { "peerDependencies": { "solid-js": "^1.8.6" } }, "sha512-WOpgg9a9T638cR+5FGbFi/IV4l2FpmBs1GpIMSPa0Ce9vyJN7Wts+X2PqMf9IYn0zUj2MlSJtm1gp7/HI/n5TQ=="],
 

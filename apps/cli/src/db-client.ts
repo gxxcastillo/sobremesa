@@ -15,8 +15,8 @@ function isLocalSupabaseUrl(url: string): boolean {
  * `tests/live-db-test-utils.ts`'s guard -- duplicated here rather than
  * imported across the apps/cli <-> tests/ Nx project boundary, which
  * `@nx/enforce-module-boundaries` rejects for relative cross-project
- * imports (and `tests/` isn't in the bun workspace globs, so it has no
- * `@sobremesa/*` alias to import by).
+ * imports (and `@sobremesa/tests` is a script project with no package
+ * exports to import by).
  */
 export function createLiveDbClient(
   context: string,

@@ -18,6 +18,7 @@ COPY apps/studio/package.json ./apps/studio/package.json
 COPY apps/db/package.json ./apps/db/package.json
 COPY apps/cli/package.json ./apps/cli/package.json
 COPY apps/eval/package.json ./apps/eval/package.json
+COPY tests/package.json ./tests/package.json
 
 # Install dependencies
 RUN bun install --frozen-lockfile

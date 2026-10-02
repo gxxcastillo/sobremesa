@@ -69,7 +69,8 @@
     "apps/*",
     "libs/*",
     "libs/shared/*",
-    "libs/agents/*"
+    "libs/agents/*",
+    "tests"
   ],
   "engines": {
     "bun": ">=1.3.0"
