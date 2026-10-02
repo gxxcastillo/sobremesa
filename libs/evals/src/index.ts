@@ -6,6 +6,8 @@ export * from './lib/intern-scorer';
 export * from './lib/pipeline-snapshot';
 export * from './scenarios/scribe-scenarios';
 export * from './scenarios/pipeline-scenarios';
+export * from './scenarios/followup-scenarios';
+export * from './lib/run-followup-scenario';
 // Re-exported so consumers (e.g. `apps/eval`) can type Scribe config
 // overrides without taking a direct dependency on `@sobremesa/agents-scribe`.
 export type { ScribeConfig } from '@sobremesa/agents-scribe';

@@ -17,6 +17,8 @@
     "@sobremesa/agents-intern": "workspace:*",
     "@sobremesa/agents-scribe": "workspace:*",
     "@sobremesa/agents-registrar": "workspace:*",
+    "@sobremesa/agents-followup": "workspace:*",
+    "@sobremesa/agents-facilitator": "workspace:*",
     "@sobremesa/ai-provider": "workspace:*",
     "@sobremesa/database": "workspace:*",
     "@sobremesa/queue": "workspace:*",
