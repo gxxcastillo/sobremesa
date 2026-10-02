@@ -22,7 +22,9 @@ These run with `apps/db` as the working directory, which is where the real confi
 (`supabase/config.toml`) and migrations live.
 Nx also loads the root `.env` into these tasks, so a relative `SUPABASE_WORKDIR` there (e.g.
 `apps/db`) resolves to `apps/db/apps/db` and every target fails with `failed to change workdir`.
-Leave it unset or make it absolute.
+Leave it unset or make it absolute. Likewise, don't put `SUPABASE_PROJECT_ID` in the root `.env`:
+the CLI reads it as an override for the local `project_id`, so local commands look for containers
+named after the hosted project ref and fail. CI sets it only for `supabase link --project-ref`.
 
 If you do need the raw CLI, `cd apps/db` first. Running a bare `supabase` command from elsewhere
 (e.g. the repo root) makes the CLI create a stray, empty `supabase/` state folder (`.branches`,
