@@ -121,6 +121,10 @@ context is not appended twice for the same message and text. Known gap: a claim 
 when an exact duplicate already exists, so if an earlier attempt stored the claim but crashed before
 its analysis row, entity links or review-queue entry, those are not filled in later.
 
+Image references are applied only when their `imageId` is a real image id (a UUID). Scribe can cite
+only ids it was shown, and an imported WhatsApp chat has no image records ("image omitted"), so a
+model-invented id is skipped at debug level rather than logged as a failed image write.
+
 Claim attribution is pipeline-stamped, never LLM-derived: `claims.claimed_by` is always the
 deterministic sender name from the source `conversation_events` row, and `claims.claimed_by_identity_id`
 is resolved from that row's `(source, actor_external_id)` via the identity repository — never from

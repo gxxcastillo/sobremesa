@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { logAlert, logBestEffort, resolveSessionLogPath } from './logger';
+import pino from 'pino';
+import {
+  createLogger,
+  logAlert,
+  logBestEffort,
+  resolveSessionLogPath,
+} from './logger';
 
 const mockLogger = {
   info: vi.fn(),
@@ -139,5 +145,19 @@ describe('logAlert', () => {
       { familyId: 'f1', eventId: 'e1', alert: 'queue_dead_letter' },
       'Queue item dead-lettered',
     );
+  });
+});
+
+describe('createLogger', () => {
+  it('serializes an Error logged under `error` as well as `err`', () => {
+    const logger = createLogger({ name: 'test', pretty: false });
+    const serializers = (logger as any)[pino.symbols.serializersSym];
+
+    expect(serializers.error).toBe(pino.stdSerializers.err);
+    expect(serializers.err).toBe(pino.stdSerializers.err);
+    expect(serializers.error(new Error('boom'))).toMatchObject({
+      type: 'Error',
+      message: 'boom',
+    });
   });
 });

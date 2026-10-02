@@ -167,6 +167,9 @@ function resolveSingleMentionedEventTitle(
   return matchedIds.size === 1 ? [...matchedIds][0] : undefined;
 }
 
+/** `images.id` is a UUID; anything else in an image reference was invented. */
+const IMAGE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /**
  * Options for creating a RegistrarAgent.
  */
@@ -1497,6 +1500,19 @@ export class RegistrarAgent {
 
       // 7. Process Image References
       for (const imageRef of domainModel.imageReferences || []) {
+        // Scribe can only cite ids it was shown; a WhatsApp import has no
+        // image records ("image omitted"), so the model sometimes invents
+        // one ("image_omitted_latest"). Not a failure -- nothing to attach.
+        if (!IMAGE_ID_PATTERN.test(imageRef.imageId)) {
+          this.logger.debug(
+            {
+              imageId: imageRef.imageId,
+              referenceType: imageRef.referenceType,
+            },
+            'Skipping image reference without a real image id',
+          );
+          continue;
+        }
         try {
           // Handle people identification
           if (

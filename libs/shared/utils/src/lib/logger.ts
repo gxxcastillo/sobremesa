@@ -121,6 +121,13 @@ export function createLogger(options: LoggerOptions): pino.Logger {
   const baseConfig: pino.LoggerOptions = {
     name,
     level,
+    // pino only serializes `err` by default; an Error logged under `error`
+    // (the common call shape here) would otherwise print as `{}` and lose
+    // its message and stack.
+    serializers: {
+      err: pino.stdSerializers.err,
+      error: pino.stdSerializers.err,
+    },
   };
 
   if (pretty) {

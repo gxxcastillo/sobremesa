@@ -206,11 +206,32 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     detectedLanguage: 'en',
   });
 
+  it('skips a reference whose imageId is not a real image id, without a warning', async () => {
+    // WhatsApp imports carry "image omitted" placeholders, not images, so
+    // Scribe sees no ids to cite and sometimes invents one.
+    const domainModel = createBaseDomainModel([
+      {
+        imageId: 'image_omitted_latest',
+        referenceType: 'provides_context',
+        contextProvided: 'Family photo at the beach',
+        confidence: 'medium',
+      },
+    ]);
+
+    await registrar.persist(domainModel, 'family-abc');
+
+    expect(mockImageRepo.addContext).not.toHaveBeenCalled();
+    expect(mockLogger.warn).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'Failed to process image reference',
+    );
+  });
+
   describe('identifies_people references', () => {
     it('should add connected people to image when people are in personIdMap', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-123',
+          imageId: '00000000-0000-4000-8000-000000000002',
           referenceType: 'identifies_people',
           peopleIdentified: ['Maria', 'Roberto'],
           confidence: 'high',
@@ -227,7 +248,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
 
       expect(mockImageRepo.addConnectedPeople).toHaveBeenCalledWith(
         'family-abc',
-        'img-123',
+        '00000000-0000-4000-8000-000000000002',
         expect.arrayContaining(['person-maria', 'person-roberto']),
       );
     });
@@ -241,7 +262,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
 
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-123',
+          imageId: '00000000-0000-4000-8000-000000000002',
           referenceType: 'identifies_people',
           peopleIdentified: ['Maria'],
           confidence: 'high',
@@ -257,7 +278,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       );
       expect(mockImageRepo.addConnectedPeople).toHaveBeenCalledWith(
         'family-abc',
-        'img-123',
+        '00000000-0000-4000-8000-000000000002',
         ['existing-maria-id'],
       );
     });
@@ -267,7 +288,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
 
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-123',
+          imageId: '00000000-0000-4000-8000-000000000002',
           referenceType: 'identifies_people',
           peopleIdentified: ['Unknown Person'],
           confidence: 'low',
@@ -282,7 +303,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     it('should skip if peopleIdentified is empty', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-123',
+          imageId: '00000000-0000-4000-8000-000000000002',
           referenceType: 'identifies_people',
           peopleIdentified: [],
           confidence: 'medium',
@@ -297,7 +318,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     it('should skip if peopleIdentified is undefined', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-123',
+          imageId: '00000000-0000-4000-8000-000000000002',
           referenceType: 'identifies_people',
           peopleIdentified: [],
           confidence: 'medium',
@@ -314,7 +335,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     it('should add context to image', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-456',
+          imageId: '00000000-0000-4000-8000-000000000005',
           referenceType: 'provides_context',
           peopleIdentified: [],
           contextProvided:
@@ -327,7 +348,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
 
       expect(mockImageRepo.addContext).toHaveBeenCalledWith(
         'family-abc',
-        'img-456',
+        '00000000-0000-4000-8000-000000000005',
         'This was taken at the wedding in Buenos Aires, 1962',
         'event-123',
       );
@@ -336,7 +357,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     it('should skip if contextProvided is empty', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-456',
+          imageId: '00000000-0000-4000-8000-000000000005',
           referenceType: 'provides_context',
           peopleIdentified: [],
           contextProvided: '',
@@ -352,7 +373,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     it('should skip if contextProvided is undefined', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-456',
+          imageId: '00000000-0000-4000-8000-000000000005',
           referenceType: 'provides_context',
           peopleIdentified: [],
           confidence: 'medium',
@@ -369,7 +390,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     it('should add context to image for describes reference type', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-789',
+          imageId: '00000000-0000-4000-8000-000000000006',
           referenceType: 'describes',
           peopleIdentified: [],
           contextProvided:
@@ -382,7 +403,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
 
       expect(mockImageRepo.addContext).toHaveBeenCalledWith(
         'family-abc',
-        'img-789',
+        '00000000-0000-4000-8000-000000000006',
         'A family gathering with about 20 people at a long table',
         'event-123',
       );
@@ -393,7 +414,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     it('should increment counter but not call any image methods for asks_about', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-999',
+          imageId: '00000000-0000-4000-8000-000000000007',
           referenceType: 'asks_about',
           peopleIdentified: [],
           confidence: 'medium',
@@ -419,13 +440,13 @@ describe('RegistrarAgent - Image Reference Handling', () => {
 
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-bad',
+          imageId: '00000000-0000-4000-8000-000000000008',
           referenceType: 'identifies_people',
           peopleIdentified: ['Maria'],
           confidence: 'high',
         },
         {
-          imageId: 'img-good',
+          imageId: '00000000-0000-4000-8000-000000000009',
           referenceType: 'provides_context',
           peopleIdentified: [],
           contextProvided: 'Some context',
@@ -444,14 +465,14 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       // Second reference should still be processed
       expect(mockImageRepo.addContext).toHaveBeenCalledWith(
         'family-abc',
-        'img-good',
+        '00000000-0000-4000-8000-000000000009',
         'Some context',
         'event-123',
       );
       // Warning should be logged
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({
-          imageId: 'img-bad',
+          imageId: '00000000-0000-4000-8000-000000000008',
           referenceType: 'identifies_people',
         }),
         'Failed to process image reference',
@@ -463,13 +484,13 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     it('should handle multiple references for the same image', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-123',
+          imageId: '00000000-0000-4000-8000-000000000002',
           referenceType: 'identifies_people',
           peopleIdentified: ['Grandma Maria'],
           confidence: 'high',
         },
         {
-          imageId: 'img-123',
+          imageId: '00000000-0000-4000-8000-000000000002',
           referenceType: 'provides_context',
           peopleIdentified: [],
           contextProvided: 'Wedding photo from 1962',
@@ -485,12 +506,12 @@ describe('RegistrarAgent - Image Reference Handling', () => {
 
       expect(mockImageRepo.addConnectedPeople).toHaveBeenCalledWith(
         'family-abc',
-        'img-123',
+        '00000000-0000-4000-8000-000000000002',
         ['person-grandma-maria'],
       );
       expect(mockImageRepo.addContext).toHaveBeenCalledWith(
         'family-abc',
-        'img-123',
+        '00000000-0000-4000-8000-000000000002',
         'Wedding photo from 1962',
         'event-123',
       );
@@ -499,7 +520,7 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     it('should handle reference with both people and context', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-123',
+          imageId: '00000000-0000-4000-8000-000000000002',
           referenceType: 'identifies_people',
           peopleIdentified: ['Uncle Roberto'],
           contextProvided: 'This is at his birthday party',
@@ -524,21 +545,21 @@ describe('RegistrarAgent - Image Reference Handling', () => {
     it('should increment counter for each successfully processed reference', async () => {
       const domainModel = createBaseDomainModel([
         {
-          imageId: 'img-1',
+          imageId: '00000000-0000-4000-8000-000000000001',
           referenceType: 'provides_context',
           peopleIdentified: [],
           contextProvided: 'Context 1',
           confidence: 'high',
         },
         {
-          imageId: 'img-2',
+          imageId: '00000000-0000-4000-8000-000000000003',
           referenceType: 'provides_context',
           peopleIdentified: [],
           contextProvided: 'Context 2',
           confidence: 'high',
         },
         {
-          imageId: 'img-3',
+          imageId: '00000000-0000-4000-8000-000000000004',
           referenceType: 'asks_about',
           peopleIdentified: [],
           confidence: 'medium',
