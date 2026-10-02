@@ -105,6 +105,11 @@ git diff --check
 - ADRs never link to private, ephemeral planning material — describe or name the pending work in
   prose instead.
 
+## Git
+
+- Never switch branches without first notifying the developer: say which branch you are on, which
+  branch you are switching to, and why. This includes creating and checking out a new branch.
+
 ## Style Notes
 
 - Follow existing TypeScript and repository patterns before introducing new abstractions.
