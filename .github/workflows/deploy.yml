@@ -58,8 +58,14 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # This workflow only ever runs on workflow_run (or manual dispatch), so
+      # look up the last successful run by that event. The default ('push')
+      # never matches, and the fallback diffs HEAD~1 only -- a multi-commit
+      # push then deploys nothing unless its last commit touched an app.
       - uses: nrwl/nx-set-shas@v4
         id: nx-shas
+        with:
+          last-successful-event: workflow_run
 
       - name: Determine affected projects
         id: affected
