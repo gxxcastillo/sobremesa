@@ -66,3 +66,19 @@ jobs:
       - name: Verify deployment
         run: supabase migration list
         working-directory: apps/db
+
+      # Under the single-migration policy (apps/db/README.md), schema edits
+      # fold into the already-applied init migration, so `db push` has
+      # nothing to apply and still succeeds. Diffing the hosted schema
+      # against the migrations is what catches that. An in-sync project
+      # writes no file.
+      - name: Verify hosted schema matches migrations
+        run: |
+          supabase db diff --linked --schema public -f deploy_drift_check
+          drift=$(ls supabase/migrations/*_deploy_drift_check.sql 2>/dev/null || true)
+          if [ -n "$drift" ]; then
+            echo "::error::Hosted schema differs from supabase/migrations. Under the single-migration policy, reset the hosted project (apps/db/README.md, Migration policy)."
+            cat $drift
+            exit 1
+          fi
+        working-directory: apps/db

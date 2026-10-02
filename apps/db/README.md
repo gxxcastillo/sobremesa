@@ -20,6 +20,9 @@ bun nx run db:migration-list
 
 These run with `apps/db` as the working directory, which is where the real config
 (`supabase/config.toml`) and migrations live.
+Nx also loads the root `.env` into these tasks, so a relative `SUPABASE_WORKDIR` there (e.g.
+`apps/db`) resolves to `apps/db/apps/db` and every target fails with `failed to change workdir`.
+Leave it unset or make it absolute.
 
 If you do need the raw CLI, `cd apps/db` first. Running a bare `supabase` command from elsewhere
 (e.g. the repo root) makes the CLI create a stray, empty `supabase/` state folder (`.branches`,
@@ -32,10 +35,16 @@ While this project has no real users, we deliberately keep a single migration fi
 migrations: new schema changes are folded directly into that file rather than added as a new
 migration, and any migration files that had been added since are deleted in the same change.
 
-This means the hosted Supabase project's migration history will drift from the local migration
-directory each time a squash happens. Before the next `supabase db push` after a squash, reconcile
-the hosted project (`supabase db reset --linked`, or `supabase migration repair` if you want to keep
-existing hosted data) so `supabase_migrations.schema_migrations` matches the single local migration
-again. `supabase db push` will fail on a version-history mismatch otherwise.
+Because the init migration keeps its version, editing it never reaches a database that already
+applied it: `supabase db push` and `supabase migration up` see nothing new and succeed without
+changing anything. (Push fails only when the hosted history lists versions missing locally, e.g.
+after older migration files were deleted.) So under this policy **a reset is the migration**:
+
+- **Local:** `apps/db/scripts/rebuild-local.sh` backs up to `tmp/db-backups/`, resets, recreates the
+  dev Studio identity, re-imports the Angelita fixture with recorded LLM responses (free when prompts
+  are unchanged), and prints `sbm status`.
+- **Hosted:** `supabase db reset --linked` (destroys hosted data), or `supabase migration repair`
+  plus hand-applied DDL to keep it. The deploy workflow's "Verify hosted schema matches migrations"
+  step fails when the hosted schema has drifted, so a missed reset is visible.
 
 Once real users exist, switch to normal incremental migrations and stop squashing.
