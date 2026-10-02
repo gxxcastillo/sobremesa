@@ -62,3 +62,82 @@ describe('PlaceRepository - findByIds', () => {
     );
   });
 });
+
+describe('PlaceRepository - findByHierarchy', () => {
+  let placeRepo: PlaceRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    placeRepo = new PlaceRepository(mockSupabaseClient as any);
+  });
+
+  it('returns null without querying when no country is given', async () => {
+    const result = await placeRepo.findByHierarchy('fam1', { city: 'León' });
+
+    expect(result).toBeNull();
+    expect(mockSupabaseClient.from).not.toHaveBeenCalled();
+  });
+
+  it('matches city and country, scoped to the family', async () => {
+    const row = {
+      id: 'place-1',
+      family_id: 'fam1',
+      name: 'León',
+      city: 'León',
+      country: 'Nicaragua',
+    };
+    const chain = createChainableMock({ data: row, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await placeRepo.findByHierarchy('fam1', {
+      city: 'león',
+      country: 'nicaragua',
+    });
+
+    expect(mockSupabaseClient.from).toHaveBeenCalledWith('places');
+    expect(chain.eq).toHaveBeenCalledWith('family_id', 'fam1');
+    expect(chain.eq).toHaveBeenCalledWith('redacted', false);
+    expect(chain.ilike).toHaveBeenCalledWith('country', 'nicaragua');
+    expect(chain.ilike).toHaveBeenCalledWith('city', 'león');
+    expect(chain.eq).not.toHaveBeenCalledWith('type', 'country');
+    expect(result).toMatchObject({ id: 'place-1', familyId: 'fam1' });
+  });
+
+  it('matches only country-level places when no city is given', async () => {
+    const chain = createChainableMock({ data: null, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const result = await placeRepo.findByHierarchy('fam1', {
+      country: 'Nicaragua',
+    });
+
+    expect(chain.eq).toHaveBeenCalledWith('type', 'country');
+    expect(chain.ilike).not.toHaveBeenCalledWith('city', expect.anything());
+    expect(result).toBeNull();
+  });
+
+  it('escapes LIKE wildcards so values match literally', async () => {
+    const chain = createChainableMock({ data: null, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await placeRepo.findByHierarchy('fam1', {
+      city: 'San_Jose',
+      country: '100%',
+    });
+
+    expect(chain.ilike).toHaveBeenCalledWith('city', 'San\\_Jose');
+    expect(chain.ilike).toHaveBeenCalledWith('country', '100\\%');
+  });
+
+  it('throws on a database error', async () => {
+    const chain = createChainableMock({
+      data: null,
+      error: { message: 'boom' },
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await expect(
+      placeRepo.findByHierarchy('fam1', { country: 'Nicaragua' }),
+    ).rejects.toThrow('Failed to find place by hierarchy: boom');
+  });
+});

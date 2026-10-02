@@ -96,6 +96,42 @@ export class PlaceRepository extends BaseRepository<Place> {
   }
 
   /**
+   * Find a place by city + country, or a country-level place by country
+   * alone. Comparisons are case-insensitive exact matches; a city without a
+   * country never matches. Ordered by id for determinism.
+   */
+  async findByHierarchy(
+    familyId: string,
+    location: { city?: string; country?: string },
+  ): Promise<Place | null> {
+    if (!location.country) {
+      return null;
+    }
+
+    let query = this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('redacted', false)
+      .ilike('country', escapeLikePattern(location.country));
+
+    query = location.city
+      ? query.ilike('city', escapeLikePattern(location.city))
+      : query.eq('type', 'country');
+
+    const { data, error } = await query
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to find place by hierarchy: ${error.message}`);
+    }
+
+    return data ? this.mapFromDb(data) : null;
+  }
+
+  /**
    * Find or create a place.
    */
   async findOrCreate(
@@ -184,4 +220,9 @@ export class PlaceRepository extends BaseRepository<Place> {
   protected mapToDb(record: Place): Record<string, unknown> {
     return mapRecordToSnakeCase(record as unknown as Record<string, unknown>);
   }
+}
+
+/** Escape ILIKE wildcards so a value matches only itself (case-insensitively). */
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }

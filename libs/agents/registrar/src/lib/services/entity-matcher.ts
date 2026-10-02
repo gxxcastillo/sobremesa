@@ -1,4 +1,9 @@
-import type { ExtractedPerson, ExtractedPlace } from '@sobremesa/shared-types';
+import type {
+  ExtractedPerson,
+  ExtractedPlace,
+  Person,
+  Place,
+} from '@sobremesa/shared-types';
 import { PersonRepository, PlaceRepository } from '@sobremesa/database';
 import { classifyPersonName, createLogger } from '@sobremesa/shared-utils';
 
@@ -23,8 +28,6 @@ export class EntityMatcherService {
   constructor(
     private personRepo: PersonRepository,
     private placeRepo: PlaceRepository,
-    // TODO: Add LLM client for uncertain matches
-    // private llmClient?: AnthropicClient,
   ) {}
 
   /**
@@ -134,20 +137,6 @@ export class EntityMatcherService {
       matchReason: result.matchReason,
       suggestedAliases,
     };
-
-    // TODO: For uncertain matches (0.7-0.9), optionally verify with LLM
-    // if (confidenceScore >= 0.7 && confidenceScore < 0.9 && this.llmClient) {
-    //   const llmVerified = await this.verifyMatchWithLlm(extracted, result.person);
-    //   if (llmVerified) {
-    //     return {
-    //       matched: true,
-    //       existingEntityId: result.person.id,
-    //       confidence: 0.85,
-    //       matchReason: 'contextual (LLM verified)',
-    //       suggestedAliases,
-    //     };
-    //   }
-    // }
   }
 
   /**
@@ -208,10 +197,10 @@ export class EntityMatcherService {
 
     // If city/country provided, try hierarchical match
     if (extracted.city || extracted.country) {
-      const hierarchicalMatch = await this.findPlaceByHierarchy(
-        familyId,
-        extracted,
-      );
+      const hierarchicalMatch = await this.placeRepo.findByHierarchy(familyId, {
+        city: extracted.city,
+        country: extracted.country,
+      });
 
       if (hierarchicalMatch) {
         return {
@@ -237,7 +226,7 @@ export class EntityMatcherService {
    */
   private hasBiographicalConflict(
     extracted: ExtractedPerson,
-    existing: any,
+    existing: Person,
   ): boolean {
     const YEAR_TOLERANCE = 5; // Allow up to 5 years difference (accounts for uncertainty)
 
@@ -323,7 +312,7 @@ export class EntityMatcherService {
    */
   private calculatePlaceMatchConfidence(
     extracted: ExtractedPlace,
-    existing: any,
+    existing: Place,
   ): number {
     let score = 0;
 
@@ -377,51 +366,4 @@ export class EntityMatcherService {
 
     return (2.0 * intersectionSize) / (s1.length + s2.length - 2);
   }
-
-  /**
-   * Find place by hierarchical matching (city + country).
-   */
-  private async findPlaceByHierarchy(
-    familyId: string,
-    extracted: ExtractedPlace,
-  ): Promise<any> {
-    const { data } = await this.placeRepo['client']
-      .from('places')
-      .select('*')
-      .eq('family_id', familyId)
-      .eq('redacted', false);
-
-    if (!data) return null;
-
-    for (const place of data) {
-      // Match on city AND country
-      if (extracted.city && extracted.country) {
-        if (
-          place.city?.toLowerCase() === extracted.city.toLowerCase() &&
-          place.country?.toLowerCase() === extracted.country.toLowerCase()
-        ) {
-          return place;
-        }
-      }
-
-      // Match on country only for country-level places
-      if (extracted.country && !extracted.city && place.type === 'country') {
-        if (place.country?.toLowerCase() === extracted.country.toLowerCase()) {
-          return place;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  // TODO: Implement LLM-based verification for uncertain matches
-  // private async verifyMatchWithLlm(
-  //   extracted: ExtractedPerson,
-  //   candidate: Person,
-  // ): Promise<boolean> {
-  //   // Use LLM to determine if extracted person is the same as candidate
-  //   // Consider context, aliases, relationships, etc.
-  //   return false;
-  // }
 }

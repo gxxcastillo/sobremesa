@@ -11,11 +11,3 @@ export {
   type StrengthFactors,
 } from './strength-calculator';
 export { InferenceEngineService, type InferredClaim } from './inference-engine';
-export {
-  type LlmClaimEvaluationRequest,
-  type LlmClaimEvaluationResult,
-  type LlmEntityMatchRequest,
-  type LlmEntityMatchResult,
-  LlmPrompts,
-  blendScores,
-} from './llm-evaluation';
