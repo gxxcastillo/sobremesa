@@ -5,6 +5,10 @@ import type {
 } from '@sobremesa/database';
 import type { FollowupAgent } from '@sobremesa/agents-followup';
 import type { StoryFollowupHook } from '@sobremesa/queue';
+import {
+  FOLLOWUP_FAILURE_OUTCOMES,
+  type FollowupEvaluatedEventData,
+} from '@sobremesa/shared-types';
 
 /** No new question is written while one is waiting or one was asked this
  * recently -- Gabriel's "one question per moment; a day later is a new
@@ -24,7 +28,9 @@ export interface StoryFollowupHookOptions {
  * Builds the story follow-up pipeline hook (story-followups-plan.md #4):
  * the pacing pre-check, then `FollowupAgent`'s decision, then the
  * persistence and `question_proposed` event-log entry that `FollowupAgent`
- * deliberately never writes itself. No nudge -- the question can't be asked
+ * deliberately never writes itself. Every run that proposes nothing logs
+ * `followup_evaluated` with its outcome, so a pacing skip or decline can be
+ * told apart from a provider failure later (hardening J). No nudge -- the question can't be asked
  * until the chat has been quiet (D2), so a later periodic check (#6) is what
  * actually sends it.
  */
@@ -33,12 +39,29 @@ export function createStoryFollowupHook(
 ): StoryFollowupHook {
   const { followup, questionRepo, eventLog, logger } = options;
 
+  const logEvaluated = (
+    eventId: string,
+    familyId: string,
+    outcome: FollowupEvaluatedEventData['outcome'],
+  ) =>
+    eventLog.log({
+      familyId,
+      eventType: 'followup_evaluated',
+      eventCategory: 'system_event',
+      actor: 'followup',
+      actorType: 'system',
+      conversationEventId: eventId,
+      eventData: { outcome } satisfies FollowupEvaluatedEventData,
+      severity: FOLLOWUP_FAILURE_OUTCOMES.includes(outcome) ? 'error' : 'info',
+    });
+
   return async (eventId, familyId, routedLanguage) => {
     if (await questionRepo.hasWaitingOrRecent(familyId, PACING_HOURS)) {
       logger.debug(
         { eventId, familyId },
         'Story follow-up skipped: pacing (a question is waiting or was asked recently)',
       );
+      await logEvaluated(eventId, familyId, 'suppressed_pacing');
       return;
     }
 
@@ -52,8 +75,15 @@ export function createStoryFollowupHook(
 
     if (!result.ask || !result.question) {
       logger.debug(
-        { eventId, familyId, reason: result.reason },
+        { eventId, familyId, outcome: result.outcome, reason: result.reason },
         'Story follow-up declined',
+      );
+      // An ask without a question can't happen by FollowupResult's typing;
+      // record it as the model's decline rather than as 'asked'.
+      await logEvaluated(
+        eventId,
+        familyId,
+        result.outcome === 'asked' ? 'declined' : result.outcome,
       );
       return;
     }

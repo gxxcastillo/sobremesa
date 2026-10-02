@@ -332,6 +332,51 @@ export class ProcessingQueueRepository {
   }
 
   /**
+   * 'processing' rows whose lock is older than `lockedBefore` -- abandoned
+   * by a crashed or hung worker. `dequeueAny` re-leases these on its own once
+   * its lock timeout passes, so a row that stays here keeps getting stuck
+   * (hardening J's operator report).
+   */
+  async findStale(familyId: string, lockedBefore: Date): Promise<QueueItem[]> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('status', 'processing')
+      .lt('locked_at', lockedBefore.toISOString())
+      .order('locked_at', { ascending: true })
+      .limit(100);
+
+    if (error) {
+      throw new Error(`Failed to find stale queue items: ${error.message}`);
+    }
+
+    return (data || []).map((row) => mapRowToCamelCase<QueueItem>(row));
+  }
+
+  /**
+   * The oldest 'queued' row already due (`process_after` passed), or null.
+   * Its age is the backlog signal: a due row that keeps aging means nothing
+   * is draining this family's queue.
+   */
+  async findOldestDue(familyId: string): Promise<QueueItem | null> {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('status', 'queued')
+      .lte('process_after', new Date().toISOString())
+      .order('queued_at', { ascending: true })
+      .limit(1);
+
+    if (error) {
+      throw new Error(`Failed to find oldest queued item: ${error.message}`);
+    }
+
+    return data?.[0] ? mapRowToCamelCase<QueueItem>(data[0]) : null;
+  }
+
+  /**
    * Reset a dead-lettered item back to 'queued' so it will be retried.
    * Only operates on items currently in 'error' status.
    *

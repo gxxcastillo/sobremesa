@@ -811,6 +811,17 @@ describe('MessageProcessor', () => {
       const scribeResult = await scribeProcessor.process(EVENT_ID, FAMILY_ID);
 
       expect(scribeResult.success).toBe(true);
+      // Fire-and-forget: the alert lands once the hook's rejection settles.
+      await vi.waitFor(() =>
+        expect(silentLogger.error).toHaveBeenCalledWith(
+          expect.objectContaining({
+            alert: 'followup_hook_error',
+            eventId: EVENT_ID,
+            familyId: FAMILY_ID,
+          }),
+          'Story follow-up hook failed (non-fatal)',
+        ),
+      );
 
       const ignoreProcessor = createProcessor();
       ignoreProcessor.setRouter(async () => ({

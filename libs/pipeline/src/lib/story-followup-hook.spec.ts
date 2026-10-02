@@ -42,6 +42,19 @@ function createHook() {
   });
 }
 
+function evaluatedEntry(outcome: string, severity = 'info') {
+  return {
+    familyId: FAMILY_ID,
+    eventType: 'followup_evaluated',
+    eventCategory: 'system_event',
+    actor: 'followup',
+    actorType: 'system',
+    conversationEventId: EVENT_ID,
+    eventData: { outcome },
+    severity,
+  };
+}
+
 describe('createStoryFollowupHook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -60,12 +73,15 @@ describe('createStoryFollowupHook', () => {
     );
     expect(mockFollowup.formulate).not.toHaveBeenCalled();
     expect(mockQuestionRepo.createFromGenerated).not.toHaveBeenCalled();
-    expect(mockEventLog.log).not.toHaveBeenCalled();
+    expect(mockEventLog.log).toHaveBeenCalledExactlyOnceWith(
+      evaluatedEntry('suppressed_pacing'),
+    );
   });
 
   it('formulates with the source event id and routed language, and persists nothing on a decline', async () => {
     mockFollowup.formulate.mockResolvedValue({
       ask: false,
+      outcome: 'declined',
       reason: 'no story worth a follow-up',
       namesUsed: [],
     });
@@ -78,12 +94,36 @@ describe('createStoryFollowupHook', () => {
       domainModel: { conversationEventId: EVENT_ID, detectedLanguage: 'es' },
     });
     expect(mockQuestionRepo.createFromGenerated).not.toHaveBeenCalled();
-    expect(mockEventLog.log).not.toHaveBeenCalled();
+    // The outcome category only -- never the model's free-text reason.
+    expect(mockEventLog.log).toHaveBeenCalledExactlyOnceWith(
+      evaluatedEntry('declined'),
+    );
   });
+
+  it.each(['provider_error', 'unparseable_response'])(
+    'records a %s as an error-severity outcome, distinct from a decline',
+    async (outcome) => {
+      mockFollowup.formulate.mockResolvedValue({
+        ask: false,
+        outcome,
+        reason: 'formulation call failed',
+        namesUsed: [],
+      });
+      const hook = createHook();
+
+      await hook(EVENT_ID, FAMILY_ID, 'es');
+
+      expect(mockQuestionRepo.createFromGenerated).not.toHaveBeenCalled();
+      expect(mockEventLog.log).toHaveBeenCalledExactlyOnceWith(
+        evaluatedEntry(outcome, 'error'),
+      );
+    },
+  );
 
   it('persists the generated question with a 24h expiry and logs question_proposed on ask', async () => {
     mockFollowup.formulate.mockResolvedValue({
       ask: true,
+      outcome: 'asked',
       question: generatedQuestion,
       reason: 'names the naming story',
       namesUsed: ['Luciana'],
@@ -130,6 +170,7 @@ describe('createStoryFollowupHook', () => {
   it('treats an ask result missing its question as a decline (defensive, matches FollowupResult typing)', async () => {
     mockFollowup.formulate.mockResolvedValue({
       ask: true,
+      outcome: 'asked',
       question: undefined,
       reason: 'inconsistent result',
       namesUsed: [],
@@ -139,6 +180,8 @@ describe('createStoryFollowupHook', () => {
     await hook(EVENT_ID, FAMILY_ID, 'en');
 
     expect(mockQuestionRepo.createFromGenerated).not.toHaveBeenCalled();
-    expect(mockEventLog.log).not.toHaveBeenCalled();
+    expect(mockEventLog.log).toHaveBeenCalledExactlyOnceWith(
+      evaluatedEntry('declined'),
+    );
   });
 });

@@ -211,7 +211,11 @@ writes claims. Sonnet 5 (`claude-sonnet-5`, pinned for this agent only via
 `modelPin`), no `temperature`, schema embedded in the system prompt. `FollowupAgent` is pure
 decision + generation: it never persists anything or writes to the event log. On `ask`, the hook
 creates the question (`origin: 'followup'`, `source_message_id` the source event,
-`expires_at` 24 hours out) and logs `question_proposed`. Asking it is Facilitator's job (§3.5),
+`expires_at` 24 hours out) and logs `question_proposed`. Every run that proposes nothing logs
+`followup_evaluated` with a stable `outcome` instead: `suppressed_pacing` (the pre-check), `declined`
+(the model's choice), a guard (`no_text`, `empty_question`, `ungrounded_names`), or a failure
+(`provider_error`, `unparseable_response` -- severity `error`, plus an ERROR-level alert), so a provider
+failure is never mistaken for a decision not to ask (§4.7 of `message-lifecycle.md`). Asking it is Facilitator's job (§3.5),
 gated on its own pacing, expiry retirement, quiet-chat check, and conservative-cancellation check
 (§4.4 of `message-lifecycle.md`), and sent verbatim rather than
 through the warmth formula (§3.5, `spec/product/warmth.md`, ADR-033). Nothing requests the

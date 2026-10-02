@@ -1,13 +1,18 @@
-import type { GeneratedQuestion } from '@sobremesa/shared-types';
+import type {
+  FollowupOutcome,
+  GeneratedQuestion,
+} from '@sobremesa/shared-types';
 
 /**
  * Result of `FollowupAgent.formulate()`. Never throws: a provider error, an
  * unparseable response, or a failed grounding guard all come back as
- * `ask: false` with `reason` explaining why, exactly like the model
- * declining on its own.
+ * `ask: false` with `reason` explaining why; `outcome` is what tells a
+ * failure apart from the model declining on its own.
  */
 export interface FollowupResult {
   ask: boolean;
+  /** Never `'suppressed_pacing'` -- that's the hook's pre-check, not the agent. */
+  outcome: Exclude<FollowupOutcome, 'suppressed_pacing'>;
   /** Present when `ask` is true. `origin` is always `'followup'`, ready to
    * hand to `QuestionRepository.createFromGenerated`. */
   question?: GeneratedQuestion;

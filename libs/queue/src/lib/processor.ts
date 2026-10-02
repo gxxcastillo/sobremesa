@@ -18,7 +18,7 @@ import {
   ProcessingQueueRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
-import { createLogger } from '@sobremesa/shared-utils';
+import { createLogger, logAlert } from '@sobremesa/shared-utils';
 import type pino from 'pino';
 
 /**
@@ -1104,7 +1104,9 @@ export class MessageProcessor {
     if (!this.storyFollowupHook) return;
 
     this.storyFollowupHook(eventId, familyId, routedLanguage).catch((error) => {
-      this.logger.warn(
+      logAlert(
+        this.logger,
+        'followup_hook_error',
         { eventId, familyId, error },
         'Story follow-up hook failed (non-fatal)',
       );

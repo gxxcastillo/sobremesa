@@ -14,6 +14,7 @@ Then, from anywhere:
 ```bash
 sbm import <path-to-export> [--source=<format>] --family-name="The Ramirez Family" [options]
 sbm process [options]
+sbm status [--since=24h] [--family-id=...] [--json]   # operator report, read-only
 sbm <command> --help   # full flag list, auto-generated
 ```
 
@@ -40,6 +41,11 @@ image-linker, then Scribe, then Registrar; this is where Intern's real judgment 
 each command's own file (`src/commands/import.ts`, `src/commands/process.ts`) for the full flag
 definitions; both are manual-only, not part of `test:all`/CI, and require `bun nx run db:start`
 first.
+
+`status` is the operator report: per family, failures (dead-lettered/stale/backed-up queue rows,
+failed/unknown sends, follow-up provider failures) kept apart from silence the system chose. It is
+read-only, exits 1 when anything failed, and needs `--allow-remote-db` to read the deployed database.
+See `spec/message-lifecycle.md` §4.7 for what each line means and the recovery steps.
 
 Successor to `scripts/import-fixture.ts`, split into two composable commands so import and process
 run and retry independently, and rebuilt on `buildMessagePipeline` so a process run now runs messages

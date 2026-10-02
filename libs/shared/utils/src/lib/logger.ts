@@ -204,3 +204,34 @@ export async function logBestEffort(
     logger[level]({ ...context, error }, message);
   }
 }
+
+/**
+ * Every failure the pilot operator must notice (hardening J). Silence the
+ * system chose (a follow-up decline, a pacing skip, an expiry) is never an
+ * alert; only work that failed or is stuck is.
+ */
+export type AlertCategory =
+  | 'queue_dead_letter'
+  | 'queue_poll_error'
+  | 'followup_provider_error'
+  | 'followup_unparseable_response'
+  | 'followup_hook_error'
+  | 'send_failed'
+  | 'send_unknown'
+  | 'send_unresolved_skip';
+
+/**
+ * Log an operator alert: always ERROR level, always carrying `alert:
+ * <category>` so a future notification sink can select alerts by that one
+ * field without touching call sites. `context` should identify the affected
+ * work (familyId, eventId, questionId, queue item id) -- never raw family
+ * content.
+ */
+export function logAlert(
+  logger: pino.Logger,
+  category: AlertCategory,
+  context: Record<string, unknown>,
+  message: string,
+): void {
+  logger.error({ ...context, alert: category }, message);
+}

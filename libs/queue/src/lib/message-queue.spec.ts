@@ -140,7 +140,10 @@ describe('MessageQueue', () => {
       expect(mockRepository.complete).not.toHaveBeenCalled();
       expect(silentLogger.warn).toHaveBeenCalledTimes(2);
       expect(silentLogger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ itemId: baseItem.id }),
+        expect.objectContaining({
+          itemId: baseItem.id,
+          alert: 'queue_dead_letter',
+        }),
         'Queue item dead-lettered after max retries',
       );
     });

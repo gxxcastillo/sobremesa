@@ -127,18 +127,61 @@ export class EventLogRepository {
     familyId: string,
     eventType: EventLogType,
     windowStartAt: Date,
+    filter?: { actor?: string; dataEquals?: Record<string, string> },
   ): Promise<number> {
-    const { count, error } = await this.client
+    let query = this.client
       .from(this.tableName)
       .select('*', { count: 'exact', head: true })
       .eq('family_id', familyId)
       .eq('event_type', eventType)
       .gte('created_at', windowStartAt.toISOString());
 
+    if (filter?.actor) {
+      query = query.eq('actor', filter.actor);
+    }
+    for (const [key, value] of Object.entries(filter?.dataEquals ?? {})) {
+      query = query.eq(`event_data->>${key}`, value);
+    }
+
+    const { count, error } = await query;
+
     if (error) {
       throw new Error(`Failed to count events: ${error.message}`);
     }
 
     return count || 0;
+  }
+
+  /**
+   * Events of one type at or after `since`, newest first, optionally only
+   * one severity (e.g. the error-severity `followup_evaluated` rows the
+   * operator report lists).
+   */
+  async findInWindow(
+    familyId: string,
+    eventType: EventLogType,
+    since: Date,
+    options?: { severity?: Severity; limit?: number },
+  ): Promise<EventLogEntry[]> {
+    let query = this.client
+      .from(this.tableName)
+      .select('*')
+      .eq('family_id', familyId)
+      .eq('event_type', eventType)
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(options?.limit ?? 100);
+
+    if (options?.severity) {
+      query = query.eq('severity', options.severity);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`Failed to find events in window: ${error.message}`);
+    }
+
+    return (data || []).map((row) => mapRowToCamelCase<EventLogEntry>(row));
   }
 }

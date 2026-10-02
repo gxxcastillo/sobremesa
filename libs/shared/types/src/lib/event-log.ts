@@ -21,6 +21,9 @@ import type { LanguageCode } from './languages';
  *
  * Question lifecycle:
  * - question_proposed: Scribe proposes a follow-up question
+ * - followup_evaluated: the story follow-up hook ended without proposing a
+ *   question -- pacing skip, decline, guard, or failure (see
+ *   `FollowupEvaluatedEventData`)
  * - question_asked: Facilitator asks a proactive question
  * - question_answered: Historian generates an answer to an @mention
  * - question_responded: Facilitator formats and sends the historian's answer
@@ -56,6 +59,7 @@ export type EventLogType =
   | 'image_linked'
   | 'claim_rejected'
   | 'question_proposed'
+  | 'followup_evaluated'
   | 'question_asked'
   | 'question_answered'
   | 'question_responded'
@@ -147,6 +151,39 @@ export interface InternEvaluatedEventData {
   model?: string;
   /** Tokens used, present only when `method === 'model'`. */
   tokensUsed?: number;
+}
+
+/**
+ * What one story follow-up evaluation concluded, as a stable category safe
+ * to persist (no family content). `declined` is the model's own decision;
+ * `suppressed_pacing` is the hook's pacing pre-check (no model call);
+ * `no_text`, `empty_question` and `ungrounded_names` are deterministic guards
+ * that withheld a question; `provider_error` and `unparseable_response` are
+ * failures -- silence nobody chose (hardening J).
+ */
+export type FollowupOutcome =
+  | 'asked'
+  | 'declined'
+  | 'suppressed_pacing'
+  | 'no_text'
+  | 'empty_question'
+  | 'ungrounded_names'
+  | 'provider_error'
+  | 'unparseable_response';
+
+export const FOLLOWUP_FAILURE_OUTCOMES: readonly FollowupOutcome[] = [
+  'provider_error',
+  'unparseable_response',
+];
+
+/**
+ * `event_data` for a `followup_evaluated` event -- one per hook run that
+ * did not propose a question (a proposal logs `question_proposed`
+ * instead). Deliberately no `reason` text: the model's free-text reason can
+ * quote family content.
+ */
+export interface FollowupEvaluatedEventData {
+  outcome: Exclude<FollowupOutcome, 'asked'>;
 }
 
 /**

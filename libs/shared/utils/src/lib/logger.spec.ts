@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { logBestEffort, resolveSessionLogPath } from './logger';
+import { logAlert, logBestEffort, resolveSessionLogPath } from './logger';
 
 const mockLogger = {
   info: vi.fn(),
@@ -121,5 +121,23 @@ describe('resolveSessionLogPath', () => {
 
     const path = resolveSessionLogPath();
     expect(path).toMatch(/tmp[/\\]session-logs[/\\]session-.*\.db$/);
+  });
+});
+
+describe('logAlert', () => {
+  it('logs at error level with the alert category as a field', () => {
+    mockLogger.error.mockClear();
+
+    logAlert(
+      mockLogger as any,
+      'queue_dead_letter',
+      { familyId: 'f1', eventId: 'e1' },
+      'Queue item dead-lettered',
+    );
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      { familyId: 'f1', eventId: 'e1', alert: 'queue_dead_letter' },
+      'Queue item dead-lettered',
+    );
   });
 });

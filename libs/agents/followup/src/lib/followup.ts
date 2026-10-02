@@ -4,7 +4,11 @@ import {
   type DatabaseClient,
 } from '@sobremesa/database';
 import type { AIProvider } from '@sobremesa/ai-provider';
-import { createLogger, textMentionsName } from '@sobremesa/shared-utils';
+import {
+  createLogger,
+  logAlert,
+  textMentionsName,
+} from '@sobremesa/shared-utils';
 import {
   familyPrimaryLanguage,
   DEFAULT_LANGUAGE,
@@ -125,6 +129,7 @@ export class FollowupAgent {
     if (!message || !message.contentOriginal) {
       return {
         ask: false,
+        outcome: 'no_text',
         reason: 'source message has no text',
         namesUsed: [],
       };
@@ -173,11 +178,18 @@ export class FollowupAgent {
       });
       responseContent = response.content;
     } catch (error) {
-      this.logger.warn(
+      logAlert(
+        this.logger,
+        'followup_provider_error',
         { eventId, familyId, error },
         'Followup formulation call failed',
       );
-      return { ask: false, reason: 'formulation call failed', namesUsed: [] };
+      return {
+        ask: false,
+        outcome: 'provider_error',
+        reason: 'formulation call failed',
+        namesUsed: [],
+      };
     }
 
     let parsed: RawFollowupFormulation;
@@ -186,7 +198,9 @@ export class FollowupAgent {
         JSON.parse(extractJson(responseContent)),
       );
     } catch (error) {
-      this.logger.warn(
+      logAlert(
+        this.logger,
+        'followup_unparseable_response',
         {
           eventId,
           familyId,
@@ -195,11 +209,21 @@ export class FollowupAgent {
         },
         'Followup formulation response failed schema validation',
       );
-      return { ask: false, reason: 'unparseable response', namesUsed: [] };
+      return {
+        ask: false,
+        outcome: 'unparseable_response',
+        reason: 'unparseable response',
+        namesUsed: [],
+      };
     }
 
     if (!parsed.ask) {
-      return { ask: false, reason: parsed.reason, namesUsed: [] };
+      return {
+        ask: false,
+        outcome: 'declined',
+        reason: parsed.reason,
+        namesUsed: [],
+      };
     }
 
     if (!parsed.question.trim()) {
@@ -209,6 +233,7 @@ export class FollowupAgent {
       );
       return {
         ask: false,
+        outcome: 'empty_question',
         reason: 'ask=true with empty question text',
         namesUsed: [],
       };
@@ -229,6 +254,7 @@ export class FollowupAgent {
       );
       return {
         ask: false,
+        outcome: 'ungrounded_names',
         reason: `named entities not shown to the model: ${ungroundedNames.join(', ')}`,
         namesUsed: [],
       };
@@ -244,6 +270,7 @@ export class FollowupAgent {
 
     return {
       ask: true,
+      outcome: 'asked',
       question,
       reason: parsed.reason,
       namesUsed: parsed.names_used,

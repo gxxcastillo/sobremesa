@@ -199,6 +199,51 @@ export class OutboundMessageRepository {
   }
 
   /**
+   * Sends an operator must look at (hardening J): 'failed'/'unknown' rows
+   * created since `since`, plus every 'pending' row claimed before
+   * `pendingBefore` -- a claim that never confirmed (crash mid-send), which
+   * stays ambiguous and is never resent. `content` is left out: the report
+   * locates the work, it doesn't copy family text.
+   */
+  async findNeedingAttention(
+    familyId: string,
+    options: { since: Date; pendingBefore: Date },
+  ): Promise<Omit<OutboundMessage, 'content'>[]> {
+    const columns =
+      'id, family_id, dedup_key, role, chat_id, status, send_attempted_at, external_message_id, conversation_event_id, question_id, attempts, last_error, created_at, sent_at';
+
+    const [settled, stalePending] = await Promise.all([
+      this.client
+        .from(this.tableName)
+        .select(columns)
+        .eq('family_id', familyId)
+        .in('status', ['failed', 'unknown'])
+        .gte('created_at', options.since.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(100),
+      this.client
+        .from(this.tableName)
+        .select(columns)
+        .eq('family_id', familyId)
+        .eq('status', 'pending')
+        .lt('send_attempted_at', options.pendingBefore.toISOString())
+        .order('send_attempted_at', { ascending: true })
+        .limit(100),
+    ]);
+
+    const error = settled.error ?? stalePending.error;
+    if (error) {
+      throw new Error(
+        `Failed to find outbound messages needing attention: ${error.message}`,
+      );
+    }
+
+    return [...(settled.data || []), ...(stalePending.data || [])].map((row) =>
+      mapRowToCamelCase<Omit<OutboundMessage, 'content'>>(row),
+    );
+  }
+
+  /**
    * Find a row by its dedup key within a family.
    */
   async findByDedupKey(

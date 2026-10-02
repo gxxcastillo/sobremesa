@@ -1,5 +1,5 @@
 import { Telegraf, TelegramError } from 'telegraf';
-import { createLogger } from '@sobremesa/shared-utils';
+import { createLogger, logAlert } from '@sobremesa/shared-utils';
 import { OutboundMessageRepository } from '@sobremesa/database';
 import type pino from 'pino';
 import type {
@@ -252,8 +252,15 @@ export class BotManager {
       }
 
       if (claim.outcome === 'ambiguous') {
-        this.logger.error(
-          { chatId, dedupKey: item.dedup.key },
+        logAlert(
+          this.logger,
+          'send_unresolved_skip',
+          {
+            chatId,
+            familyId: item.dedup.familyId,
+            dedupKey: item.dedup.key,
+            questionId: item.dedup.questionId,
+          },
           'A prior send outcome for this dedup key is unresolved; skipping to avoid a possible duplicate',
         );
         return { status: 'unconfirmed' };
@@ -316,8 +323,17 @@ export class BotManager {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      this.logger.error(
-        { chatId, error: errorMessage, notDelivered },
+      logAlert(
+        this.logger,
+        notDelivered ? 'send_failed' : 'send_unknown',
+        {
+          chatId,
+          familyId: item.dedup?.familyId,
+          dedupKey: item.dedup?.key,
+          role: item.role,
+          error: errorMessage,
+          notDelivered,
+        },
         'Failed to send message',
       );
 

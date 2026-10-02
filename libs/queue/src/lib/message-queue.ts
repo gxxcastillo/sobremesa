@@ -6,7 +6,11 @@ import type {
   EnqueueOptions,
 } from '@sobremesa/shared-types';
 import { ProcessingQueueRepository } from '@sobremesa/database';
-import { createLogger, type LoggerOptions } from '@sobremesa/shared-utils';
+import {
+  createLogger,
+  logAlert,
+  type LoggerOptions,
+} from '@sobremesa/shared-utils';
 import type pino from 'pino';
 
 /**
@@ -192,7 +196,9 @@ export class MessageQueue {
     fallback: { level: 'warn' | 'error'; message: string },
   ): void {
     if (newStatus === 'error') {
-      this.logger.error(
+      logAlert(
+        this.logger,
+        'queue_dead_letter',
         {
           itemId: item.id,
           eventId: item.conversationEventId,
@@ -244,7 +250,9 @@ export class MessageQueue {
       this.pollTimeout = setTimeout(() => this.poll(), delay);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      this.logger.error(
+      logAlert(
+        this.logger,
+        'queue_poll_error',
         { err: err.message, stack: err.stack },
         'Error in poll loop',
       );

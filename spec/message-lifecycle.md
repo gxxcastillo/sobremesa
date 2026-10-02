@@ -231,3 +231,61 @@ lands in the gap between checks is never silently overwritten back to `complete`
 API route is guarded the same way — an atomic transition from `failed` to `pending` — so two
 overlapping resume calls (double-click, retry, a second admin) can't both pass the status read and
 both start a second, concurrent `runImportJob` for the same job.
+
+## 4.7 Operator Visibility and Recovery
+
+Silence the system chose and silence caused by a failure are recorded and reported separately, so
+"no question was asked" can always be told apart from "something broke."
+
+**Alerts.** Every failure an operator must notice is logged at ERROR level through `logAlert()`
+(`libs/shared/utils`), with an `alert` field naming its category. A notification sink can later select
+alerts by that one field without changing call sites; today the log stream is the notification.
+
+| `alert`                                                     | Raised when                                                              |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `queue_dead_letter`                                         | A queue item exhausted its retries (`status = 'error'`)                  |
+| `queue_poll_error`                                          | The queue poll loop itself threw                                         |
+| `followup_provider_error` / `followup_unparseable_response` | Follow-up formulation failed (§3.6 of `agent-pipeline.md`)               |
+| `followup_hook_error`                                       | The follow-up hook threw (e.g. a DB write failed)                        |
+| `send_failed` / `send_unknown`                              | A Telegram send failed provably (4xx) / ambiguously (5xx, network)       |
+| `send_unresolved_skip`                                      | A send was skipped because its dedup key's earlier outcome is unresolved |
+
+Ordinary retries (an attempt that will be retried), follow-up declines, pacing skips, grounding
+guards and question expiry are never alerts.
+
+**Durable records.** Queue state lives in `processing_queue`; tracked sends in `outbound_messages`
+(no live call site claims rows yet, §4.3, so until then send failures surface only as alerts). Each
+story follow-up run that proposes nothing writes one `followup_evaluated` event with its `outcome`
+(`suppressed_pacing`, `declined`, `no_text`, `empty_question`, `ungrounded_names`, `provider_error`,
+`unparseable_response`) and severity `error` for the last two; no reason text, since the model's reason
+can quote family content. A proposal logs `question_proposed`; expiry and activity-supersession log
+`question_retired` with `reason`.
+
+**Report.** `sbm status [--since=24h] [--family-id=…] [--json] [--allow-remote-db]`
+(`PipelineHealthService` in `libs/database`) reports, per family, failures — every dead-lettered queue
+row, `processing` rows locked past the 5-minute lease, the oldest due `queued` row once it has waited
+over 15 minutes, `failed`/`unknown` sends in the window plus `pending` claims older than 10 minutes, and
+follow-up failures — separately from chosen silence (follow-up outcome counts, retired questions) and
+activity (proposed/asked). It exits 1 when any failure is reported. Spend usage and stop status are an
+explicit "not implemented" slot until the LLM spend limit lands. The report is read-only.
+
+**Review cadence (pilot).** Run the report at the end of every supervised session and once a day while
+anything runs unattended, and note the result in the pilot observation log.
+
+**Recovery.** Recovery never deletes or rewrites history, and never resends an ambiguous send.
+
+- _Dead-lettered queue item:_ read `last_error`, fix the cause, then requeue it (`POST
+/api/family/:familyId/queue/:itemId/requeue`, or `ProcessingQueueRepository.requeue`), which resets
+  it to `queued` with a fresh `queued_at` -- it runs after anything already queued for that family. Registrar's persist is not fully idempotent on retry
+  (§3.4 of `agent-pipeline.md`), so check whether a partial pass already wrote claims before
+  requeueing.
+- _Stale `processing` row:_ the next dequeue re-leases it after the lease timeout on its own; one that
+  keeps reappearing is crashing or hanging its worker — read the bot logs for that event id.
+- _Backlog:_ for `intent = 'live'`, the poller is not draining — check the bot process is running; for
+  `'import'`, an import drain was abandoned — resume the import job.
+- _`failed` send:_ provably not delivered; the next attempt with the same dedup key reclaims it.
+  _`unknown` or stale `pending` send:_ never resent automatically; check the chat by hand and, if it
+  wasn't delivered, decide manually whether to ask again.
+- _Follow-up failure:_ nothing to repair — no question was written and extraction already succeeded.
+  Repeated failures mean the provider or prompt needs attention; to stop follow-ups, pause the family
+  or drop the `storyFollowup` stage.

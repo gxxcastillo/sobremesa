@@ -11,6 +11,7 @@
  * Usage (once installed globally, see apps/cli/README.md):
  *   sbm import <path-to-export> [--source=<format>] --family-name="..." [options]
  *   sbm process [options]
+ *   sbm status [--since=24h] [--family-id=...] [--json]
  *   sbm <command> --help
  *
  * Or directly, without installing:
@@ -23,6 +24,7 @@
 import { defineCommand, runMain } from 'citty';
 import { importCommand } from './commands/import';
 import { processCommand } from './commands/process';
+import { statusCommand } from './commands/status';
 
 const main = defineCommand({
   meta: {
@@ -33,6 +35,7 @@ const main = defineCommand({
   subCommands: {
     import: importCommand,
     process: processCommand,
+    status: statusCommand,
   },
 });
 

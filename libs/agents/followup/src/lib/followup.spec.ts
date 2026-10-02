@@ -50,6 +50,10 @@ describe('FollowupAgent.formulate', () => {
   let familyRepo: { findById: ReturnType<typeof vi.fn> };
   let recordContext: { build: ReturnType<typeof vi.fn> };
   let provider: { complete: ReturnType<typeof vi.fn> };
+  let logger: Record<
+    'debug' | 'info' | 'warn' | 'error',
+    ReturnType<typeof vi.fn>
+  >;
   let agent: FollowupAgent;
 
   beforeEach(() => {
@@ -64,6 +68,7 @@ describe('FollowupAgent.formulate', () => {
         .mockResolvedValue({ block: '(nothing recorded)', hints: [] }),
     };
     provider = { complete: vi.fn() };
+    logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
     agent = new FollowupAgent({
       provider: provider as any,
@@ -71,6 +76,7 @@ describe('FollowupAgent.formulate', () => {
       eventRepo: eventRepo as any,
       familyRepo: familyRepo as any,
       recordContext: recordContext as any,
+      logger: logger as any,
     });
   });
 
@@ -117,8 +123,10 @@ describe('FollowupAgent.formulate', () => {
       domainModel: { conversationEventId: 'evt-1' },
     });
 
+    expect(logger.error).not.toHaveBeenCalled();
     expect(result.ask).toBe(false);
     expect(result.question).toBeUndefined();
+    expect(result.outcome).toBe('declined');
     expect(result.reason).toBe('Routine logistics, nothing to invite.');
   });
 
@@ -135,6 +143,7 @@ describe('FollowupAgent.formulate', () => {
     });
 
     expect(result.ask).toBe(false);
+    expect(result.outcome).toBe('unparseable_response');
     expect(result.reason).toBe('unparseable response');
   });
 
@@ -149,6 +158,7 @@ describe('FollowupAgent.formulate', () => {
     });
 
     expect(result.ask).toBe(false);
+    expect(result.outcome).toBe('unparseable_response');
     expect(result.reason).toBe('unparseable response');
   });
 
@@ -161,7 +171,16 @@ describe('FollowupAgent.formulate', () => {
     });
 
     expect(result.ask).toBe(false);
+    expect(result.outcome).toBe('provider_error');
     expect(result.reason).toBe('formulation call failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alert: 'followup_provider_error',
+        familyId: 'fam1',
+        eventId: 'evt-1',
+      }),
+      'Followup formulation call failed',
+    );
   });
 
   it('declines a name the model used that was never shown to it', async () => {
