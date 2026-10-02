@@ -35,3 +35,18 @@ jobs:
       - name: Nx Cloud fix CI
         run: bun nx-cloud fix-ci
         if: always()
+
+  # Build each deployable image so a broken Dockerfile or bundle fails CI
+  # instead of the next deploy (the API image went unbuildable for weeks
+  # unnoticed). Deploy only runs after CI succeeds, so this also gates it.
+  docker:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [api, chatbots]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.app }} image
+        run: docker build -f apps/${{ matrix.app }}/Dockerfile .

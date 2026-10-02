@@ -179,7 +179,6 @@ export class BotManager {
     this.processingChats.add(chatId);
 
     try {
-       
       while (true) {
         const queue = this.messageQueues.get(chatId);
         if (!queue || queue.length === 0) {

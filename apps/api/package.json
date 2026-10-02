@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bun run src/main.ts",
     "start": "bun run src/main.ts",
-    "build": "bun build src/main.ts --outdir dist",
+    "build": "bun run build.ts",
     "preview": "bun dist/main.js"
   },
   "dependencies": {

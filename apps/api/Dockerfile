@@ -26,7 +26,7 @@ RUN bun install --frozen-lockfile
 
 # Build the API
 WORKDIR /app/apps/api
-RUN bun build src/main.ts --outdir dist --target bun --loader:.txt=text
+RUN bun run build.ts
 
 # Production stage
 FROM oven/bun:1.3.14-slim AS production
