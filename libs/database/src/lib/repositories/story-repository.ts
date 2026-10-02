@@ -1,5 +1,5 @@
 import type { DatabaseClient } from '../client';
-import type { Story, Confidence, LanguageCode } from '@sobremesa/shared-types';
+import type { Story, LanguageCode } from '@sobremesa/shared-types';
 import {
   BaseRepository,
   mapRowToCamelCase,
@@ -14,6 +14,16 @@ const STORY_MATCH_THRESHOLD = 0.55;
 const TITLE_ANCHOR_THRESHOLD = 0.6;
 const UNTITLED_CONTENT_THRESHOLD = 0.55;
 const THEME_ANCHOR_THRESHOLD = 0.5;
+
+export type StoryContributionOutcome =
+  | 'created'
+  | 'appended'
+  | 'already_applied';
+
+export interface StoryContribution {
+  storyId: string;
+  outcome: StoryContributionOutcome;
+}
 
 /**
  * Repository for coherent narrative fragments.
@@ -113,101 +123,6 @@ export class StoryRepository extends BaseRepository<Story> {
     }
 
     return this.mapFromDb((data as any).stories);
-  }
-
-  /**
-   * Create a story from extracted data.
-   * Note: After creating, use StoryConversationEventsRepository to link conversation events.
-   */
-  async createFromExtracted(
-    familyId: string,
-    story: {
-      title?: string;
-      content: string;
-      themes: string[];
-      timeframe?: string;
-    },
-    conversationEventId: string,
-    language: LanguageCode,
-    sharedBy?: string,
-    extractionVersion?: string,
-  ): Promise<Story> {
-    // Note: Entity associations use join tables (story_people, story_places, story_events)
-    // Note: Source provenance uses story_conversation_events join table
-    const record: Omit<
-      Story,
-      'id' | 'createdAt' | 'updatedAt' | 'conversationEventIds'
-    > = {
-      familyId,
-      title: story.title,
-      contentOriginal: story.content,
-      contentLanguage: language,
-      themes: story.themes,
-      timeframe: story.timeframe,
-      completeness: 'partial',
-      confidence: 'medium' as Confidence,
-      sharedBy,
-      redacted: false,
-      extractionVersion,
-    };
-
-    const created = await this.insert(record);
-
-    // Return with conversationEventIds populated for convenience (caller should also link via join table)
-    return { ...created, conversationEventIds: [conversationEventId] };
-  }
-
-  /**
-   * Append additional content to an existing story.
-   * Note: After appending, use StoryConversationEventsRepository to link the new conversation event.
-   */
-  async appendToStory(
-    familyId: string,
-    storyId: string,
-    additionalContent: string,
-    conversationEventId: string,
-    additionalThemes: string[] = [],
-    timeframe?: string,
-  ): Promise<Story> {
-    // First fetch the existing story
-    const existing = await this.findById(familyId, storyId);
-    if (!existing) {
-      throw new Error(`Story not found: ${storyId}`);
-    }
-
-    const mergedThemes = [
-      ...new Set([...(existing.themes || []), ...additionalThemes]),
-    ];
-
-    // Append content and additive enrichment only (source events tracked via
-    // story_conversation_events join table).
-    const updates = {
-      content_original: existing.contentOriginal + '\n\n' + additionalContent,
-      themes: mergedThemes,
-      timeframe: existing.timeframe || timeframe,
-    };
-
-    const { data, error } = await this.client
-      .from(this.tableName)
-      .update(updates)
-      .eq('family_id', familyId)
-      .eq('id', storyId)
-      .select()
-      .single();
-
-    if (error) {
-      throw new Error(`Failed to append to story: ${error.message}`);
-    }
-
-    const updated = this.mapFromDb(data);
-    // Return with new conversationEventId appended for convenience (caller should also link via join table)
-    return {
-      ...updated,
-      conversationEventIds: [
-        ...(existing.conversationEventIds || []),
-        conversationEventId,
-      ],
-    };
   }
 
   /**
@@ -331,8 +246,15 @@ export class StoryRepository extends BaseRepository<Story> {
   }
 
   /**
-   * Find or create a story, with deduplication.
-   * If matched, appends content via appendToStory().
+   * Record one source message's story contribution: append it to a similar
+   * existing story, or create a new one, and link the message -- atomically,
+   * via the `persist_story_contribution` database function.
+   *
+   * Idempotent per source message: if the message is already linked to a
+   * story (an earlier attempt committed, or the message is being
+   * reprocessed), nothing is written and the outcome is `'already_applied'`.
+   * That check runs before similarity matching too, since a retry would
+   * otherwise match the story its own first attempt created.
    */
   async findOrCreate(
     familyId: string,
@@ -347,7 +269,15 @@ export class StoryRepository extends BaseRepository<Story> {
     language: LanguageCode,
     sharedBy?: string,
     extractionVersion?: string,
-  ): Promise<{ story: Story; created: boolean }> {
+  ): Promise<StoryContribution> {
+    const contributedStoryId = await this.findContributedStoryId(
+      familyId,
+      conversationEventId,
+    );
+    if (contributedStoryId) {
+      return { storyId: contributedStoryId, outcome: 'already_applied' };
+    }
+
     const existing = await this.findSimilar(
       familyId,
       story.title,
@@ -356,28 +286,49 @@ export class StoryRepository extends BaseRepository<Story> {
       story.themes,
     );
 
-    if (existing) {
-      const updated = await this.appendToStory(
-        familyId,
-        existing.id,
-        story.content,
-        conversationEventId,
-        story.themes,
-        story.timeframe,
-      );
-      return { story: updated, created: false };
+    const { data, error } = await this.client
+      .rpc('persist_story_contribution', {
+        p_family_id: familyId,
+        p_conversation_event_id: conversationEventId,
+        p_target_story_id: existing?.id ?? null,
+        p_title: story.title ?? null,
+        p_content: story.content,
+        p_content_language: language,
+        p_themes: story.themes,
+        p_timeframe: story.timeframe ?? null,
+        p_shared_by: sharedBy ?? null,
+        p_extraction_version: extractionVersion ?? null,
+      })
+      .single<{ story_id: string; outcome: StoryContributionOutcome }>();
+
+    if (error) {
+      throw new Error(`Failed to persist story contribution: ${error.message}`);
     }
 
-    const created = await this.createFromExtracted(
-      familyId,
-      story,
-      conversationEventId,
-      language,
-      sharedBy,
-      extractionVersion,
-    );
+    return { storyId: data.story_id, outcome: data.outcome };
+  }
 
-    return { story: created, created: true };
+  /**
+   * The story a source message already contributed to, if any. Includes
+   * redacted stories: a contribution that happened still happened.
+   */
+  async findContributedStoryId(
+    familyId: string,
+    conversationEventId: string,
+  ): Promise<string | null> {
+    const { data, error } = await this.client
+      .from('story_conversation_events')
+      .select('story_id')
+      .eq('family_id', familyId)
+      .eq('conversation_event_id', conversationEventId)
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (error) {
+      throw new Error(`Failed to look up story contribution: ${error.message}`);
+    }
+
+    return data?.[0]?.story_id ?? null;
   }
 
   /**

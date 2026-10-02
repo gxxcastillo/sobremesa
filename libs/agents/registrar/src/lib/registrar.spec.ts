@@ -184,7 +184,6 @@ describe('RegistrarAgent - Image Reference Handling', () => {
       storyPeopleRepo: mockStoryPeopleRepo as any,
       storyPlacesRepo: mockStoryPlacesRepo as any,
       storyEventsRepo: mockStoryEventsRepo as any,
-      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
       eventPeopleRepo: mockEventPeopleRepo as any,
       eventPlacesRepo: mockEventPlacesRepo as any,
       llmQueueRepo: mockLlmQueueRepo as any,
@@ -635,7 +634,6 @@ describe('RegistrarAgent - Event Deduplication', () => {
       storyPeopleRepo: mockStoryPeopleRepo as any,
       storyPlacesRepo: mockStoryPlacesRepo as any,
       storyEventsRepo: mockStoryEventsRepo as any,
-      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
       eventPeopleRepo: mockEventPeopleRepo as any,
       eventPlacesRepo: mockEventPlacesRepo as any,
       llmQueueRepo: mockLlmQueueRepo as any,
@@ -866,7 +864,6 @@ describe('RegistrarAgent - Claim Subject Resolution', () => {
       storyPeopleRepo: mockStoryPeopleRepo as any,
       storyPlacesRepo: mockStoryPlacesRepo as any,
       storyEventsRepo: mockStoryEventsRepo as any,
-      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
       eventPeopleRepo: mockEventPeopleRepo as any,
       eventPlacesRepo: mockEventPlacesRepo as any,
       llmQueueRepo: mockLlmQueueRepo as any,
@@ -1062,7 +1059,6 @@ describe('RegistrarAgent - Speaker-Relative Aliases (F4)', () => {
       storyPeopleRepo: mockStoryPeopleRepo as any,
       storyPlacesRepo: mockStoryPlacesRepo as any,
       storyEventsRepo: mockStoryEventsRepo as any,
-      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
       eventPeopleRepo: mockEventPeopleRepo as any,
       eventPlacesRepo: mockEventPlacesRepo as any,
       llmQueueRepo: mockLlmQueueRepo as any,
@@ -1239,7 +1235,6 @@ describe('RegistrarAgent - Claim Attribution Stamping (provenance-integrity-plan
       storyPeopleRepo: mockStoryPeopleRepo as any,
       storyPlacesRepo: mockStoryPlacesRepo as any,
       storyEventsRepo: mockStoryEventsRepo as any,
-      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
       eventPeopleRepo: mockEventPeopleRepo as any,
       eventPlacesRepo: mockEventPlacesRepo as any,
       llmQueueRepo: mockLlmQueueRepo as any,
@@ -1413,7 +1408,6 @@ describe('RegistrarAgent - Evidence Grounding (provenance-integrity-plan.md #3)'
       storyPeopleRepo: mockStoryPeopleRepo as any,
       storyPlacesRepo: mockStoryPlacesRepo as any,
       storyEventsRepo: mockStoryEventsRepo as any,
-      storyConversationEventsRepo: mockStoryConversationEventsRepo as any,
       eventPeopleRepo: mockEventPeopleRepo as any,
       eventPlacesRepo: mockEventPlacesRepo as any,
       llmQueueRepo: mockLlmQueueRepo as any,
@@ -1557,5 +1551,164 @@ describe('RegistrarAgent - Evidence Grounding (provenance-integrity-plan.md #3)'
     expect(mockClaimRepo.createFromExtracted).toHaveBeenCalledTimes(1);
     const analysis = mockClaimAnalysisRepo.createForClaim.mock.calls[0][2];
     expect(analysis.strengthFactors.grounding).toBe('failed');
+  });
+});
+
+describe('RegistrarAgent - Story persistence on retry (hardening F)', () => {
+  const storyRepo = { findOrCreate: vi.fn() };
+  const storyPeopleRepo = { createMany: vi.fn() };
+  const storyPlacesRepo = { createMany: vi.fn() };
+  const storyEventsRepo = { createMany: vi.fn() };
+  let registrar: RegistrarAgent;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockConversationEventRepo.findById.mockResolvedValue({
+      id: 'event-123',
+      source: 'telegram',
+      actorExternalId: 'ext-test-user',
+      actorDisplayName: 'Test User',
+      actorUsername: 'testuser',
+    });
+    mockPersonRepo.findBestMatch.mockResolvedValue(null);
+    mockPersonRepo.createNew.mockImplementation(async (_familyId, person) => ({
+      id: `person-${person.name.toLowerCase()}`,
+      ...person,
+    }));
+    mockPlaceRepo.findOrCreate.mockImplementation(async (_familyId, place) => ({
+      id: `place-${place.name.toLowerCase()}`,
+      ...place,
+      createdAt: new Date(Date.now() - 10000),
+    }));
+    mockEventLog.log.mockResolvedValue(undefined);
+    storyPeopleRepo.createMany.mockResolvedValue([]);
+    storyPlacesRepo.createMany.mockResolvedValue([]);
+    storyEventsRepo.createMany.mockResolvedValue([]);
+
+    registrar = new RegistrarAgent({
+      personRepo: mockPersonRepo as any,
+      placeRepo: mockPlaceRepo as any,
+      eventRepo: mockEventRepo as any,
+      storyRepo: storyRepo as any,
+      claimRepo: mockClaimRepo as any,
+      claimAnalysisRepo: mockClaimAnalysisRepo as any,
+      relationshipRepo: mockRelationshipRepo as any,
+      eventLog: mockEventLog as any,
+      conversationEventRepo: mockConversationEventRepo as any,
+      identityRepo: mockIdentityRepo as any,
+      imageRepo: mockImageRepo as any,
+      entityMergeRepo: mockEntityMergeRepo as any,
+      claimEntityRepo: mockClaimEntityRepo as any,
+      claimRelationshipRepo: mockClaimRelationshipRepo as any,
+      storyPeopleRepo: storyPeopleRepo as any,
+      storyPlacesRepo: storyPlacesRepo as any,
+      storyEventsRepo: storyEventsRepo as any,
+      eventPeopleRepo: mockEventPeopleRepo as any,
+      eventPlacesRepo: mockEventPlacesRepo as any,
+      llmQueueRepo: mockLlmQueueRepo as any,
+      logger: mockLogger as any,
+    });
+  });
+
+  const storyModel = (): ScribeDomainModel =>
+    ({
+      conversationEventId: 'event-123',
+      familyId: 'family-abc',
+      processedAt: new Date(),
+      people: [{ name: 'Maria', aliases: [], confidence: 'high' }],
+      places: [{ name: 'Havana', confidence: 'high' }],
+      events: [],
+      relationships: [],
+      claims: [],
+      imageReferences: [],
+      detectedLanguage: 'en',
+      story: {
+        title: 'The drive to Havana',
+        content: 'Maria remembered the long drive to Havana.',
+        themes: ['travel'],
+      },
+    }) as unknown as ScribeDomainModel;
+
+  const persistedEvent = () =>
+    mockEventLog.log.mock.calls
+      .map((call) => call[0])
+      .find((entry) => entry.eventType === 'event_processed');
+
+  it('counts a created story and links its people and places', async () => {
+    storyRepo.findOrCreate.mockResolvedValue({
+      storyId: 'story-1',
+      outcome: 'created',
+    });
+
+    await registrar.persist(storyModel(), 'family-abc');
+
+    expect(storyRepo.findOrCreate).toHaveBeenCalledWith(
+      'family-abc',
+      expect.objectContaining({ title: 'The drive to Havana' }),
+      ['person-maria'],
+      'event-123',
+      'en',
+      'Test User',
+      expect.any(String),
+    );
+    expect(storyPeopleRepo.createMany).toHaveBeenCalledWith([
+      { familyId: 'family-abc', storyId: 'story-1', personId: 'person-maria' },
+    ]);
+    expect(storyPlacesRepo.createMany).toHaveBeenCalledWith([
+      { familyId: 'family-abc', storyId: 'story-1', placeId: 'place-havana' },
+    ]);
+    expect(persistedEvent().eventData).toMatchObject({
+      storiesCreated: 1,
+      storiesUpdated: 0,
+    });
+  });
+
+  it('counts an append as an update', async () => {
+    storyRepo.findOrCreate.mockResolvedValue({
+      storyId: 'story-1',
+      outcome: 'appended',
+    });
+
+    await registrar.persist(storyModel(), 'family-abc');
+
+    expect(persistedEvent().eventData).toMatchObject({
+      storiesCreated: 0,
+      storiesUpdated: 1,
+    });
+  });
+
+  it('on a retry the contribution is not counted again, but entity links are re-written', async () => {
+    storyRepo.findOrCreate.mockResolvedValue({
+      storyId: 'story-1',
+      outcome: 'already_applied',
+    });
+
+    await registrar.persist(storyModel(), 'family-abc');
+
+    expect(persistedEvent().eventData).toMatchObject({
+      storiesCreated: 0,
+      storiesUpdated: 0,
+    });
+    // The earlier attempt may have crashed before linking: links are
+    // idempotent upserts, so they are written again in full.
+    expect(storyPeopleRepo.createMany).toHaveBeenCalledWith([
+      { familyId: 'family-abc', storyId: 'story-1', personId: 'person-maria' },
+    ]);
+    expect(storyPlacesRepo.createMany).toHaveBeenCalledWith([
+      { familyId: 'family-abc', storyId: 'story-1', placeId: 'place-havana' },
+    ]);
+  });
+
+  it('a link failure after the story commit fails the persist so the queue retries', async () => {
+    storyRepo.findOrCreate.mockResolvedValue({
+      storyId: 'story-1',
+      outcome: 'created',
+    });
+    storyPeopleRepo.createMany.mockRejectedValueOnce(new Error('link down'));
+
+    await expect(registrar.persist(storyModel(), 'family-abc')).rejects.toThrow(
+      'link down',
+    );
   });
 });

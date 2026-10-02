@@ -45,6 +45,10 @@ soft-redactable, and merge-aware.
 - **Places**, **events**, **relationships**, and image references use controlled vocabularies enforced
   at the extraction/type layer rather than as DB enum/check constraints.
 - Join tables connect stories/events to people, places, source messages, and each other.
+- **Stories** grow by appending. `story_conversation_events` records which messages contributed;
+  a message contributes at most once, and its story text and source link are written together by
+  the `persist_story_contribution` database function (see §3.4 of
+  [`agent-pipeline.md`](./agent-pipeline.md)).
 
 Relationships are intentionally minimal:
 

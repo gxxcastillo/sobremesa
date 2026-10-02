@@ -266,6 +266,42 @@ describe('ImageRepository - addContext', () => {
     );
   });
 
+  it('does not append the same context twice for one message (retry)', async () => {
+    const existingImage = {
+      id: 'img-123',
+      family_id: 'family-abc',
+      analysis: {
+        userContexts: [
+          {
+            text: 'New context about the photo',
+            conversationEventId: 'event-2',
+          },
+        ],
+      },
+      connected_people: [],
+      connected_stories: [],
+      visible_text: [],
+      analyzed: true,
+      redacted: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const findChain = createChainableMock({ data: existingImage, error: null });
+    mockSupabaseClient.from.mockReturnValue(findChain);
+
+    const result = await imageRepo.addContext(
+      'family-abc',
+      'img-123',
+      'New context about the photo',
+      'event-2',
+    );
+
+    expect(findChain.update).not.toHaveBeenCalled();
+    expect(mockSupabaseClient.from).toHaveBeenCalledTimes(1);
+    expect(result.id).toBe('img-123');
+  });
+
   it('should create userContexts array if not exists', async () => {
     const existingImage = {
       id: 'img-123',

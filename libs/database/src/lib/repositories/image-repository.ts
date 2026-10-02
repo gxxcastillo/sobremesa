@@ -270,6 +270,18 @@ export class ImageRepository extends BaseRepository<Image> {
       conversationEventId: string;
     }>;
 
+    // Already recorded by an earlier attempt at this message (a queue
+    // retry): appending again would duplicate it.
+    if (
+      existingContexts.some(
+        (entry) =>
+          entry.conversationEventId === conversationEventId &&
+          entry.text === context,
+      )
+    ) {
+      return image;
+    }
+
     const updatedAnalysis = {
       ...existingAnalysis,
       userContexts: [

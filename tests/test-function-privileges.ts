@@ -45,6 +45,14 @@ const RESTRICTED_FUNCTIONS: Array<{
     name: 'dequeue_processing_queue_item',
     probe: probeDequeueProcessingQueueItem,
   },
+  {
+    name: 'persist_story_contribution',
+    probe: probePersistStoryContribution,
+  },
+  {
+    name: 'update_family_config_path',
+    probe: probeUpdateFamilyConfigPath,
+  },
 ];
 
 async function main(): Promise<void> {
@@ -148,6 +156,105 @@ async function probeDequeueProcessingQueueItem(
     passed: true,
     detail: 'anon call denied with permission-denied',
   };
+}
+
+// persist_story_contribution writes stories for whatever family id it is
+// given -- its grant is what keeps it backend-only. Random ids: the call must
+// be denied before it looks anything up.
+async function probePersistStoryContribution(
+  _adminClient: DatabaseClient,
+  anonClient: DatabaseClient,
+): Promise<ScenarioResult> {
+  const name = 'persist_story_contribution';
+  const { error } = await anonClient.rpc('persist_story_contribution', {
+    p_family_id: crypto.randomUUID(),
+    p_conversation_event_id: crypto.randomUUID(),
+    p_target_story_id: null,
+    p_title: null,
+    p_content: 'privilege probe',
+    p_content_language: 'en',
+    p_themes: [],
+    p_timeframe: null,
+    p_shared_by: null,
+    p_extraction_version: null,
+  });
+
+  if (error?.code !== '42501') {
+    return {
+      name,
+      passed: false,
+      detail: `expected permission-denied (42501), got ${error?.code ?? 'no error'}`,
+    };
+  }
+  return {
+    name,
+    passed: true,
+    detail: 'anon call denied with permission-denied',
+  };
+}
+
+// update_family_config_path rewrites any family's config (e.g. its pause
+// flag) for whatever id it is given -- its grant is its only access control,
+// so this asserts the outcome (config untouched), not just the error code.
+async function probeUpdateFamilyConfigPath(
+  adminClient: DatabaseClient,
+  anonClient: DatabaseClient,
+): Promise<ScenarioResult> {
+  const name = 'update_family_config_path';
+  const { data: family, error: createError } = await adminClient
+    .from('families')
+    .insert({
+      name: 'Function Privilege Probe',
+      chat_source: 'telegram',
+      chat_id: `fn-privilege-probe-${randomSuffix()}`,
+      config: {},
+    })
+    .select('id')
+    .single();
+  if (createError || !family) {
+    throw new Error(`Failed to create probe family: ${createError?.message}`);
+  }
+
+  try {
+    const { error: rpcError } = await anonClient.rpc(
+      'update_family_config_path',
+      {
+        p_family_id: family.id,
+        p_path: ['privilegeProbe'],
+        p_value: true,
+      },
+    );
+
+    const { data: after } = await adminClient
+      .from('families')
+      .select('config')
+      .eq('id', family.id)
+      .single();
+
+    if (after?.config?.privilegeProbe !== undefined) {
+      return {
+        name,
+        passed: false,
+        detail:
+          "anon changed the family's config -- update_family_config_path is exploitable",
+      };
+    }
+    if (rpcError?.code !== '42501') {
+      return {
+        name,
+        passed: false,
+        detail: `config untouched but call did not fail with permission-denied (42501); got ${rpcError?.code ?? 'no error'}`,
+      };
+    }
+    return {
+      name,
+      passed: true,
+      detail:
+        'anon call denied with permission-denied and the config is untouched',
+    };
+  } finally {
+    await adminClient.rpc('delete_family_cascade', { p_family_id: family.id });
+  }
 }
 
 function createDbClients(allowRemoteDb: boolean): {

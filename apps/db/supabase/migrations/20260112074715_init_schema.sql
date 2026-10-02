@@ -1554,6 +1554,105 @@ CREATE INDEX IF NOT EXISTS idx_story_conversation_events_story
 CREATE INDEX IF NOT EXISTS idx_story_conversation_events_event
   ON story_conversation_events(family_id, conversation_event_id);
 
+-- Registrar's story write for one source message: creates a story (target
+-- NULL) or appends to an existing one, and links the message, in one
+-- transaction. A message that is already linked to any story has already
+-- contributed, so a retry or reprocess writes nothing and reports
+-- 'already_applied' -- story text is never appended twice for one message.
+-- The advisory lock serializes concurrent attempts for the same message; the
+-- row lock serializes appends to the same story.
+CREATE OR REPLACE FUNCTION persist_story_contribution(
+  p_family_id UUID,
+  p_conversation_event_id UUID,
+  p_target_story_id UUID,
+  p_title TEXT,
+  p_content TEXT,
+  p_content_language TEXT,
+  p_themes TEXT[],
+  p_timeframe TEXT,
+  p_shared_by TEXT,
+  p_extraction_version TEXT
+)
+RETURNS TABLE (story_id UUID, outcome TEXT)
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_story_id UUID;
+  v_outcome TEXT;
+BEGIN
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(
+      'story_contribution:' || p_family_id::text || ':' || p_conversation_event_id::text,
+      0
+    )
+  );
+
+  SELECT sce.story_id INTO v_story_id
+  FROM public.story_conversation_events sce
+  WHERE sce.family_id = p_family_id
+    AND sce.conversation_event_id = p_conversation_event_id
+  ORDER BY sce.created_at
+  LIMIT 1;
+
+  IF FOUND THEN
+    RETURN QUERY SELECT v_story_id, 'already_applied'::text;
+    RETURN;
+  END IF;
+
+  IF p_target_story_id IS NULL THEN
+    INSERT INTO public.stories (
+      family_id, title, content_original, content_language, themes,
+      timeframe, completeness, confidence, shared_by, redacted,
+      extraction_version
+    ) VALUES (
+      p_family_id, p_title, p_content, p_content_language,
+      COALESCE(p_themes, '{}'), p_timeframe, 'partial', 'medium',
+      p_shared_by, FALSE, p_extraction_version
+    )
+    RETURNING id INTO v_story_id;
+    v_outcome := 'created';
+  ELSE
+    -- Themes: existing first, then new ones, first occurrence wins.
+    UPDATE public.stories s
+    SET content_original = s.content_original || E'\n\n' || p_content,
+        themes = COALESCE(
+          (
+            SELECT array_agg(u.theme ORDER BY u.ord)
+            FROM (
+              SELECT DISTINCT ON (t.theme) t.theme, t.ord
+              FROM unnest(COALESCE(s.themes, '{}') || COALESCE(p_themes, '{}'))
+                WITH ORDINALITY AS t(theme, ord)
+              ORDER BY t.theme, t.ord
+            ) u
+          ),
+          '{}'
+        ),
+        timeframe = COALESCE(s.timeframe, p_timeframe)
+    WHERE s.family_id = p_family_id
+      AND s.id = p_target_story_id
+    RETURNING s.id INTO v_story_id;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Story % not found in family %', p_target_story_id, p_family_id
+        USING ERRCODE = 'no_data_found';
+    END IF;
+    v_outcome := 'appended';
+  END IF;
+
+  INSERT INTO public.story_conversation_events (family_id, story_id, conversation_event_id)
+  VALUES (p_family_id, v_story_id, p_conversation_event_id);
+
+  RETURN QUERY SELECT v_story_id, v_outcome;
+END;
+$$;
+
+COMMENT ON FUNCTION persist_story_contribution IS 'Atomically creates or appends to a story and links its source message; a no-op returning already_applied when the message is already linked to a story.';
+-- Backend-only, revoked from anon/authenticated directly (see delete_family_cascade).
+REVOKE ALL ON FUNCTION persist_story_contribution(UUID, UUID, UUID, TEXT, TEXT, TEXT, TEXT[], TEXT, TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION persist_story_contribution(UUID, UUID, UUID, TEXT, TEXT, TEXT, TEXT[], TEXT, TEXT, TEXT) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION persist_story_contribution(UUID, UUID, UUID, TEXT, TEXT, TEXT, TEXT[], TEXT, TEXT, TEXT) TO service_role;
+
 -- ============================================================================
 -- CLAIMS (Atomic provenance layer)
 -- ============================================================================

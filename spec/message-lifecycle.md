@@ -82,10 +82,11 @@ row the same way before processing it directly, for the same reason.
 Historian-routed messages fall through to Scribe once Historian's own answer succeeds, so user
 questions can contribute facts. A Historian failure is reported as a processing failure immediately,
 before Scribe runs, so the queue retries answering the question rather than re-running Scribe's
-persist path on every failed attempt: Registrar's story-append is not yet idempotent on retry (a
-retried Scribe pass can duplicate story content), so a message is only ever run through Scribe once
-per Historian success; the message still reaches Scribe once Historian succeeds, including on a
-later retry.
+persist path on every failed attempt: Registrar's persist is not fully idempotent on retry (story
+contributions are, but a claim's analysis and links are not repaired; see §3.4 of
+[`agent-pipeline.md`](./agent-pipeline.md)), so a message is only ever run through Scribe once per
+Historian success; the message still reaches Scribe once Historian succeeds, including on a later
+retry.
 
 Dead-lettered items are visible and recoverable per family via the API (§6.3 of
 [`identity-auth-and-interfaces.md`](./identity-auth-and-interfaces.md)): list errored items, or requeue

@@ -21,7 +21,6 @@ import {
   StoryPeopleRepository,
   StoryPlacesRepository,
   StoryEventsRepository,
-  StoryConversationEventsRepository,
   EventPeopleRepository,
   EventPlacesRepository,
   LlmEvaluationQueueRepository,
@@ -208,8 +207,6 @@ export interface RegistrarAgentOptions {
   storyPlacesRepo?: StoryPlacesRepository;
   /** Story-events join table repository (Phase 2) */
   storyEventsRepo?: StoryEventsRepository;
-  /** Story-conversation events join table repository (Phase 2) */
-  storyConversationEventsRepo?: StoryConversationEventsRepository;
   /** Event-people join table repository (Phase 2) */
   eventPeopleRepo?: EventPeopleRepository;
   /** Event-places join table repository (Phase 2) */
@@ -265,7 +262,6 @@ export class RegistrarAgent {
   private storyPeopleRepo: StoryPeopleRepository;
   private storyPlacesRepo: StoryPlacesRepository;
   private storyEventsRepo: StoryEventsRepository;
-  private storyConversationEventsRepo: StoryConversationEventsRepository;
   private eventPeopleRepo: EventPeopleRepository;
   private eventPlacesRepo: EventPlacesRepository;
 
@@ -352,10 +348,6 @@ export class RegistrarAgent {
     this.storyEventsRepo = getRepo(
       options.storyEventsRepo,
       (c) => new StoryEventsRepository(c),
-    );
-    this.storyConversationEventsRepo = getRepo(
-      options.storyConversationEventsRepo,
-      (c) => new StoryConversationEventsRepository(c),
     );
     this.eventPeopleRepo = getRepo(
       options.eventPeopleRepo,
@@ -722,8 +714,9 @@ export class RegistrarAgent {
 
         const allPeopleIds = [...new Set(personIdMap.values())];
 
-        // Find or create story (deduplicates based on title + content + themes)
-        const { story: dbStory, created } = await this.storyRepo.findOrCreate(
+        // Story text + source link commit together, once per source message
+        // (spec §3.4); a retry or reprocess gets 'already_applied'.
+        const { storyId, outcome } = await this.storyRepo.findOrCreate(
           familyId,
           domainModel.story,
           allPeopleIds,
@@ -733,133 +726,40 @@ export class RegistrarAgent {
           extractionVersion,
         );
 
-        if (created) {
-          // New story — link all people, places, events
-          if (allPeopleIds.length > 0) {
-            await this.storyPeopleRepo.createMany(
-              allPeopleIds.map((personId) => ({
-                familyId,
-                storyId: dbStory.id,
-                personId,
-              })),
-            );
-          }
+        // Entity links are separate upserts, so they are written in full on
+        // every outcome -- a retry after a crash here fills in whatever the
+        // earlier attempt didn't get to, and re-linking is a no-op.
+        if (allPeopleIds.length > 0) {
+          await this.storyPeopleRepo.createMany(
+            allPeopleIds.map((personId) => ({ familyId, storyId, personId })),
+          );
+        }
+        const placeIds = [...new Set(placeIdMap.values())];
+        if (placeIds.length > 0) {
+          await this.storyPlacesRepo.createMany(
+            placeIds.map((placeId) => ({ familyId, storyId, placeId })),
+          );
+        }
+        if (createdEventIds.length > 0) {
+          await this.storyEventsRepo.createMany(
+            createdEventIds.map((eventId) => ({ familyId, storyId, eventId })),
+          );
+        }
 
-          const placeIds = [...new Set(placeIdMap.values())];
-          if (placeIds.length > 0) {
-            await this.storyPlacesRepo.createMany(
-              placeIds.map((placeId) => ({
-                familyId,
-                storyId: dbStory.id,
-                placeId,
-              })),
-            );
-          }
-
-          if (createdEventIds.length > 0) {
-            await this.storyEventsRepo.createMany(
-              createdEventIds.map((eventId) => ({
-                familyId,
-                storyId: dbStory.id,
-                eventId,
-              })),
-            );
-          }
-
-          // Link source conversation event
-          await this.storyConversationEventsRepo.create({
-            familyId,
-            storyId: dbStory.id,
-            conversationEventId,
-          });
-
+        if (outcome === 'created') {
           result.storiesCreated++;
-        } else {
-          // Existing story — link any new people not already linked
-          const existingPeopleLinks = await this.storyPeopleRepo.findByStory(
-            familyId,
-            dbStory.id,
-          );
-          const existingPersonIds = new Set(
-            existingPeopleLinks.map((l) => l.personId),
-          );
-          const newPersonIds = allPeopleIds.filter(
-            (id) => !existingPersonIds.has(id),
-          );
-          if (newPersonIds.length > 0) {
-            await this.storyPeopleRepo.createMany(
-              newPersonIds.map((personId) => ({
-                familyId,
-                storyId: dbStory.id,
-                personId,
-              })),
-            );
-          }
-
-          // Link any new places not already linked
-          const existingPlaceLinks = await this.storyPlacesRepo.findByStory(
-            familyId,
-            dbStory.id,
-          );
-          const existingPlaceIds = new Set(
-            existingPlaceLinks.map((l) => l.placeId),
-          );
-          const allPlaceIds = [...new Set(placeIdMap.values())];
-          const newPlaceIds = allPlaceIds.filter(
-            (id) => !existingPlaceIds.has(id),
-          );
-          if (newPlaceIds.length > 0) {
-            await this.storyPlacesRepo.createMany(
-              newPlaceIds.map((placeId) => ({
-                familyId,
-                storyId: dbStory.id,
-                placeId,
-              })),
-            );
-          }
-
-          // Link any new events not already linked
-          if (createdEventIds.length > 0) {
-            const existingEventLinks = await this.storyEventsRepo.findByStory(
-              familyId,
-              dbStory.id,
-            );
-            const existingEventIds = new Set(
-              existingEventLinks.map((l) => l.eventId),
-            );
-            const newEventIds = createdEventIds.filter(
-              (id) => !existingEventIds.has(id),
-            );
-            if (newEventIds.length > 0) {
-              await this.storyEventsRepo.createMany(
-                newEventIds.map((eventId) => ({
-                  familyId,
-                  storyId: dbStory.id,
-                  eventId,
-                })),
-              );
-            }
-          }
-
-          // Always link the new conversation event
-          await this.storyConversationEventsRepo.create({
-            familyId,
-            storyId: dbStory.id,
-            conversationEventId,
-          });
-
-          this.logger.debug(
-            {
-              storyTitle: domainModel.story.title,
-              existingStoryId: dbStory.id,
-              newPeopleLinked: newPersonIds.length,
-              newPlacesLinked: newPlaceIds.length,
-            },
-            'Merged into existing story',
-          );
-
+        } else if (outcome === 'appended') {
           result.storiesUpdated++;
         }
+
+        this.logger.debug(
+          {
+            storyTitle: domainModel.story.title,
+            storyId,
+            outcome,
+          },
+          'Story contribution persisted',
+        );
       }
 
       // 6. Process Claims (with conflict detection and identity resolution)

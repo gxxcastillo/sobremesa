@@ -106,6 +106,21 @@ comparable rather than a confident conflict.
 
 No LLM runs on the hot Registrar path.
 
+A source message contributes to stories at most once. The story write (create a story, or append the
+message's text to a similar existing one, plus the story ↔ source-message link) is one database
+transaction, the service-role-only `persist_story_contribution` function. If the message is already
+linked to a story, it writes nothing and reports `already_applied`; Registrar checks this before
+similarity matching too, so a retry cannot match the story its own earlier attempt created. A
+reprocessed message therefore never re-appends or replaces story text. A per-message advisory lock
+serializes overlapping attempts for the same message. The story's people/place/event links are
+separate upserts, written in full on every attempt, so a retry repairs links a crash left out.
+
+Persist as a whole is not transactional. Other retry behavior: people, places, events and
+relationships are found before being created; event and story links are upserts; an image's user
+context is not appended twice for the same message and text. Known gap: a claim is skipped on retry
+when an exact duplicate already exists, so if an earlier attempt stored the claim but crashed before
+its analysis row, entity links or review-queue entry, those are not filled in later.
+
 Claim attribution is pipeline-stamped, never LLM-derived: `claims.claimed_by` is always the
 deterministic sender name from the source `conversation_events` row, and `claims.claimed_by_identity_id`
 is resolved from that row's `(source, actor_external_id)` via the identity repository — never from

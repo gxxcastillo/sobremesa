@@ -9,7 +9,11 @@ export { PersonRepository, type PersonMatchResult } from './person-repository';
 export { IdentityRepository } from './identity-repository';
 export { PlaceRepository } from './place-repository';
 export { TimelineEventRepository } from './timeline-event-repository';
-export { StoryRepository } from './story-repository';
+export {
+  StoryRepository,
+  type StoryContribution,
+  type StoryContributionOutcome,
+} from './story-repository';
 export { ClaimRepository } from './claim-repository';
 export { ClaimAnalysisRepository } from './claim-analysis-repository';
 export { RelationshipRepository } from './relationship-repository';
