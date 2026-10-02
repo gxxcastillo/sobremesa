@@ -95,9 +95,13 @@ jobs:
 
           echo "Affected: api=$API chatbots=$CHATBOTS db=$DB"
 
+  # The optional `ci` job is skipped on every workflow_run, and GitHub
+  # skips a job whose dependency chain contains a skipped job unless its
+  # condition uses a status function -- so without `!cancelled()` these
+  # deploy jobs never run on their own, whatever check-affected says.
   deploy-api:
     needs: check-affected
-    if: fromJSON(needs.check-affected.outputs.api)
+    if: ${{ !cancelled() && needs.check-affected.result == 'success' && fromJSON(needs.check-affected.outputs.api) }}
     uses: ./.github/workflows/deploy-api.yml
     with:
       run_ci: false
@@ -105,7 +109,7 @@ jobs:
 
   deploy-chatbots:
     needs: check-affected
-    if: fromJSON(needs.check-affected.outputs.chatbots)
+    if: ${{ !cancelled() && needs.check-affected.result == 'success' && fromJSON(needs.check-affected.outputs.chatbots) }}
     uses: ./.github/workflows/deploy-chatbots.yml
     with:
       run_ci: false
@@ -113,7 +117,7 @@ jobs:
 
   deploy-db:
     needs: check-affected
-    if: fromJSON(needs.check-affected.outputs.db)
+    if: ${{ !cancelled() && needs.check-affected.result == 'success' && fromJSON(needs.check-affected.outputs.db) }}
     uses: ./.github/workflows/deploy-supabase.yml
     with:
       run_ci: false
