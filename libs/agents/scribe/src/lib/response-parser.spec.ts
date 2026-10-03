@@ -335,5 +335,47 @@ describe('parseScribeResponse — atomic & recoverable (spec §3.3)', () => {
       expect(model.claims[0].attributedTo).toBeUndefined();
       expect(model.imageReferences[0].contextProvided).toBeUndefined();
     });
+
+    it('maps from_context on people, places, events and stories; null or junk means absent (provenance #4)', () => {
+      const model = parse(
+        JSON.stringify({
+          people: [
+            { name: 'Rosa', from_context: true },
+            { name: 'Ernesto', from_context: null },
+            { name: 'Lucia' },
+          ],
+          places: [{ name: 'Oaxaca', from_context: true }, { name: 'Lima' }],
+          events: [
+            { title: 'Wedding', from_context: true },
+            { title: 'Funeral', from_context: 'yes' },
+          ],
+          stories: [{ content: 'ctx', from_context: true }],
+        }),
+      );
+
+      expect(model.people.map((p) => p.fromContext)).toEqual([
+        true,
+        undefined,
+        undefined,
+      ]);
+      expect(model.places.map((p) => p.fromContext)).toEqual([true, undefined]);
+      // A malformed flag degrades to absent rather than failing the parse.
+      expect(model.events.map((e) => e.fromContext)).toEqual([true, undefined]);
+      expect(model.story?.fromContext).toBe(true);
+    });
+
+    it('prefers a current-message story over a from_context one (provenance #4)', () => {
+      const model = parse(
+        JSON.stringify({
+          stories: [
+            { content: 'from the context', from_context: true },
+            { content: 'asserted now' },
+          ],
+        }),
+      );
+
+      expect(model.story?.content).toBe('asserted now');
+      expect(model.story?.fromContext).toBeUndefined();
+    });
   });
 });

@@ -18,6 +18,10 @@ import type { LanguageCode } from './languages';
  * - event_redacted: Event redacted for privacy
  * - event_unredacted: Event redaction reversed
  * - image_linked: Image linked to a conversation event
+ * - claim_rejected: Registrar rejected a claim (e.g. context bleed)
+ * - entity_enriched: Registrar changed fields on an existing entity (see
+ *   `EntityEnrichedEventData`) -- the provenance trail for writes that have
+ *   no backing claim
  *
  * Question lifecycle:
  * - question_proposed: Scribe proposes a follow-up question
@@ -58,6 +62,7 @@ export type EventLogType =
   | 'event_unredacted'
   | 'image_linked'
   | 'claim_rejected'
+  | 'entity_enriched'
   | 'question_proposed'
   | 'followup_evaluated'
   | 'question_asked'
@@ -184,6 +189,21 @@ export const FOLLOWUP_FAILURE_OUTCOMES: readonly FollowupOutcome[] = [
  */
 export interface FollowupEvaluatedEventData {
   outcome: Exclude<FollowupOutcome, 'asked'>;
+}
+
+/**
+ * `event_data` for an `entity_enriched` event -- one per Registrar write
+ * that changes fields on an existing entity. Enrichments have no backing
+ * claim, so this entry (with the entry's `conversationEventId`, the source
+ * message) is their only provenance. Field names only, never values: values
+ * are family content.
+ */
+export interface EntityEnrichedEventData {
+  entityType: 'person' | 'event' | 'story';
+  entityId: string;
+  fields: string[];
+  /** The extraction marked the entity as re-extracted from context. */
+  fromContext: boolean;
 }
 
 /**

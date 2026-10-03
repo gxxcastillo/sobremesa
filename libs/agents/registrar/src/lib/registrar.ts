@@ -1,7 +1,9 @@
 import type {
+  EntityEnrichedEventData,
   ExtractedPerson,
   Person,
   ScribeDomainModel,
+  TimelineEvent,
 } from '@sobremesa/shared-types';
 import {
   PersonRepository,
@@ -380,6 +382,38 @@ export class RegistrarAgent {
   }
 
   /**
+   * Audit an enrichment of an existing entity (spec §3.4). Enrichments have
+   * no backing claim, so this `entity_enriched` entry -- tied to the source
+   * message -- is their provenance. No-op when no fields changed.
+   */
+  private async logEnrichment(
+    familyId: string,
+    conversationEventId: string,
+    entityType: EntityEnrichedEventData['entityType'],
+    entityId: string,
+    fields: string[],
+    fromContext: boolean | undefined,
+  ): Promise<void> {
+    if (fields.length === 0) return;
+    const eventData: EntityEnrichedEventData = {
+      entityType,
+      entityId,
+      fields,
+      fromContext: fromContext === true,
+    };
+    await this.eventLog.log({
+      familyId,
+      eventType: 'entity_enriched',
+      eventCategory: 'system_event',
+      actor: 'registrar',
+      actorType: 'system',
+      conversationEventId,
+      eventData: { ...eventData },
+      severity: 'info',
+    });
+  }
+
+  /**
    * Persist a domain model to the database.
    * This is the RegistrarProcessor function for MessageProcessor.
    *
@@ -501,13 +535,15 @@ export class RegistrarAgent {
 
           // Add suggested aliases
           let personUpdated = false;
-          if (
-            matchResult.suggestedAliases &&
-            matchResult.suggestedAliases.length > 0
-          ) {
+          // Only aliases the person doesn't already have count as a change, so a
+          // retry/reprocess doesn't re-write them or re-log an enrichment.
+          const newAliases = (matchResult.suggestedAliases ?? []).filter(
+            (alias) => !existingPerson.aliases.includes(alias),
+          );
+          if (newAliases.length > 0) {
             await this.personRepo.updateAliases(familyId, existingPerson.id, [
               ...existingPerson.aliases,
-              ...matchResult.suggestedAliases,
+              ...newAliases,
             ]);
             personUpdated = true;
 
@@ -515,11 +551,14 @@ export class RegistrarAgent {
               {
                 familyId,
                 personId: existingPerson.id,
-                newAliases: matchResult.suggestedAliases,
+                newAliases,
               },
               'Added aliases to existing person',
             );
           }
+
+          const enrichedFields: string[] = [];
+          if (personUpdated) enrichedFields.push('aliases');
 
           // Enrich biographical data
           const bioEnrichments: Partial<Person> = {};
@@ -535,6 +574,7 @@ export class RegistrarAgent {
               bioEnrichments,
             );
             personUpdated = true;
+            enrichedFields.push(...Object.keys(bioEnrichments));
 
             this.logger.debug(
               {
@@ -546,6 +586,15 @@ export class RegistrarAgent {
             );
           }
 
+          await this.logEnrichment(
+            familyId,
+            conversationEventId,
+            'person',
+            existingPerson.id,
+            enrichedFields,
+            person.fromContext,
+          );
+
           if (personUpdated) {
             result.peopleUpdated++;
           }
@@ -554,6 +603,14 @@ export class RegistrarAgent {
           for (const alias of person.aliases) {
             personIdMap.set(alias, existingPerson.id);
           }
+        } else if (person.fromContext) {
+          // Re-extracted from context but no confident match: only existing
+          // records may be enriched this way, and an unmatched one must not
+          // become a record or anchor claims (spec §3.4).
+          this.logger.info(
+            { familyId, conversationEventId, personName: person.name },
+            'Dropping from_context person with no confident match',
+          );
         } else {
           // No match found - create new person without additional matching
           // Note: We use createNew() instead of findOrCreate() because EntityMatcher
@@ -585,6 +642,22 @@ export class RegistrarAgent {
 
       // 2. Process Places
       for (const place of domainModel.places) {
+        if (place.fromContext) {
+          // Match-and-enrich only; a place has nothing to enrich.
+          const existingPlace = await this.placeRepo.findExisting(
+            familyId,
+            place,
+          );
+          if (existingPlace) {
+            placeIdMap.set(place.name, existingPlace.id);
+          } else {
+            this.logger.info(
+              { familyId, conversationEventId, placeName: place.name },
+              'Dropping from_context place with no confident match',
+            );
+          }
+          continue;
+        }
         const dbPlace = await this.placeRepo.findOrCreate(
           familyId,
           place,
@@ -611,15 +684,49 @@ export class RegistrarAgent {
           .map((name) => personIdMap.get(name))
           .filter((id): id is string => !!id);
 
-        // Find or create event (deduplicates based on title + people + date)
-        const { event: dbEvent, created } = await this.eventRepo.findOrCreate(
+        // Find or create event (deduplicates based on title + people + date).
+        // A from_context event may only enrich an existing one (spec §3.4).
+        let dbEvent: TimelineEvent;
+        let created: boolean;
+        let enrichedFields: string[];
+        if (event.fromContext) {
+          const matched = await this.eventRepo.matchAndEnrich(
+            familyId,
+            event,
+            peopleIds,
+            placeId,
+          );
+          if (!matched) {
+            this.logger.info(
+              { familyId, conversationEventId, eventTitle: event.title },
+              'Dropping from_context event with no confident match',
+            );
+            continue;
+          }
+          ({ event: dbEvent, enrichedFields } = matched);
+          created = false;
+        } else {
+          ({
+            event: dbEvent,
+            created,
+            enrichedFields,
+          } = await this.eventRepo.findOrCreate(
+            familyId,
+            event,
+            peopleIds,
+            placeId,
+            conversationEventId,
+            claimedBy,
+            extractionVersion,
+          ));
+        }
+        await this.logEnrichment(
           familyId,
-          event,
-          peopleIds,
-          placeId,
           conversationEventId,
-          claimedBy,
-          extractionVersion,
+          'event',
+          dbEvent.id,
+          enrichedFields,
+          event.fromContext,
         );
         createdEventIds.push(dbEvent.id);
         eventIdMap.set(event.title, dbEvent.id);
@@ -705,7 +812,15 @@ export class RegistrarAgent {
       }
 
       // 5. Process Story (if present) — with deduplication
-      if (domainModel.story) {
+      if (domainModel.story?.fromContext) {
+        // A story is the current message's narrative, so one re-extracted
+        // from context is content already stored; appending it would
+        // duplicate text under the wrong source message.
+        this.logger.info(
+          { familyId, conversationEventId },
+          'Dropping from_context story',
+        );
+      } else if (domainModel.story) {
         // Fetch event to get original language if detected language not available
         const event = domainModel.detectedLanguage
           ? null
@@ -753,6 +868,14 @@ export class RegistrarAgent {
           result.storiesCreated++;
         } else if (outcome === 'appended') {
           result.storiesUpdated++;
+          await this.logEnrichment(
+            familyId,
+            conversationEventId,
+            'story',
+            storyId,
+            ['content'],
+            false,
+          );
         }
 
         this.logger.debug(

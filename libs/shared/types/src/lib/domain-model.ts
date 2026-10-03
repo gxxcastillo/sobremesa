@@ -9,6 +9,12 @@ export interface ExtractedPerson {
   aliases: string[];
   birthYear?: number;
   deathYear?: number;
+  /**
+   * Re-extracted from context rather than newly asserted by the current
+   * message. The Registrar only matches-and-enriches existing records for
+   * these; it never creates one (provenance-integrity-plan.md #4).
+   */
+  fromContext?: boolean;
   confidence: Confidence;
 }
 
@@ -18,6 +24,12 @@ export interface ExtractedPlace {
   city?: string;
   region?: string;
   country?: string;
+  /**
+   * Re-extracted from context rather than newly asserted by the current
+   * message. The Registrar only matches-and-enriches existing records for
+   * these; it never creates one (provenance-integrity-plan.md #4).
+   */
+  fromContext?: boolean;
   confidence: Confidence;
 }
 
@@ -28,6 +40,12 @@ export interface ExtractedEvent {
   dateYear?: number;
   peopleInvolved: string[];
   placeName?: string;
+  /**
+   * Re-extracted from context rather than newly asserted by the current
+   * message. The Registrar only matches-and-enriches existing records for
+   * these; it never creates one (provenance-integrity-plan.md #4).
+   */
+  fromContext?: boolean;
   confidence: Confidence;
 }
 
@@ -153,6 +171,8 @@ export interface ScribeDomainModel {
     content: string;
     themes: string[];
     timeframe?: string;
+    /** See `ExtractedPerson.fromContext`. */
+    fromContext?: boolean;
   };
 
   // Image references detected

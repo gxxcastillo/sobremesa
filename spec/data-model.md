@@ -132,6 +132,9 @@ Imports:
   once per call for every ingress (live chat, Studio import, CLI import) alike. It is derived
   processing history, never read back as pipeline input, and is the only durable record of Intern's
   per-message decision -- there is no separate decision table.
+  `entity_enriched` records each Registrar write that changes fields on an existing person, event or
+  story (source message, entity id, changed field names, whether the extraction was marked
+  `from_context`) — the only provenance for enrichments, which have no backing claim.
   `followup_evaluated` likewise records each story follow-up run that proposed nothing, as an
   `outcome` category with no reason text (§4.7 of `message-lifecycle.md`).
 - `integrity_checkpoints`: schema support for tamper-evident checkpoints; no application code writes

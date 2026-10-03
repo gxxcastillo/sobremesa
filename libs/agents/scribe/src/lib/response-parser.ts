@@ -226,6 +226,7 @@ export function parseScribeResponse(
     aliases: p.aliases,
     birthYear: p.birth_year,
     deathYear: p.death_year,
+    fromContext: p.from_context,
     confidence: 'medium',
   }));
 
@@ -236,6 +237,7 @@ export function parseScribeResponse(
     city: p.city,
     region: p.region,
     country: p.country,
+    fromContext: p.from_context,
     confidence: 'medium',
   }));
 
@@ -249,6 +251,7 @@ export function parseScribeResponse(
       dateYear: parsedDate.dateYear,
       peopleInvolved: e.people_involved,
       placeName: e.place,
+      fromContext: e.from_context,
       confidence: 'medium',
     };
   });
@@ -275,14 +278,16 @@ export function parseScribeResponse(
     referencedPlaces: c.referenced_places,
   }));
 
-  // Parse story (take first one if multiple)
-  const storyData = raw.stories[0];
+  // Parse story (take first one if multiple, preferring one asserted by the
+  // current message over a context re-extraction)
+  const storyData = raw.stories.find((s) => !s.from_context) ?? raw.stories[0];
   const story = storyData
     ? {
         title: storyData.title,
         content: storyData.content,
         themes: storyData.themes,
         timeframe: storyData.timeframe,
+        fromContext: storyData.from_context,
       }
     : undefined;
 

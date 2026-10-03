@@ -12,15 +12,18 @@ const mockPersonRepo = {
   createNew: vi.fn(),
   updateAliases: vi.fn(),
   findById: vi.fn(),
+  update: vi.fn(),
 };
 
 const mockPlaceRepo = {
   findOrCreate: vi.fn(),
+  findExisting: vi.fn(),
 };
 
 const mockEventRepo = {
   createFromExtracted: vi.fn(),
   findOrCreate: vi.fn(),
+  matchAndEnrich: vi.fn(),
 };
 
 const mockStoryRepo = {
@@ -690,6 +693,7 @@ describe('RegistrarAgent - Event Deduplication', () => {
     mockEventRepo.findOrCreate.mockResolvedValue({
       event: { id: 'new-event-1', title: 'Leaving Cuba' },
       created: true,
+      enrichedFields: [],
     });
 
     const domainModel = createEventDomainModel();
@@ -724,6 +728,7 @@ describe('RegistrarAgent - Event Deduplication', () => {
     mockEventRepo.findOrCreate.mockResolvedValue({
       event: { id: 'existing-event-1', title: 'Leaving Cuba' },
       created: false,
+      enrichedFields: [],
     });
 
     // Maria is already linked to the event
@@ -761,6 +766,7 @@ describe('RegistrarAgent - Event Deduplication', () => {
     mockEventRepo.findOrCreate.mockResolvedValue({
       event: { id: 'existing-event-1', title: 'Leaving Cuba' },
       created: false,
+      enrichedFields: [],
     });
 
     // Both Maria and Roberto are already linked
@@ -796,6 +802,7 @@ describe('RegistrarAgent - Event Deduplication', () => {
     mockEventRepo.findOrCreate.mockResolvedValue({
       event: { id: 'new-event-1', title: 'Hurricane' },
       created: true,
+      enrichedFields: [],
     });
 
     const domainModel = createEventDomainModel();
@@ -863,6 +870,7 @@ describe('RegistrarAgent - Claim Subject Resolution', () => {
         title: event.title,
       },
       created: true,
+      enrichedFields: [],
     }));
     mockEventPeopleRepo.createMany.mockResolvedValue([]);
     mockEventLog.log.mockResolvedValue(undefined);
@@ -1731,5 +1739,397 @@ describe('RegistrarAgent - Story persistence on retry (hardening F)', () => {
     await expect(registrar.persist(storyModel(), 'family-abc')).rejects.toThrow(
       'link down',
     );
+  });
+});
+
+describe('RegistrarAgent - from_context entities (provenance-integrity-plan.md #4)', () => {
+  const storyRepo = { findOrCreate: vi.fn() };
+  let registrar: RegistrarAgent;
+
+  const EXISTING_PERSON = {
+    id: 'person-rosa',
+    name: 'Rosa Hernandez',
+    aliases: [],
+    birthYear: undefined,
+    deathYear: undefined,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockConversationEventRepo.findById.mockResolvedValue({
+      id: 'event-123',
+      source: 'telegram',
+      actorExternalId: 'ext-minnie',
+      actorDisplayName: 'Minnie',
+      actorUsername: 'minnie',
+    });
+    mockPersonRepo.findBestMatch.mockResolvedValue(null);
+    mockPersonRepo.createNew.mockImplementation(async (_familyId, person) => ({
+      id: `person-${person.name.toLowerCase().replace(/\s+/g, '-')}`,
+      ...person,
+    }));
+    mockPersonRepo.findById.mockResolvedValue(EXISTING_PERSON);
+    mockPersonRepo.update.mockResolvedValue(EXISTING_PERSON);
+    mockPlaceRepo.findOrCreate.mockImplementation(async (_familyId, place) => ({
+      id: `place-${place.name.toLowerCase()}`,
+      ...place,
+      createdAt: new Date(Date.now() - 10000),
+    }));
+    mockPlaceRepo.findExisting.mockResolvedValue(null);
+    mockEventRepo.matchAndEnrich.mockResolvedValue(null);
+    mockEventRepo.findOrCreate.mockImplementation(async (_familyId, event) => ({
+      event: { id: `event-${event.title.toLowerCase()}`, title: event.title },
+      created: true,
+      enrichedFields: [],
+    }));
+    mockEventPeopleRepo.createMany.mockResolvedValue([]);
+    mockEventPeopleRepo.findByEvent.mockResolvedValue([]);
+    mockEventLog.log.mockResolvedValue(undefined);
+
+    registrar = new RegistrarAgent({
+      personRepo: mockPersonRepo as any,
+      placeRepo: mockPlaceRepo as any,
+      eventRepo: mockEventRepo as any,
+      storyRepo: storyRepo as any,
+      claimRepo: mockClaimRepo as any,
+      claimAnalysisRepo: mockClaimAnalysisRepo as any,
+      relationshipRepo: mockRelationshipRepo as any,
+      eventLog: mockEventLog as any,
+      conversationEventRepo: mockConversationEventRepo as any,
+      identityRepo: mockIdentityRepo as any,
+      imageRepo: mockImageRepo as any,
+      entityMergeRepo: mockEntityMergeRepo as any,
+      claimEntityRepo: mockClaimEntityRepo as any,
+      claimRelationshipRepo: mockClaimRelationshipRepo as any,
+      storyPeopleRepo: mockStoryPeopleRepo as any,
+      storyPlacesRepo: mockStoryPlacesRepo as any,
+      storyEventsRepo: mockStoryEventsRepo as any,
+      eventPeopleRepo: mockEventPeopleRepo as any,
+      eventPlacesRepo: mockEventPlacesRepo as any,
+      llmQueueRepo: mockLlmQueueRepo as any,
+      logger: mockLogger as any,
+    });
+  });
+
+  const model = (overrides: Partial<ScribeDomainModel>): ScribeDomainModel => ({
+    conversationEventId: 'event-123',
+    familyId: 'family-abc',
+    processedAt: new Date(),
+    people: [],
+    places: [],
+    events: [],
+    relationships: [],
+    claims: [],
+    imageReferences: [],
+    detectedLanguage: 'en',
+    ...overrides,
+  });
+
+  const enrichedLogs = () =>
+    mockEventLog.log.mock.calls
+      .map((call) => call[0])
+      .filter((entry) => entry.eventType === 'entity_enriched');
+
+  describe('people', () => {
+    it('drops an unmatched from_context person: no record, no claim anchor', async () => {
+      await registrar.persist(
+        model({
+          people: [
+            {
+              name: 'Phantom Person',
+              aliases: [],
+              fromContext: true,
+              confidence: 'medium',
+            },
+          ],
+        }),
+        'family-abc',
+      );
+
+      expect(mockPersonRepo.createNew).not.toHaveBeenCalled();
+      expect(enrichedLogs()).toEqual([]);
+    });
+
+    it('still creates an unmatched person that is not from_context', async () => {
+      await registrar.persist(
+        model({
+          people: [
+            { name: 'Phantom Person', aliases: [], confidence: 'medium' },
+          ],
+        }),
+        'family-abc',
+      );
+
+      expect(mockPersonRepo.createNew).toHaveBeenCalledTimes(1);
+    });
+
+    it('enriches a matched from_context person and audits it with the source message', async () => {
+      mockPersonRepo.findBestMatch.mockResolvedValue({
+        person: EXISTING_PERSON,
+        confidence: 0.95,
+        matchReason: 'exact',
+      });
+
+      await registrar.persist(
+        model({
+          people: [
+            {
+              name: 'Rosa Hernandez',
+              aliases: [],
+              birthYear: 1931,
+              fromContext: true,
+              confidence: 'medium',
+            },
+          ],
+        }),
+        'family-abc',
+      );
+
+      expect(mockPersonRepo.createNew).not.toHaveBeenCalled();
+      expect(mockPersonRepo.update).toHaveBeenCalledWith(
+        'family-abc',
+        'person-rosa',
+        { birthYear: 1931 },
+      );
+      expect(enrichedLogs()).toEqual([
+        expect.objectContaining({
+          familyId: 'family-abc',
+          conversationEventId: 'event-123',
+          eventData: {
+            entityType: 'person',
+            entityId: 'person-rosa',
+            fields: ['birthYear'],
+            fromContext: true,
+          },
+        }),
+      ]);
+    });
+
+    it('audits bio enrichment of an ordinary matched person too, flagged not from_context', async () => {
+      mockPersonRepo.findBestMatch.mockResolvedValue({
+        person: EXISTING_PERSON,
+        confidence: 0.95,
+        matchReason: 'exact',
+      });
+
+      await registrar.persist(
+        model({
+          people: [
+            {
+              name: 'Rosa Hernandez',
+              aliases: [],
+              deathYear: 2001,
+              confidence: 'medium',
+            },
+          ],
+        }),
+        'family-abc',
+      );
+
+      expect(enrichedLogs()).toEqual([
+        expect.objectContaining({
+          eventData: expect.objectContaining({
+            fields: ['deathYear'],
+            fromContext: false,
+          }),
+        }),
+      ]);
+    });
+
+    it('writes no audit entry when a match changes nothing', async () => {
+      mockPersonRepo.findBestMatch.mockResolvedValue({
+        person: EXISTING_PERSON,
+        confidence: 0.95,
+        matchReason: 'exact',
+      });
+
+      await registrar.persist(
+        model({
+          people: [
+            {
+              name: 'Rosa Hernandez',
+              aliases: [],
+              fromContext: true,
+              confidence: 'medium',
+            },
+          ],
+        }),
+        'family-abc',
+      );
+
+      expect(mockPersonRepo.update).not.toHaveBeenCalled();
+      expect(enrichedLogs()).toEqual([]);
+    });
+  });
+
+  describe('places', () => {
+    it('drops an unmatched from_context place', async () => {
+      await registrar.persist(
+        model({
+          places: [
+            { name: 'Atlantis', fromContext: true, confidence: 'medium' },
+          ],
+        }),
+        'family-abc',
+      );
+
+      expect(mockPlaceRepo.findExisting).toHaveBeenCalledTimes(1);
+      expect(mockPlaceRepo.findOrCreate).not.toHaveBeenCalled();
+    });
+
+    it('resolves a matched from_context place without creating', async () => {
+      mockPlaceRepo.findExisting.mockResolvedValue({
+        id: 'place-oaxaca',
+        name: 'Oaxaca',
+      });
+      mockEventRepo.findOrCreate.mockImplementation(async () => ({
+        event: { id: 'event-new', title: 'Wedding' },
+        created: true,
+        enrichedFields: [],
+      }));
+
+      await registrar.persist(
+        model({
+          places: [{ name: 'Oaxaca', fromContext: true, confidence: 'medium' }],
+          events: [
+            {
+              title: 'Wedding',
+              peopleInvolved: [],
+              placeName: 'Oaxaca',
+              confidence: 'medium',
+            },
+          ],
+        }),
+        'family-abc',
+      );
+
+      expect(mockPlaceRepo.findOrCreate).not.toHaveBeenCalled();
+      expect(mockEventRepo.findOrCreate).toHaveBeenCalledWith(
+        'family-abc',
+        expect.anything(),
+        [],
+        'place-oaxaca',
+        'event-123',
+        'Minnie',
+        expect.any(String),
+      );
+    });
+  });
+
+  describe('events', () => {
+    const contextEvent = {
+      title: 'Leaving Cuba',
+      dateYear: 1959,
+      peopleInvolved: [],
+      fromContext: true,
+      confidence: 'medium' as const,
+    };
+
+    it('drops an unmatched from_context event: never created', async () => {
+      await registrar.persist(model({ events: [contextEvent] }), 'family-abc');
+
+      expect(mockEventRepo.matchAndEnrich).toHaveBeenCalledTimes(1);
+      expect(mockEventRepo.findOrCreate).not.toHaveBeenCalled();
+      expect(mockEventRepo.createFromExtracted).not.toHaveBeenCalled();
+      expect(enrichedLogs()).toEqual([]);
+    });
+
+    it('enriches a matched from_context event and audits the changed fields', async () => {
+      mockEventRepo.matchAndEnrich.mockResolvedValue({
+        event: { id: 'event-existing', title: 'Leaving Cuba' },
+        enrichedFields: ['dateYear'],
+      });
+
+      await registrar.persist(model({ events: [contextEvent] }), 'family-abc');
+
+      expect(mockEventRepo.findOrCreate).not.toHaveBeenCalled();
+      expect(enrichedLogs()).toEqual([
+        expect.objectContaining({
+          conversationEventId: 'event-123',
+          eventData: {
+            entityType: 'event',
+            entityId: 'event-existing',
+            fields: ['dateYear'],
+            fromContext: true,
+          },
+        }),
+      ]);
+    });
+
+    it('audits enrichment reported by findOrCreate for an ordinary event', async () => {
+      mockEventRepo.findOrCreate.mockResolvedValue({
+        event: { id: 'event-existing', title: 'Leaving Cuba' },
+        created: false,
+        enrichedFields: ['placeId'],
+      });
+
+      await registrar.persist(
+        model({ events: [{ ...contextEvent, fromContext: false }] }),
+        'family-abc',
+      );
+
+      expect(enrichedLogs()).toEqual([
+        expect.objectContaining({
+          eventData: expect.objectContaining({
+            entityType: 'event',
+            fields: ['placeId'],
+            fromContext: false,
+          }),
+        }),
+      ]);
+    });
+  });
+
+  describe('stories', () => {
+    const story = {
+      title: 'The crossing',
+      content: 'They crossed at night.',
+      themes: ['migration'],
+    };
+
+    it('drops a from_context story: nothing appended or created', async () => {
+      await registrar.persist(
+        model({ story: { ...story, fromContext: true } }),
+        'family-abc',
+      );
+
+      expect(storyRepo.findOrCreate).not.toHaveBeenCalled();
+    });
+
+    it('audits an append to an existing story', async () => {
+      storyRepo.findOrCreate.mockResolvedValue({
+        storyId: 'story-1',
+        outcome: 'appended',
+      });
+      mockStoryPeopleRepo.createMany = vi.fn();
+      mockStoryPlacesRepo.createMany = vi.fn();
+      mockStoryEventsRepo.createMany = vi.fn();
+
+      await registrar.persist(model({ story }), 'family-abc');
+
+      expect(enrichedLogs()).toEqual([
+        expect.objectContaining({
+          conversationEventId: 'event-123',
+          eventData: {
+            entityType: 'story',
+            entityId: 'story-1',
+            fields: ['content'],
+            fromContext: false,
+          },
+        }),
+      ]);
+    });
+
+    it('does not audit a newly created story', async () => {
+      storyRepo.findOrCreate.mockResolvedValue({
+        storyId: 'story-1',
+        outcome: 'created',
+      });
+
+      await registrar.persist(model({ story }), 'family-abc');
+
+      expect(enrichedLogs()).toEqual([]);
+    });
   });
 });

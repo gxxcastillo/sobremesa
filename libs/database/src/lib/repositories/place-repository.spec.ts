@@ -141,3 +141,55 @@ describe('PlaceRepository - findByHierarchy', () => {
     ).rejects.toThrow('Failed to find place by hierarchy: boom');
   });
 });
+
+describe('PlaceRepository - findExisting / findOrCreate', () => {
+  let placeRepo: PlaceRepository;
+  const extracted = {
+    name: 'Oaxaca',
+    city: 'Oaxaca',
+    country: 'Mexico',
+    confidence: 'medium' as const,
+  };
+  const existingPlace = { id: 'place-1', name: 'Oaxaca' } as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    placeRepo = new PlaceRepository(mockSupabaseClient as any);
+  });
+
+  it('finds by exact name without creating', async () => {
+    vi.spyOn(placeRepo, 'findByName').mockResolvedValue(existingPlace);
+    const insert = vi.spyOn(placeRepo as any, 'insert');
+
+    await expect(placeRepo.findExisting('fam1', extracted)).resolves.toBe(
+      existingPlace,
+    );
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the location hierarchy', async () => {
+    vi.spyOn(placeRepo, 'findByName').mockResolvedValue(null);
+    vi.spyOn(placeRepo, 'findByLocation').mockResolvedValue(existingPlace);
+
+    await expect(placeRepo.findExisting('fam1', extracted)).resolves.toBe(
+      existingPlace,
+    );
+  });
+
+  it('returns null, creating nothing, when no place matches', async () => {
+    vi.spyOn(placeRepo, 'findByName').mockResolvedValue(null);
+    vi.spyOn(placeRepo, 'findByLocation').mockResolvedValue(null);
+    const insert = vi.spyOn(placeRepo as any, 'insert');
+
+    await expect(placeRepo.findExisting('fam1', extracted)).resolves.toBeNull();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('findOrCreate still reuses an existing place', async () => {
+    vi.spyOn(placeRepo, 'findExisting').mockResolvedValue(existingPlace);
+
+    await expect(
+      placeRepo.findOrCreate('fam1', extracted, 'conv-1'),
+    ).resolves.toBe(existingPlace);
+  });
+});

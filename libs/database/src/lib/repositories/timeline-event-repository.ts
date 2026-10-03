@@ -259,7 +259,58 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
   }
 
   /**
+   * Fill an existing event's empty fields from an extraction. Returns the
+   * (possibly updated) event and the names of the fields that were written,
+   * so the caller can audit the enrichment.
+   */
+  private async enrichExisting(
+    familyId: string,
+    existing: TimelineEvent,
+    extracted: ExtractedEvent,
+    placeId: string | undefined,
+  ): Promise<{ event: TimelineEvent; enrichedFields: string[] }> {
+    const enrichments: Partial<TimelineEvent> = {};
+    if (!existing.placeId && placeId) enrichments.placeId = placeId;
+    if (!existing.dateText && extracted.dateText)
+      enrichments.dateText = extracted.dateText;
+    if (!existing.dateYear && extracted.dateYear)
+      enrichments.dateYear = extracted.dateYear;
+    if (!existing.eventType && extracted.eventType)
+      enrichments.eventType = extracted.eventType;
+
+    const enrichedFields = Object.keys(enrichments);
+    if (enrichedFields.length === 0) {
+      return { event: existing, enrichedFields };
+    }
+
+    const enriched = await this.update(familyId, existing.id, enrichments);
+    return { event: enriched, enrichedFields };
+  }
+
+  /**
+   * Match an extraction to an existing event and enrich it; never creates.
+   * Returns null when no similar event exists. For context re-extractions,
+   * which may only add detail to records that already exist.
+   */
+  async matchAndEnrich(
+    familyId: string,
+    extracted: ExtractedEvent,
+    personIds: string[],
+    placeId: string | undefined,
+  ): Promise<{ event: TimelineEvent; enrichedFields: string[] } | null> {
+    const existing = await this.findSimilar(
+      familyId,
+      extracted.title,
+      personIds,
+      extracted.dateYear,
+    );
+    if (!existing) return null;
+    return await this.enrichExisting(familyId, existing, extracted, placeId);
+  }
+
+  /**
    * Find or create an event, with deduplication based on title + people + date.
+   * `enrichedFields` names the fields written onto a matched event.
    */
   async findOrCreate(
     familyId: string,
@@ -269,32 +320,20 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
     conversationEventId: string,
     claimedBy?: string,
     extractionVersion?: string,
-  ): Promise<{ event: TimelineEvent; created: boolean }> {
-    // Check for existing similar event
-    const existing = await this.findSimilar(
+  ): Promise<{
+    event: TimelineEvent;
+    created: boolean;
+    enrichedFields: string[];
+  }> {
+    const matched = await this.matchAndEnrich(
       familyId,
-      extracted.title,
+      extracted,
       personIds,
-      extracted.dateYear,
+      placeId,
     );
 
-    if (existing) {
-      // Enrich existing event with any new non-null fields
-      const enrichments: Partial<TimelineEvent> = {};
-      if (!existing.placeId && placeId) enrichments.placeId = placeId;
-      if (!existing.dateText && extracted.dateText)
-        enrichments.dateText = extracted.dateText;
-      if (!existing.dateYear && extracted.dateYear)
-        enrichments.dateYear = extracted.dateYear;
-      if (!existing.eventType && extracted.eventType)
-        enrichments.eventType = extracted.eventType;
-
-      if (Object.keys(enrichments).length > 0) {
-        const enriched = await this.update(familyId, existing.id, enrichments);
-        return { event: enriched, created: false };
-      }
-
-      return { event: existing, created: false };
+    if (matched) {
+      return { ...matched, created: false };
     }
 
     // Create new event
@@ -307,7 +346,7 @@ export class TimelineEventRepository extends BaseRepository<TimelineEvent> {
       extractionVersion,
     );
 
-    return { event, created: true };
+    return { event, created: true, enrichedFields: [] };
   }
 
   /**

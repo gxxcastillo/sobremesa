@@ -65,6 +65,10 @@ Scribe responsibilities:
   supporting the claim (never paraphrased, never quoted from context). A claim without evidence
   fails the parse loud, like any other malformed entity data. The Registrar verifies the span
   deterministically (see §3.4).
+- Mark context re-extraction. When the current message adds detail to something named earlier, Scribe
+  may re-extract that person, place, event or story so the Registrar can enrich the existing record.
+  Every such entity MUST carry `from_context: true`; absent/null means false. Claims never use it —
+  they stay current-message-only.
 - Bare agreements with another family member's context message assert a stance, not the fact (the
   fact was already extracted from the original message) — no claim is emitted. Confirming a tracked
   bot question is the exception: bot questions are never themselves recorded, so a confirmation
@@ -87,10 +91,25 @@ Registrar is the single writer for extracted knowledge. It:
    never searched or stored durably, since they name a different person for every speaker; they are
    still registered for the current message only, so a claim subject in the same message can resolve
    one.
+   A `from_context` entity (§3.3) may only **match and enrich** an existing record. People use the
+   same matcher; places and events use find-only lookups (`PlaceRepository.findExisting`,
+   `TimelineEventRepository.matchAndEnrich`) that cannot create. With no confident match the entity is
+   dropped (INFO log): it is never created, never registered for claim-subject resolution, and so
+   never anchors a claim. A `from_context` story is always dropped — a story is the current
+   message's narrative, and appending context text already stored would duplicate it under the wrong
+   source message.
 3. Stores claims and links them to affected entities.
 4. Detects conflicts with existing claims.
 5. Computes claim strength and enqueues uncertain/high-stakes cases for async review.
 6. Handles identity claims by merging or renaming descriptive placeholder people.
+
+Every write that changes fields on an existing entity has no backing claim, so it is audited: an
+`entity_enriched` `event_log` entry carries the source `conversationEventId` and
+`{ entityType, entityId, fields, fromContext }` (field names only, never values). Covered: person
+aliases and birth/death year, event place/date/type, and an append to an existing story. Nothing is
+logged when no field changed, nor for newly created entities (their `source_event_id`-style columns
+are their provenance). Synthesizing claims for enrichments was considered and rejected (it would
+multiply claim volume); revisit if the log proves insufficient.
 
 Conflict detection (`detectClaimConflict`) only compares claims of the same singular claim type
 (date, location, identity, relationship — never additive `detail`) with matching subjects. Within

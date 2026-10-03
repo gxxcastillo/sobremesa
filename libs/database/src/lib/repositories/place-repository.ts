@@ -132,6 +132,31 @@ export class PlaceRepository extends BaseRepository<Place> {
   }
 
   /**
+   * Find the existing place an extraction refers to (exact name, then
+   * location hierarchy), without creating one.
+   */
+  async findExisting(
+    familyId: string,
+    extracted: ExtractedPlace,
+  ): Promise<Place | null> {
+    const existing = await this.findByName(familyId, extracted.name);
+
+    if (existing) {
+      return existing;
+    }
+
+    if (extracted.city || extracted.region || extracted.country) {
+      return await this.findByLocation(familyId, {
+        city: extracted.city,
+        region: extracted.region,
+        country: extracted.country,
+      });
+    }
+
+    return null;
+  }
+
+  /**
    * Find or create a place.
    */
   async findOrCreate(
@@ -140,24 +165,10 @@ export class PlaceRepository extends BaseRepository<Place> {
     conversationEventId: string,
     extractionVersion?: string,
   ): Promise<Place> {
-    // Try to find by exact name first
-    const existing = await this.findByName(familyId, extracted.name);
+    const existing = await this.findExisting(familyId, extracted);
 
     if (existing) {
       return existing;
-    }
-
-    // Try to find by location hierarchy
-    if (extracted.city || extracted.region || extracted.country) {
-      const byLocation = await this.findByLocation(familyId, {
-        city: extracted.city,
-        region: extracted.region,
-        country: extracted.country,
-      });
-
-      if (byLocation) {
-        return byLocation;
-      }
     }
 
     // Create new place

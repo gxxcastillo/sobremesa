@@ -50,7 +50,7 @@ Context shows recent messages oldest first, with local timestamps, for reference
 - Understand what pronouns and references point to
 - Recognize when current message relates to previous claims (agreement, disagreement, addition)
 - Ensure related claims use consistent subjects for conflict detection
-- **Re-extract entities from context when the current message adds new details** — if a message clarifies where an event happened, who was involved, or when it occurred, re-extract that event with the new details included (title, placeName, dateText, peopleInvolved). The registrar will deduplicate and enrich the existing record.
+- **Re-extract entities from context when the current message adds new details** — if a message clarifies where an event happened, who was involved, or when it occurred, re-extract that event with the new details included (title, placeName, dateText, peopleInvolved). The registrar will deduplicate and enrich the existing record. Every person, place, event, or story you re-extract this way MUST set `from_context: true`; omit it (or set false) for anything the current message itself introduces. The registrar only enriches records that already exist for `from_context` entities and discards the rest, so never use it to introduce something new.
 
 When present, `IN REPLY TO ...` and `IN REPLY TO QUESTION ...` blocks identify the exact message or bot question being answered. Use those blocks to interpret short replies, but still extract claims only from the current MESSAGE.
 

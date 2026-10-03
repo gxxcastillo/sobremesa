@@ -55,6 +55,17 @@ const IMAGE_REFERENCE_TYPES = [
 ] as const;
 
 /**
+ * Marks an entity re-extracted from context (to carry new details onto an
+ * existing record) rather than newly asserted by the current message. The
+ * Registrar only matches-and-enriches existing records for these -- it never
+ * creates one (spec §3.3/§3.4). Absent/null means false.
+ */
+const FromContextSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.boolean().optional().catch(undefined),
+);
+
+/**
  * Scribe frequently emits an explicit JSON `null` for a field it has no value
  * for, rather than omitting the key. Zod's `.optional()` only accepts
  * `undefined`, so a raw `null` fails the whole response's schema validation
@@ -156,6 +167,7 @@ const PersonSchema = z.object({
   aliases: z.array(z.string()).default([]),
   birth_year: optionalNullable(z.number()),
   death_year: optionalNullable(z.number()),
+  from_context: FromContextSchema,
 });
 
 const PlaceSchema = z.object({
@@ -164,6 +176,7 @@ const PlaceSchema = z.object({
   city: optionalNullable(z.string()),
   region: optionalNullable(z.string()),
   country: optionalNullable(z.string()),
+  from_context: FromContextSchema,
 });
 
 const EventSchema = z.object({
@@ -182,6 +195,7 @@ const EventSchema = z.object({
   ),
   people_involved: z.array(z.string()).default([]),
   place: optionalNullable(z.string()),
+  from_context: FromContextSchema,
 });
 
 const StorySchema = z.object({
@@ -189,6 +203,7 @@ const StorySchema = z.object({
   content: z.string(),
   themes: z.array(z.string()).default([]),
   timeframe: optionalNullable(z.string()),
+  from_context: FromContextSchema,
 });
 
 const RelationshipSchema = z.object({

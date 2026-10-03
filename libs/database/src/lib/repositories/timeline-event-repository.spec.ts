@@ -454,3 +454,110 @@ describe('TimelineEventRepository - findByIds', () => {
     );
   });
 });
+
+describe('TimelineEventRepository - matchAndEnrich (provenance #4)', () => {
+  let eventRepo: TimelineEventRepository;
+  const extracted = {
+    title: 'Leaving Cuba',
+    dateText: 'spring 1959',
+    dateYear: 1959,
+    eventType: 'migration',
+    peopleInvolved: [],
+    confidence: 'medium' as const,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    eventRepo = new TimelineEventRepository(mockSupabaseClient as any);
+  });
+
+  it('returns null and writes nothing when no similar event exists', async () => {
+    vi.spyOn(eventRepo, 'findSimilar').mockResolvedValue(null);
+    const update = vi.spyOn(eventRepo, 'update');
+    const create = vi.spyOn(eventRepo, 'createFromExtracted');
+
+    await expect(
+      eventRepo.matchAndEnrich('fam1', extracted, ['p1'], 'place-1'),
+    ).resolves.toBeNull();
+    expect(update).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('fills only empty fields and reports which', async () => {
+    const existing = {
+      id: 'event-1',
+      title: 'Leaving Cuba',
+      dateYear: 1959,
+      placeId: undefined,
+      dateText: undefined,
+      eventType: 'migration',
+    } as any;
+    vi.spyOn(eventRepo, 'findSimilar').mockResolvedValue(existing);
+    const update = vi
+      .spyOn(eventRepo, 'update')
+      .mockResolvedValue({ ...existing, placeId: 'place-1' });
+
+    const result = await eventRepo.matchAndEnrich(
+      'fam1',
+      extracted,
+      ['p1'],
+      'place-1',
+    );
+
+    expect(update).toHaveBeenCalledWith('fam1', 'event-1', {
+      placeId: 'place-1',
+      dateText: 'spring 1959',
+    });
+    expect(result?.enrichedFields).toEqual(['placeId', 'dateText']);
+  });
+
+  it('does not update when nothing is empty', async () => {
+    const existing = {
+      id: 'event-1',
+      title: 'Leaving Cuba',
+      dateYear: 1959,
+      placeId: 'place-0',
+      dateText: '1959',
+      eventType: 'migration',
+    } as any;
+    vi.spyOn(eventRepo, 'findSimilar').mockResolvedValue(existing);
+    const update = vi.spyOn(eventRepo, 'update');
+
+    const result = await eventRepo.matchAndEnrich(
+      'fam1',
+      extracted,
+      ['p1'],
+      'place-1',
+    );
+
+    expect(update).not.toHaveBeenCalled();
+    expect(result).toEqual({ event: existing, enrichedFields: [] });
+  });
+
+  it('findOrCreate reports enrichedFields for a matched event and none for a new one', async () => {
+    const existing = { id: 'event-1', title: 'Leaving Cuba' } as any;
+    vi.spyOn(eventRepo, 'findSimilar').mockResolvedValueOnce(existing);
+    vi.spyOn(eventRepo, 'update').mockResolvedValue(existing);
+
+    const matched = await eventRepo.findOrCreate(
+      'fam1',
+      { ...extracted, dateYear: undefined, eventType: undefined },
+      [],
+      undefined,
+      'conv-1',
+    );
+    expect(matched.created).toBe(false);
+    expect(matched.enrichedFields).toEqual(['dateText']);
+
+    vi.spyOn(eventRepo, 'findSimilar').mockResolvedValueOnce(null);
+    vi.spyOn(eventRepo, 'createFromExtracted').mockResolvedValue(existing);
+    const created = await eventRepo.findOrCreate(
+      'fam1',
+      extracted,
+      [],
+      undefined,
+      'conv-1',
+    );
+    expect(created).toMatchObject({ created: true, enrichedFields: [] });
+  });
+});
