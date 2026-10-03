@@ -5,6 +5,7 @@ import {
   IdentityRepository,
   EventLogRepository,
   ProcessingQueueRepository,
+  OutboundMessageRepository,
   type DatabaseClient,
 } from '@sobremesa/database';
 import { createLogger, logBestEffort } from '@sobremesa/shared-utils';
@@ -29,6 +30,11 @@ import {
 import { OnboardingHandler } from './onboarding-handler';
 
 export type { MessageSender };
+
+/** Ledger key for the welcome a join event triggers (outbound #3). */
+function joinDedupKey(triggerEventId: string): string {
+  return `admin:join:${triggerEventId}`;
+}
 
 function uniqueById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
@@ -59,6 +65,8 @@ export interface AdminAgentOptions {
   eventLog?: EventLogRepository;
   /** Processing queue repository */
   queueRepo?: ProcessingQueueRepository;
+  /** Outbound send ledger (read-only here: has a welcome already gone out?) */
+  outboundRepo?: OutboundMessageRepository;
   /** Logger instance */
   logger?: pino.Logger;
 }
@@ -99,6 +107,7 @@ export class AdminAgent {
   private identityRepo!: IdentityRepository;
   private eventLog!: EventLogRepository;
   private queueRepo!: ProcessingQueueRepository;
+  private outboundRepo!: OutboundMessageRepository;
   private onboardingHandler!: OnboardingHandler;
   private logger: pino.Logger;
 
@@ -141,11 +150,18 @@ export class AdminAgent {
       this.queueRepo = new ProcessingQueueRepository(dbClient);
     }
 
+    if (options.outboundRepo) {
+      this.outboundRepo = options.outboundRepo;
+    } else if (dbClient) {
+      this.outboundRepo = new OutboundMessageRepository(dbClient);
+    }
+
     if (
       !this.eventRepo ||
       !this.familyRepo ||
       !this.eventLog ||
-      !this.queueRepo
+      !this.queueRepo ||
+      !this.outboundRepo
     ) {
       throw new Error(
         'AdminAgent requires either dbClient or all repository instances',
@@ -433,11 +449,32 @@ export class AdminAgent {
     // sends a welcome message at all (0 other pending joins -> early
     // return), and a burst of joins always omits whichever member's event
     // happened to be the one dequeued and routed here.
-    const otherJoinEvents = await this.eventRepo.findUnprocessedByType(
+    //
+    // A retry after this welcome's send was already attempted (crash after
+    // send, or a later failure in the same pass) must not absorb newly
+    // queued joins: the ledger will answer 'duplicate'/'unconfirmed' and
+    // skip the send, so a newcomer would be marked done without ever being
+    // named. Leave them queued for their own welcome. Only a provably failed
+    // attempt ('failed') resends, with fresh content, so it may still absorb.
+    const priorSend = await this.outboundRepo.findByDedupKey(
       familyId,
-      conversationId,
-      'join',
+      joinDedupKey(currentEvent.id),
     );
+    const sendAlreadyAttempted =
+      priorSend !== null && priorSend.status !== 'failed';
+    const otherJoinEvents = sendAlreadyAttempted
+      ? []
+      : await this.eventRepo.findUnprocessedByType(
+          familyId,
+          conversationId,
+          'join',
+        );
+    if (sendAlreadyAttempted) {
+      this.logger.info(
+        { familyId, eventId: currentEvent.id, priorStatus: priorSend.status },
+        'Join welcome already attempted; not absorbing newly queued joins on retry',
+      );
+    }
     // Joins an earlier attempt already absorbed: their rows are 'done', so
     // the query above no longer returns them. Without these, a retry after a
     // failed send would drop those members from the welcome and from
@@ -508,7 +545,7 @@ export class AdminAgent {
         priority: Priorities.MEMBER_NOTIFICATION,
         dedup: {
           familyId,
-          key: `admin:join:${currentEvent.id}`,
+          key: joinDedupKey(currentEvent.id),
           conversationEventId: currentEvent.id,
         },
       },

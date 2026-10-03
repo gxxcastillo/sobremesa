@@ -37,6 +37,7 @@ describe('AdminAgent - handleConsolidatedJoin', () => {
     completeMany: ReturnType<typeof vi.fn>;
   };
   let mockMessageSender: { sendMessage: ReturnType<typeof vi.fn> };
+  let mockOutboundRepo: { findByDedupKey: ReturnType<typeof vi.fn> };
   let agent: AdminAgent;
 
   beforeEach(() => {
@@ -60,6 +61,7 @@ describe('AdminAgent - handleConsolidatedJoin', () => {
     mockMessageSender = {
       sendMessage: vi.fn().mockResolvedValue({ status: 'sent', messageId: 1 }),
     };
+    mockOutboundRepo = { findByDedupKey: vi.fn().mockResolvedValue(null) };
 
     agent = new AdminAgent({
       messageSender: mockMessageSender as any,
@@ -67,6 +69,7 @@ describe('AdminAgent - handleConsolidatedJoin', () => {
       familyRepo: mockFamilyRepo as any,
       eventLog: mockEventLog as any,
       queueRepo: mockQueueRepo as any,
+      outboundRepo: mockOutboundRepo as any,
       logger: mockLogger as any,
     });
   });
@@ -179,6 +182,62 @@ describe('AdminAgent - handleConsolidatedJoin', () => {
         messageSent: true,
       });
       expect(mockMessageSender.sendMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('a retry after the welcome was already attempted', () => {
+    const newcomer = createJoinEvent({
+      id: 'evt-new',
+      actorExternalId: 'user-new',
+      actorDisplayName: 'Marta',
+    });
+
+    it.each(['sent', 'pending', 'unknown'])(
+      'leaves a newly queued join alone when the ledger row is %s, so it gets its own welcome',
+      async (status) => {
+        const trigger = createJoinEvent();
+        mockEventRepo.findById.mockResolvedValue(trigger);
+        mockEventRepo.findUnprocessedByType.mockResolvedValue([newcomer]);
+        mockOutboundRepo.findByDedupKey.mockResolvedValue({ status });
+        mockMessageSender.sendMessage.mockResolvedValue({
+          status: 'duplicate',
+        });
+
+        const result = await agent.handle(
+          trigger.id,
+          FAMILY_ID,
+          'member_event',
+        );
+
+        expect(result.success).toBe(true);
+        expect(mockOutboundRepo.findByDedupKey).toHaveBeenCalledWith(
+          FAMILY_ID,
+          `admin:join:${trigger.id}`,
+        );
+        expect(mockEventRepo.findUnprocessedByType).not.toHaveBeenCalled();
+        expect(mockQueueRepo.findPendingByEventIds).toHaveBeenCalledWith(
+          FAMILY_ID,
+          [trigger.id],
+        );
+        const [, message] = mockMessageSender.sendMessage.mock.calls[0];
+        expect(message.text).not.toContain('Marta');
+      },
+    );
+
+    it('still absorbs a newcomer when the earlier attempt provably failed, since the retry really sends', async () => {
+      const trigger = createJoinEvent();
+      mockEventRepo.findById.mockResolvedValue(trigger);
+      mockEventRepo.findUnprocessedByType.mockResolvedValue([newcomer]);
+      mockOutboundRepo.findByDedupKey.mockResolvedValue({ status: 'failed' });
+
+      await agent.handle(trigger.id, FAMILY_ID, 'member_event');
+
+      expect(mockQueueRepo.findPendingByEventIds).toHaveBeenCalledWith(
+        FAMILY_ID,
+        [trigger.id, newcomer.id],
+      );
+      const [, message] = mockMessageSender.sendMessage.mock.calls[0];
+      expect(message.text).toContain('Marta');
     });
   });
 

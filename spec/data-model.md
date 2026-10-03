@@ -89,7 +89,10 @@ Queues:
   same update, it records the triggering join event in `consolidated_into_event_id`. Every later
   attempt of that trigger re-gathers those rows, following the links transitively. Examples are a
   queue retry after a failed send, a stale-lock re-lease, or an operator requeue. Each member keeps
-  their place in the welcome and in onboarding.
+  their place in the welcome and in onboarding. A later attempt absorbs joins queued since the first
+  attempt only if that welcome provably failed (ledger row `failed`, so the retry really sends). If it
+  was sent or its outcome is unknown, the ledger skips the resend, so newer joins stay `queued` for a
+  welcome of their own rather than being marked `done` unnamed.
 - `llm_evaluation_queue`: async review queue for uncertain claim strength, entity matches, or
   conflict resolution. Claims can be enqueued today; no live worker drains it.
 
