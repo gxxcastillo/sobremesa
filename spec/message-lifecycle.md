@@ -115,9 +115,11 @@ When a caller passes `options.dedup` (a family-scoped key plus optional `convers
 claim already reached `'sent'` short-circuits to `'duplicate'` with no second Telegram call; a key
 whose prior claim is still `'pending'`/`'unknown'` (outcome not yet known) short-circuits to
 `'unconfirmed'`, also with no call -- an unresolved outcome is never resent. This makes delivery
-at-most-once per dedup key even across a crash-and-retry of the caller. No live call site passes
-`options.dedup` yet (`outbound-send-reliability-plan.md` #3); until then, every send is classified as
-above but untracked, exactly as it always has been.
+at-most-once per dedup key even across a crash-and-retry of the caller. Every pipeline send
+passes a stable key: `historian-answer:<conversation_event_id>`, `facilitator:question:<question_id>`,
+`admin:<subtype>:<conversation_event_id>` (status, dm, leave, mention), `admin:join:<triggering
+event id>`, and `admin:onboarding[-reminder]:<identity_id>:<family_id>`. Only `ChatbotHandler`'s
+direct `ctx.reply` command replies bypass the ledger; they are classified the same way but untracked.
 
 Bot-authored text is deliberately never written to `conversation_events` -- the grounding check
 (§3.4 of `agent-pipeline.md`) depends on bot text never being extractable, and this holds for both
@@ -249,12 +251,14 @@ alerts by that one field without changing call sites; today the log stream is th
 | `followup_hook_error`                                       | The follow-up hook threw (e.g. a DB write failed)                        |
 | `send_failed` / `send_unknown`                              | A Telegram send failed provably (4xx) / ambiguously (5xx, network)       |
 | `send_unresolved_skip`                                      | A send was skipped because its dedup key's earlier outcome is unresolved |
+| `bot_handler_error`                                         | A Telegram command handler threw, including a failed direct `ctx.reply`  |
 
 Ordinary retries (an attempt that will be retried), follow-up declines, pacing skips, grounding
 guards and question expiry are never alerts.
 
-**Durable records.** Queue state lives in `processing_queue`; tracked sends in `outbound_messages`
-(no live call site claims rows yet, §4.3, so until then send failures surface only as alerts). Each
+**Durable records.** Queue state lives in `processing_queue`; every pipeline send in
+`outbound_messages` (§4.3); `ChatbotHandler`'s direct command replies are untracked, so their
+failures surface only as `bot_handler_error` alerts. Each
 story follow-up run that proposes nothing writes one `followup_evaluated` event with its `outcome`
 (`suppressed_pacing`, `declined`, `no_text`, `empty_question`, `ungrounded_names`, `provider_error`,
 `unparseable_response`) and severity `error` for the last two; no reason text, since the model's reason

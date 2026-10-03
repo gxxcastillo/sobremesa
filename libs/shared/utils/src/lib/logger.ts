@@ -225,7 +225,8 @@ export type AlertCategory =
   | 'followup_hook_error'
   | 'send_failed'
   | 'send_unknown'
-  | 'send_unresolved_skip';
+  | 'send_unresolved_skip'
+  | 'bot_handler_error';
 
 /**
  * Log an operator alert: always ERROR level, always carrying `alert:

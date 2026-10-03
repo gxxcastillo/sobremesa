@@ -123,9 +123,9 @@ Imports:
   (proactive: Facilitator questions) are both nullable, family-scoped composite FKs recording what a
   send is about. Deleting either referenced row retains the ledger row and clears only that nullable
   provenance ID, never its non-null `family_id`. Backend-only (no RLS; explicitly revoked from `anon`/`authenticated`, like
-  `allowed_chats`) -- no decided Studio read surface yet. Schema and `OutboundMessageRepository`
-  exist; no send call site claims a row yet, so the table has no live traffic -- see
-  `outbound-send-reliability-plan.md`.
+  `allowed_chats`) -- no decided Studio read surface yet. Every pipeline send (Historian answers,
+  Facilitator questions, admin replies, join welcomes, onboarding messages) claims a row through
+  `BotManager`; see §4.3 of `message-lifecycle.md`.
 - `event_log`: audit trail for ingestion, filtering/routing, redaction, questions, conflicts, imports,
   and errors. `intern_evaluated` is the canonical, append-only record of every `InternAgent.route()`
   resolution (action, relevance, reason, language, deterministic-vs-model provenance), written exactly

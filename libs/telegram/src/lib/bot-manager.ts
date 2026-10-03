@@ -89,9 +89,13 @@ export class BotManager {
     handler.configure(this.bot);
 
     // Error handling
+    // Command handlers reply via ctx.reply, outside the outbound ledger,
+    // so a failure there (including a failed reply) only shows up here.
     this.bot.catch((err, ctx) => {
-      this.logger.error(
-        { error: err, updateType: ctx.updateType },
+      logAlert(
+        this.logger,
+        'bot_handler_error',
+        { error: err, updateType: ctx.updateType, chatId: ctx.chat?.id },
         'Bot error',
       );
     });
