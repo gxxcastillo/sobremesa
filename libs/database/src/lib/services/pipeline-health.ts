@@ -239,7 +239,7 @@ export class PipelineHealthService {
       activity: { followupsProposed, questionsAsked },
       spend: {
         status: 'not_implemented',
-        note: 'Spend usage and stop status arrive with hardening H.',
+        note: 'Not reported here: the daily spend budget lives in the chatbots process; look for `spend_limit_reached` alerts in its logs.',
       },
     };
   }

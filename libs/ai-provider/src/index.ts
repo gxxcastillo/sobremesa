@@ -67,7 +67,15 @@ export {
   MockProvider,
   CachingProvider,
   hashCompletionRequest,
+  BudgetedProvider,
+  BudgetExhaustedError,
 } from './lib/providers';
+
+// Daily spend budget (spend ceiling) and the pricing it uses
+export { SpendBudget } from './lib/spend-budget';
+export type { SpendBudgetOptions } from './lib/spend-budget';
+export { estimateCostUsd, MODEL_PRICING } from './lib/pricing';
+export type { UnknownModelPricing } from './lib/pricing';
 export type {
   AnthropicProviderOptions,
   OpenAICompatibleProviderOptions,

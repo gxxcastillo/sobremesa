@@ -16,4 +16,5 @@ export type {
 } from './mock';
 
 export { CachingProvider, hashCompletionRequest } from './caching';
+export { BudgetedProvider, BudgetExhaustedError } from './budgeted';
 export type { DevResponseCacheStore } from './caching';

@@ -29,6 +29,7 @@ export class MessageQueue {
   private repository: ProcessingQueueRepository;
   private logger: pino.Logger;
   private handler?: MessageHandler;
+  private gate?: () => boolean;
   private isRunning = false;
   private workerId: string;
   private options: QueueOptions;
@@ -64,6 +65,15 @@ export class MessageQueue {
    */
   setHandler(handler: MessageHandler): void {
     this.handler = handler;
+  }
+
+  /**
+   * Set a gate checked before every dequeue. While it returns false nothing
+   * is claimed: items stay `queued` with attempts untouched and are picked up
+   * once the gate reopens (used by the daily LLM spend budget).
+   */
+  setGate(gate: () => boolean): void {
+    this.gate = gate;
   }
 
   /**
@@ -121,6 +131,10 @@ export class MessageQueue {
   async processOne(): Promise<boolean> {
     if (!this.handler) {
       throw new Error('No message handler set');
+    }
+
+    if (this.gate && !this.gate()) {
+      return false;
     }
 
     const item = await this.repository.dequeueAny(

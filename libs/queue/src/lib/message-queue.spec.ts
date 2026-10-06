@@ -194,6 +194,24 @@ describe('MessageQueue', () => {
     });
   });
 
+  describe('gate', () => {
+    it('claims nothing while the gate is closed, then resumes', async () => {
+      const queue = createQueue();
+      queue.setHandler(vi.fn().mockResolvedValue({ success: true }));
+      let open = false;
+      queue.setGate(() => open);
+      mockRepository.dequeueAny.mockResolvedValue(baseItem);
+
+      expect(await queue.processOne()).toBe(false);
+      expect(mockRepository.dequeueAny).not.toHaveBeenCalled();
+      expect(mockRepository.fail).not.toHaveBeenCalled();
+
+      open = true;
+      expect(await queue.processOne()).toBe(true);
+      expect(mockRepository.dequeueAny).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('poll loop', () => {
     it('polls again at pollIntervalMs when the queue is empty, without tight-looping', async () => {
       vi.useFakeTimers();

@@ -111,7 +111,13 @@ describe('submitAnthropicBatchAndWait', () => {
         key: 'key-1',
         response: {
           content: '{"ok":true}',
-          usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+          usage: {
+            inputTokens: 10,
+            outputTokens: 5,
+            totalTokens: 15,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+          },
           model: 'claude-haiku-4-5',
           stopReason: 'end_turn',
         },

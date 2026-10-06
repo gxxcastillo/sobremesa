@@ -1,9 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createLogger, type LogLevel } from '@sobremesa/shared-utils';
+import { createLogger, logAlert, type LogLevel } from '@sobremesa/shared-utils';
 import {
   loadAIConfig,
   createAIProviderFactory,
   validateConfig,
+  SpendBudget,
+  BudgetedProvider,
+  type AIProvider,
 } from '@sobremesa/ai-provider';
 import { MessageQueue } from '@sobremesa/queue';
 import { BotManager } from '@sobremesa/telegram';
@@ -120,6 +123,44 @@ async function main() {
     const aiFactory = createAIProviderFactory(aiConfig, anthropic);
     const hasAIProvider = aiConfig.defaultProvider !== 'mock';
 
+    // Daily LLM spend budget (hardening H), in estimated USD. Absent =
+    // unlimited. Every agent provider is metered: Anthropic models missing
+    // from the pricing table are charged the most expensive known rate;
+    // other (local, OpenAI-compatible) models are free unless the table
+    // prices them. An invalid value fails startup rather than silently
+    // running unbounded.
+    const rawBudget = process.env['DAILY_SPEND_BUDGET_USD'];
+    let budget: SpendBudget | undefined;
+    if (rawBudget !== undefined && rawBudget.trim() !== '') {
+      const dailyLimitUsd = Number(rawBudget);
+      if (!Number.isFinite(dailyLimitUsd) || dailyLimitUsd <= 0) {
+        throw new Error(
+          `DAILY_SPEND_BUDGET_USD must be a positive dollar amount, got "${rawBudget}"`,
+        );
+      }
+      budget = new SpendBudget({
+        dailyLimitUsd,
+        onExhausted: ({ usedUsd, limitUsd, day }) =>
+          logAlert(
+            logger,
+            'spend_limit_reached',
+            { usedUsd, limitUsd, day },
+            'Daily LLM spend budget reached; queue paused until the next UTC day (items stay queued)',
+          ),
+      });
+      logger.info({ dailyLimitUsd }, 'Daily LLM spend budget enabled');
+    }
+    // When the storyFollowup stage is activated, its `followup` provider
+    // must go through metered() too.
+    const metered = (provider: AIProvider): AIProvider =>
+      budget
+        ? new BudgetedProvider(
+            provider,
+            budget,
+            provider.name === 'anthropic' ? 'conservative' : 'free',
+          )
+        : provider;
+
     // Admin doesn't require AI; the rest of the pipeline does. When no AI
     // provider is configured, only Admin gets wired -- messages still get
     // admin handling, but nothing reaches Scribe/Registrar/Historian.
@@ -148,10 +189,10 @@ async function main() {
       logger,
       providers: hasAIProvider
         ? {
-            intern: aiFactory.getProviderForAgent('intern'),
-            scribe: aiFactory.getProviderForAgent('scribe'),
-            historian: aiFactory.getProviderForAgent('historian'),
-            facilitator: aiFactory.getProviderForAgent('facilitator'),
+            intern: metered(aiFactory.getProviderForAgent('intern')),
+            scribe: metered(aiFactory.getProviderForAgent('scribe')),
+            historian: metered(aiFactory.getProviderForAgent('historian')),
+            facilitator: metered(aiFactory.getProviderForAgent('facilitator')),
           }
         : {},
       models: hasAIProvider
@@ -181,6 +222,7 @@ async function main() {
       queueOptions: { intentFilter: ['live'] },
     });
     queue.setHandler(processor.createHandler());
+    if (budget) queue.setGate(() => !budget.isExhausted());
     await queue.start();
     logger.info('Message queue started');
 

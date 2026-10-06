@@ -243,15 +243,16 @@ Silence the system chose and silence caused by a failure are recorded and report
 (`libs/shared/utils`), with an `alert` field naming its category. A notification sink can later select
 alerts by that one field without changing call sites; today the log stream is the notification.
 
-| `alert`                                                     | Raised when                                                              |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `queue_dead_letter`                                         | A queue item exhausted its retries (`status = 'error'`)                  |
-| `queue_poll_error`                                          | The queue poll loop itself threw                                         |
-| `followup_provider_error` / `followup_unparseable_response` | Follow-up formulation failed (§3.6 of `agent-pipeline.md`)               |
-| `followup_hook_error`                                       | The follow-up hook threw (e.g. a DB write failed)                        |
-| `send_failed` / `send_unknown`                              | A Telegram send failed provably (4xx) / ambiguously (5xx, network)       |
-| `send_unresolved_skip`                                      | A send was skipped because its dedup key's earlier outcome is unresolved |
-| `bot_handler_error`                                         | A Telegram command handler threw, including a failed direct `ctx.reply`  |
+| `alert`                                                     | Raised when                                                               |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `queue_dead_letter`                                         | A queue item exhausted its retries (`status = 'error'`)                   |
+| `queue_poll_error`                                          | The queue poll loop itself threw                                          |
+| `followup_provider_error` / `followup_unparseable_response` | Follow-up formulation failed (§3.6 of `agent-pipeline.md`)                |
+| `followup_hook_error`                                       | The follow-up hook threw (e.g. a DB write failed)                         |
+| `send_failed` / `send_unknown`                              | A Telegram send failed provably (4xx) / ambiguously (5xx, network)        |
+| `send_unresolved_skip`                                      | A send was skipped because its dedup key's earlier outcome is unresolved  |
+| `bot_handler_error`                                         | A Telegram command handler threw, including a failed direct `ctx.reply`   |
+| `spend_limit_reached`                                       | The daily LLM spend budget was first exhausted for the day (queue paused) |
 
 Ordinary retries (an attempt that will be retried), follow-up declines, pacing skips, grounding
 guards and question expiry are never alerts.
@@ -271,7 +272,9 @@ row, `processing` rows locked past the 5-minute lease, the oldest due `queued` r
 over 15 minutes, `failed`/`unknown` sends in the window plus `pending` claims older than 10 minutes, and
 follow-up failures — separately from chosen silence (follow-up outcome counts, retired questions) and
 activity (proposed/asked). It exits 1 when any failure is reported. Spend usage and stop status are an
-explicit "not implemented" slot until the LLM spend limit lands. The report is read-only.
+explicit "not implemented" slot: the daily spend budget (spec/ai-providers-and-prompts.md §5.5a)
+is enforced inside the chatbots process and reports through its `spend_limit_reached` alert, which
+the separate `sbm` process cannot see. The report is read-only.
 
 **Review cadence (pilot).** Run the report at the end of every supervised session and once a day while
 anything runs unattended, and note the result in the pilot observation log.

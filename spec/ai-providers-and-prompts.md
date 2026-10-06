@@ -98,6 +98,31 @@ evals:intern`; it is never part of CI or `bun run test:all`.
 Live LLM evals are never part of `bun run test:all` or CI. CI-safe evaluation must use deterministic
 fixtures, mock providers, or recorded/canned responses only.
 
+## 5.5a Cost Controls
+
+`apps/chatbots` can cap LLM spend with `DAILY_SPEND_BUDGET_USD` (estimated US dollars per UTC day;
+unset means unlimited; a non-positive or non-numeric value fails startup). The bound is an
+**estimate**: `estimateCostUsd` (`libs/ai-provider/src/lib/pricing.ts`) prices each call from the
+model's input, output, cache-read (0.1x) and cache-write (1.25x) token counts against a small
+explicit table. A model missing from the table is charged the most expensive known rate for paid
+(Anthropic) providers, so a new model id makes the budget trip early rather than late, and $0 for
+other providers (local models). Adding a paid OpenAI-compatible model means adding it to the table.
+Rates must be kept current by hand.
+
+- `SpendBudget` (`libs/ai-provider`) is an in-memory counter. It is per process and resets on
+  restart, so a crash loop can re-spend a day's budget.
+- `BudgetedProvider` wraps every agent provider (Intern, Scribe, Historian, Facilitator). It refuses
+  a call with `BudgetExhaustedError` once the budget is spent, so every call path is covered.
+  Concurrent in-flight calls can overshoot the limit slightly.
+- `MessageQueue.setGate` is the primary guard: while the budget is exhausted nothing is dequeued,
+  so items stay `queued` with attempts untouched and resume at the next UTC day (or restart). An
+  item already past the gate when the budget runs out fails on its next call and takes a normal
+  retry.
+- The first exhaustion each day logs one `spend_limit_reached` ERROR alert.
+- Not covered: the `followup` provider (the `storyFollowup` stage is not enabled in
+  `apps/chatbots`; wrap it with the same helper when it is), `apps/api` imports, `sbm`, and evals.
+  Per-family budgets are not built.
+
 ## 5.6 Replacing LLM Calls With Recorded Responses (Dev Only)
 
 `CachingProvider` (`libs/ai-provider`) is a dev-only `AIProvider` decorator: it hashes a request's

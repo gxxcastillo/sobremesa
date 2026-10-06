@@ -286,6 +286,8 @@ export function mapAnthropicResponse(
       totalTokens:
         (response.usage?.input_tokens || 0) +
         (response.usage?.output_tokens || 0),
+      cacheReadTokens: response.usage?.cache_read_input_tokens || 0,
+      cacheCreationTokens: response.usage?.cache_creation_input_tokens || 0,
     },
     model: response.model,
     stopReason: mapStopReason(response.stop_reason),

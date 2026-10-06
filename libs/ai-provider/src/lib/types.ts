@@ -94,6 +94,10 @@ export interface AICompletionResponse {
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;
+    /** Tokens read from the prompt cache (billed at a discount); Anthropic only. */
+    cacheReadTokens?: number;
+    /** Tokens written to the prompt cache (billed at a premium); Anthropic only. */
+    cacheCreationTokens?: number;
   };
   /** Model that generated the response */
   model: string;
