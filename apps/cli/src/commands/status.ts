@@ -75,7 +75,7 @@ function formatFamily(name: string, report: FamilyPipelineHealth): string {
   }
   if (failures.backlog) {
     lines.push(
-      `  queue backlog: item ${failures.backlog.itemId} [${failures.backlog.intent}] due since ${iso(failures.backlog.at)} -- ${failures.backlog.intent === 'live' ? 'is the bot running?' : 'abandoned import drain?'}`,
+      `  queue backlog: item ${failures.backlog.itemId} [${failures.backlog.intent}] due since ${iso(failures.backlog.at)} -- ${failures.backlog.intent === 'live' ? 'is the bot running? or paused by the daily spend budget (see `spend_limit_reached` in the chatbots logs)?' : 'abandoned import drain?'}`,
     );
   }
   for (const send of failures.outbound) {

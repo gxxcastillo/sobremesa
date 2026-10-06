@@ -110,14 +110,17 @@ other providers (local models). Adding a paid OpenAI-compatible model means addi
 Rates must be kept current by hand.
 
 - `SpendBudget` (`libs/ai-provider`) is an in-memory counter. It is per process and resets on
-  restart, so a crash loop can re-spend a day's budget.
+  restart, so a crash loop can re-spend a day's budget. Persisting the total (e.g. a
+  per-day table the process reloads on start, which `sbm status` could also read) would close this and
+  is not built.
 - `BudgetedProvider` wraps every agent provider (Intern, Scribe, Historian, Facilitator). It refuses
   a call with `BudgetExhaustedError` once the budget is spent, so every call path is covered.
   Concurrent in-flight calls can overshoot the limit slightly.
 - `MessageQueue.setGate` is the primary guard: while the budget is exhausted nothing is dequeued,
   so items stay `queued` with attempts untouched and resume at the next UTC day (or restart). An
-  item already past the gate when the budget runs out fails on its next call and takes a normal
-  retry.
+  item already past the gate when the budget runs out fails on its next call; because the gate is
+  then closed, the queue releases it (`ProcessingQueueRepository.release`) without counting an
+  attempt, so budget exhaustion can never dead-letter an item.
 - The first exhaustion each day logs one `spend_limit_reached` ERROR alert.
 - Not covered: the `followup` provider (the `storyFollowup` stage is not enabled in
   `apps/chatbots`; wrap it with the same helper when it is), `apps/api` imports, `sbm`, and evals.

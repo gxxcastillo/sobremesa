@@ -277,6 +277,37 @@ export class ProcessingQueueRepository {
   }
 
   /**
+   * Return a leased item to the queue without counting an attempt: for a
+   * failure that is not the item's fault (e.g. the daily spend budget closed
+   * mid-processing). Unlike `fail()`, `attempts` is untouched so the item can
+   * never be dead-lettered by it; `retryDelayMs` still defers the next lease.
+   */
+  async release(
+    familyId: string,
+    id: string,
+    reason: string,
+    retryDelayMs = 0,
+  ): Promise<void> {
+    const { error } = await this.client
+      .from(this.tableName)
+      .update({
+        status: 'queued',
+        last_error: reason,
+        locked_at: null,
+        locked_by: null,
+        ...(retryDelayMs > 0
+          ? { process_after: new Date(Date.now() + retryDelayMs).toISOString() }
+          : {}),
+      })
+      .eq('family_id', familyId)
+      .eq('id', id);
+
+    if (error) {
+      throw new Error(`Failed to release queue item: ${error.message}`);
+    }
+  }
+
+  /**
    * Return dead-lettered items for a family (status='error'), newest first.
    * Paginate with `offset` once a family has more than fits in one `limit`
    * page — use `getErrorCount(familyId)` for the true total count (cheaper

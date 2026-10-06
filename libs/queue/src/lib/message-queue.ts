@@ -165,6 +165,9 @@ export class MessageQueue {
         );
       } else {
         const errorMessage = result.error || 'Unknown error';
+        if (await this.releaseIfGated(item, familyId, errorMessage)) {
+          return true;
+        }
         const newStatus = await this.repository.fail(
           familyId,
           item.id,
@@ -182,6 +185,9 @@ export class MessageQueue {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+      if (await this.releaseIfGated(item, familyId, errorMessage)) {
+        return true;
+      }
       const newStatus = await this.repository.fail(
         familyId,
         item.id,
@@ -195,6 +201,31 @@ export class MessageQueue {
       });
       return true;
     }
+  }
+
+  /**
+   * If the gate closed while this item was processing (the daily spend budget
+   * ran out mid-pipeline), the failure is the budget's, not the item's:
+   * release it without counting an attempt so it is retried once the gate
+   * reopens rather than burning retries toward the dead-letter state.
+   */
+  private async releaseIfGated(
+    item: QueueItem,
+    familyId: string,
+    errorMessage: string,
+  ): Promise<boolean> {
+    if (!this.gate || this.gate()) return false;
+    await this.repository.release(
+      familyId,
+      item.id,
+      errorMessage,
+      this.options.retryDelayMs,
+    );
+    this.logger.info(
+      { itemId: item.id, eventId: item.conversationEventId, familyId },
+      'Queue gate closed during processing; item released without counting an attempt',
+    );
+    return true;
   }
 
   /**

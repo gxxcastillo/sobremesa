@@ -639,6 +639,60 @@ describe('processing queue dequeue migration', () => {
   });
 });
 
+describe('ProcessingQueueRepository - release', () => {
+  let queueRepo: ProcessingQueueRepository;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queueRepo = new ProcessingQueueRepository(mockSupabaseClient as any);
+  });
+
+  it('requeues without touching attempts, so it can never dead-letter', async () => {
+    const chain = createChainableMock({ data: null, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await queueRepo.release('fam1', 'q1', 'budget closed');
+
+    expect(chain.select).not.toHaveBeenCalled(); // no read-modify-write of attempts
+    const update = chain.update.mock.calls[0][0];
+    expect(update).toMatchObject({
+      status: 'queued',
+      last_error: 'budget closed',
+      locked_at: null,
+      locked_by: null,
+    });
+    expect(update).not.toHaveProperty('attempts');
+    expect(update).not.toHaveProperty('process_after');
+    expect(chain.eq).toHaveBeenCalledWith('family_id', 'fam1');
+    expect(chain.eq).toHaveBeenCalledWith('id', 'q1');
+  });
+
+  it('defers the next lease by retryDelayMs when given', async () => {
+    const chain = createChainableMock({ data: null, error: null });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    const before = Date.now();
+    await queueRepo.release('fam1', 'q1', 'budget closed', 30_000);
+
+    const { process_after } = chain.update.mock.calls[0][0];
+    expect(new Date(process_after).getTime()).toBeGreaterThanOrEqual(
+      before + 30_000,
+    );
+  });
+
+  it('surfaces database errors', async () => {
+    const chain = createChainableMock({
+      data: null,
+      error: { message: 'boom' },
+    });
+    mockSupabaseClient.from.mockReturnValue(chain);
+
+    await expect(queueRepo.release('fam1', 'q1', 'x')).rejects.toThrow(
+      'Failed to release queue item: boom',
+    );
+  });
+});
+
 describe('ProcessingQueueRepository - completeMany', () => {
   let queueRepo: ProcessingQueueRepository;
 

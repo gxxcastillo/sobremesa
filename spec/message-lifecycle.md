@@ -274,7 +274,8 @@ follow-up failures — separately from chosen silence (follow-up outcome counts,
 activity (proposed/asked). It exits 1 when any failure is reported. Spend usage and stop status are an
 explicit "not implemented" slot: the daily spend budget (spec/ai-providers-and-prompts.md §5.5a)
 is enforced inside the chatbots process and reports through its `spend_limit_reached` alert, which
-the separate `sbm` process cannot see. The report is read-only.
+the separate `sbm` process cannot see. Because of that, a live queue backlog line also names a spend
+pause as a possible cause and points at the `spend_limit_reached` log line. The report is read-only.
 
 **Review cadence (pilot).** Run the report at the end of every supervised session and once a day while
 anything runs unattended, and note the result in the pilot observation log.

@@ -6,6 +6,7 @@ const mockRepository = {
   dequeueAny: vi.fn(),
   complete: vi.fn(),
   fail: vi.fn(),
+  release: vi.fn(),
   getStats: vi.fn(),
 };
 
@@ -209,6 +210,52 @@ describe('MessageQueue', () => {
       open = true;
       expect(await queue.processOne()).toBe(true);
       expect(mockRepository.dequeueAny).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('gate closing mid-processing', () => {
+    it.each([
+      [
+        'handler reports failure',
+        async () => ({ success: false, error: 'budget' }),
+      ],
+      [
+        'handler throws',
+        async () => {
+          throw new Error('budget');
+        },
+      ],
+    ])(
+      'releases without counting an attempt when %s',
+      async (_name, outcome) => {
+        const queue = createQueue();
+        let open = true;
+        // The budget closes while the item is being processed.
+        queue.setHandler(async () => {
+          open = false;
+          return outcome();
+        });
+        queue.setGate(() => open);
+        mockRepository.dequeueAny.mockResolvedValue(baseItem);
+
+        expect(await queue.processOne()).toBe(true);
+        expect(mockRepository.release).toHaveBeenCalledTimes(1);
+        expect(mockRepository.fail).not.toHaveBeenCalled();
+      },
+    );
+
+    it('still counts an attempt when the gate is open', async () => {
+      const queue = createQueue();
+      queue.setHandler(
+        vi.fn().mockResolvedValue({ success: false, error: 'boom' }),
+      );
+      queue.setGate(() => true);
+      mockRepository.dequeueAny.mockResolvedValue(baseItem);
+      mockRepository.fail.mockResolvedValue('queued');
+
+      await queue.processOne();
+      expect(mockRepository.fail).toHaveBeenCalledTimes(1);
+      expect(mockRepository.release).not.toHaveBeenCalled();
     });
   });
 
