@@ -107,6 +107,7 @@ git diff --check
 
 ## Git
 
+- Commit directly to `main`; do not create a feature branch unless asked.
 - Never switch branches without first notifying the developer: say which branch you are on, which
   branch you are switching to, and why. This includes creating and checking out a new branch.
 
