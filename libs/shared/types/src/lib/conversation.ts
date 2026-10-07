@@ -17,6 +17,8 @@ export type ConversationEventType =
   | 'photo'
   | 'document'
   | 'video'
+  | 'audio'
+  | 'voice'
   | 'join'
   | 'leave'
   | 'edit';

@@ -300,7 +300,7 @@ async function main() {
   );
   console.log(`  ${scenario.description}\n`);
 
-  const ingester = new MessageIngester(dbClient);
+  const ingester = new MessageIngester({ dbClient });
   const baseMessageId = 90000 + Math.floor(Math.random() * 9000);
   const baseTime = Date.now();
   const eventIds: string[] = [];

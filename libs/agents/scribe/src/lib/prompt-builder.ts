@@ -77,6 +77,7 @@ export function buildUserMessage(
   context: ScribeContext,
   messageTimestamp?: Date,
   timezone?: string,
+  isForwarded?: boolean,
 ): string {
   logger.debug(
     {
@@ -146,7 +147,7 @@ export function buildUserMessage(
   }
 
   // Add the main message to process
-  parts.push(`MESSAGE from ${senderName}:`);
+  parts.push(`MESSAGE from ${senderName}${isForwarded ? ' (forwarded)' : ''}:`);
   parts.push(messageContent);
   parts.push('');
   parts.push(

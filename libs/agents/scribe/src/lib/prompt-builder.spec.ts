@@ -73,4 +73,32 @@ describe('buildUserMessage', () => {
       message.indexOf('IN REPLY TO QUESTION (asked by Facilitator):'),
     ).toBeLessThan(message.indexOf('MESSAGE from Sofia:'));
   });
+
+  it('marks the message line forwarded when isForwarded is true', () => {
+    const context = baseContext();
+
+    const message = buildUserMessage(
+      'Did you see what happened to the old house?',
+      'Sofia',
+      context,
+      new Date('2026-07-01T00:00:00Z'),
+      'UTC',
+      true,
+    );
+
+    expect(message).toContain('MESSAGE from Sofia (forwarded):');
+  });
+
+  it('omits the forwarded marker by default', () => {
+    const context = baseContext();
+
+    const message = buildUserMessage(
+      'Did you see what happened to the old house?',
+      'Sofia',
+      context,
+    );
+
+    expect(message).toContain('MESSAGE from Sofia:');
+    expect(message).not.toContain('(forwarded)');
+  });
 });

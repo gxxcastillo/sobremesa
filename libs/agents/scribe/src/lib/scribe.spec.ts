@@ -155,4 +155,28 @@ describe('ScribeAgent.buildPrompt', () => {
 
     expect(built.empty).toBe(true);
   });
+
+  it('marks the message forwarded when metadata.forwardFrom is true (provenance-integrity-plan.md #5.4)', async () => {
+    const event = {
+      ...makeEvent(),
+      metadata: { forwardFrom: true },
+    };
+    const { scribe } = makeScribe({ event });
+
+    const built = await scribe.buildPrompt(EVENT_ID, FAMILY_ID, makeContext());
+
+    expect(built.empty).toBe(false);
+    if (built.empty) throw new Error('expected a non-empty build');
+    expect(built.userMessage).toContain('MESSAGE from Rosa (forwarded):');
+  });
+
+  it('does not mark the message forwarded when metadata.forwardFrom is absent', async () => {
+    const { scribe } = makeScribe();
+
+    const built = await scribe.buildPrompt(EVENT_ID, FAMILY_ID, makeContext());
+
+    expect(built.empty).toBe(false);
+    if (built.empty) throw new Error('expected a non-empty build');
+    expect(built.userMessage).not.toContain('(forwarded)');
+  });
 });

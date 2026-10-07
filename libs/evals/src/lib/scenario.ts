@@ -29,6 +29,8 @@ export interface EvalMessage {
     askedByName?: string;
   };
   occurredAt?: Date;
+  /** Marks this message forwarded (provenance-integrity-plan.md #5.4), surfaced to Scribe as `MESSAGE from {sender} (forwarded):`. */
+  isForwarded?: boolean;
 }
 
 export interface ExpectedPerson {

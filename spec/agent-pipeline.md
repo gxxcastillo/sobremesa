@@ -61,6 +61,11 @@ Scribe responsibilities:
   only for attributed/hearsay claims, `attributed_to` — the person the speaker attributes the fact
   to (e.g. "Mom always said..." → `attributed_to: "Mom"`). Scribe does not output a speaker name;
   the pipeline stamps that deterministically (see §3.4).
+- A forwarded message's current sender is only relaying it. The pipeline marks the prompt's
+  message line `MESSAGE from {sender} (forwarded):` when the event's `forwardFrom` metadata is set
+  (provenance-integrity-plan.md #5.4); Scribe defaults such claims to `attributed`/`hearsay`, never
+  `direct`, and leaves `attributed_to` unset unless the forwarded content itself states whose
+  account it is.
 - Every claim carries a required `evidence` field: a short verbatim span from the current message
   supporting the claim (never paraphrased, never quoted from context). A claim without evidence
   fails the parse loud, like any other malformed entity data. The Registrar verifies the span

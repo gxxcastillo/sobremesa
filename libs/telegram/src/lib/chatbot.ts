@@ -1,5 +1,5 @@
 import type { Telegraf, Context } from 'telegraf';
-import { message } from 'telegraf/filters';
+import { editedMessage, message } from 'telegraf/filters';
 import type { CallbackQuery, Message, Update, User } from 'telegraf/types';
 import { createLogger } from '@sobremesa/shared-utils';
 import {
@@ -27,6 +27,10 @@ import {
   type TextMessageInput,
   type PhotoMessageInput,
   type DocumentMessageInput,
+  type VideoMessageInput,
+  type VoiceMessageInput,
+  type AudioMessageInput,
+  type EditMessageInput,
   type MemberEventInput,
 } from '@sobremesa/ingester';
 import { AdminSyncHandler } from './handlers/admin-sync';
@@ -40,6 +44,15 @@ type TextMessageContext = Context<Update.MessageUpdate<Message.TextMessage>>;
 type PhotoMessageContext = Context<Update.MessageUpdate<Message.PhotoMessage>>;
 type DocumentMessageContext = Context<
   Update.MessageUpdate<Message.DocumentMessage>
+>;
+type VideoMessageContext = Context<Update.MessageUpdate<Message.VideoMessage>>;
+type VideoNoteMessageContext = Context<
+  Update.MessageUpdate<Message.VideoNoteMessage>
+>;
+type VoiceMessageContext = Context<Update.MessageUpdate<Message.VoiceMessage>>;
+type AudioMessageContext = Context<Update.MessageUpdate<Message.AudioMessage>>;
+type EditedTextMessageContext = Context<
+  Update.EditedMessageUpdate<Message.TextMessage>
 >;
 
 /**
@@ -114,6 +127,7 @@ function transformPhotoMessage(
     occurredAt: new Date(msg.date * 1000),
     metadata: {
       chatType: msg.chat.type,
+      mediaGroupId: msg.media_group_id,
     },
     sourcePayload: msg as unknown as Record<string, unknown>,
   };
@@ -148,6 +162,163 @@ function transformDocumentMessage(
     occurredAt: new Date(msg.date * 1000),
     metadata: {
       chatType: msg.chat.type,
+      mediaGroupId: msg.media_group_id,
+    },
+    sourcePayload: msg as unknown as Record<string, unknown>,
+  };
+}
+
+/**
+ * Transform a Telegram video message to generic input.
+ */
+function transformVideoMessage(
+  msg: Message.VideoMessage & { from: User },
+): VideoMessageInput {
+  const video = msg.video;
+  return {
+    type: 'video',
+    source: 'telegram',
+    conversationId: String(msg.chat.id),
+    externalEventId: String(msg.message_id),
+    externalReplyToId: msg.reply_to_message
+      ? String(msg.reply_to_message.message_id)
+      : undefined,
+    actor: {
+      externalId: String(msg.from.id),
+      displayName: getDisplayName(msg.from),
+      username: msg.from.username,
+    },
+    caption: msg.caption,
+    fileId: video.file_id,
+    fileUniqueId: video.file_unique_id,
+    width: video.width,
+    height: video.height,
+    duration: video.duration,
+    mimeType: video.mime_type,
+    fileSize: video.file_size,
+    thumbnail: video.thumbnail
+      ? {
+          fileId: video.thumbnail.file_id,
+          fileUniqueId: video.thumbnail.file_unique_id,
+          width: video.thumbnail.width,
+          height: video.thumbnail.height,
+        }
+      : undefined,
+    occurredAt: new Date(msg.date * 1000),
+    metadata: {
+      chatType: msg.chat.type,
+      mediaGroupId: msg.media_group_id,
+    },
+    sourcePayload: msg as unknown as Record<string, unknown>,
+  };
+}
+
+/**
+ * Transform a Telegram "video note" (round video message) to generic input.
+ * Captured through the same `video` event type as an ordinary video, flagged
+ * `isVideoNote: true` -- a video note has no caption or media_group_id on
+ * the wire.
+ */
+function transformVideoNoteMessage(
+  msg: Message.VideoNoteMessage & { from: User },
+): VideoMessageInput {
+  const videoNote = msg.video_note;
+  return {
+    type: 'video',
+    source: 'telegram',
+    conversationId: String(msg.chat.id),
+    externalEventId: String(msg.message_id),
+    externalReplyToId: msg.reply_to_message
+      ? String(msg.reply_to_message.message_id)
+      : undefined,
+    actor: {
+      externalId: String(msg.from.id),
+      displayName: getDisplayName(msg.from),
+      username: msg.from.username,
+    },
+    fileId: videoNote.file_id,
+    fileUniqueId: videoNote.file_unique_id,
+    width: videoNote.length,
+    height: videoNote.length,
+    duration: videoNote.duration,
+    fileSize: videoNote.file_size,
+    isVideoNote: true,
+    occurredAt: new Date(msg.date * 1000),
+    metadata: {
+      chatType: msg.chat.type,
+    },
+    sourcePayload: msg as unknown as Record<string, unknown>,
+  };
+}
+
+/**
+ * Transform a Telegram voice note to generic input. Capture-only -- nothing
+ * transcribes it (provenance-integrity-plan.md #5.1).
+ */
+function transformVoiceMessage(
+  msg: Message.VoiceMessage & { from: User },
+): VoiceMessageInput {
+  const voice = msg.voice;
+  return {
+    type: 'voice',
+    source: 'telegram',
+    conversationId: String(msg.chat.id),
+    externalEventId: String(msg.message_id),
+    externalReplyToId: msg.reply_to_message
+      ? String(msg.reply_to_message.message_id)
+      : undefined,
+    actor: {
+      externalId: String(msg.from.id),
+      displayName: getDisplayName(msg.from),
+      username: msg.from.username,
+    },
+    caption: msg.caption,
+    fileId: voice.file_id,
+    fileUniqueId: voice.file_unique_id,
+    duration: voice.duration,
+    mimeType: voice.mime_type,
+    fileSize: voice.file_size,
+    occurredAt: new Date(msg.date * 1000),
+    metadata: {
+      chatType: msg.chat.type,
+    },
+    sourcePayload: msg as unknown as Record<string, unknown>,
+  };
+}
+
+/**
+ * Transform a Telegram audio file to generic input. Capture-only, same as voice.
+ */
+function transformAudioMessage(
+  msg: Message.AudioMessage & { from: User },
+): AudioMessageInput {
+  const audio = msg.audio;
+  return {
+    type: 'audio',
+    source: 'telegram',
+    conversationId: String(msg.chat.id),
+    externalEventId: String(msg.message_id),
+    externalReplyToId: msg.reply_to_message
+      ? String(msg.reply_to_message.message_id)
+      : undefined,
+    actor: {
+      externalId: String(msg.from.id),
+      displayName: getDisplayName(msg.from),
+      username: msg.from.username,
+    },
+    caption: msg.caption,
+    fileId: audio.file_id,
+    fileUniqueId: audio.file_unique_id,
+    duration: audio.duration,
+    performer: audio.performer,
+    title: audio.title,
+    fileName: audio.file_name,
+    mimeType: audio.mime_type,
+    fileSize: audio.file_size,
+    occurredAt: new Date(msg.date * 1000),
+    metadata: {
+      chatType: msg.chat.type,
+      mediaGroupId: msg.media_group_id,
     },
     sourcePayload: msg as unknown as Record<string, unknown>,
   };
@@ -191,7 +362,10 @@ export class ChatbotHandler implements BotHandler {
     this.familyRepo = new FamilyRepository(this.dbClient);
     this.allowedChatRepo = new AllowedChatRepository(this.dbClient);
     this.logger = options.logger || createLogger({ name: 'chatbot' });
-    this.ingester = new MessageIngester(this.dbClient, this.logger);
+    this.ingester = new MessageIngester({
+      dbClient: this.dbClient,
+      logger: this.logger,
+    });
     this.adminSyncHandler = new AdminSyncHandler(this.dbClient, this.logger);
   }
 
@@ -272,6 +446,67 @@ export class ChatbotHandler implements BotHandler {
         this.logger.error(
           { err: error, messageId: ctx.message.message_id },
           'Failed to ingest document message',
+        );
+      }
+    });
+
+    // Handle video, voice, audio and video notes -- enqueue for processing.
+    // Capture-only (provenance-integrity-plan.md #5.1): nothing transcribes
+    // or analyzes these yet, but they are no longer silently dropped.
+    bot.on(message('video'), async (ctx) => {
+      try {
+        await this.handleVideoMessage(ctx);
+      } catch (error) {
+        this.logger.error(
+          { err: error, messageId: ctx.message.message_id },
+          'Failed to ingest video message',
+        );
+      }
+    });
+
+    bot.on(message('video_note'), async (ctx) => {
+      try {
+        await this.handleVideoNoteMessage(ctx);
+      } catch (error) {
+        this.logger.error(
+          { err: error, messageId: ctx.message.message_id },
+          'Failed to ingest video note',
+        );
+      }
+    });
+
+    bot.on(message('voice'), async (ctx) => {
+      try {
+        await this.handleVoiceMessage(ctx);
+      } catch (error) {
+        this.logger.error(
+          { err: error, messageId: ctx.message.message_id },
+          'Failed to ingest voice message',
+        );
+      }
+    });
+
+    bot.on(message('audio'), async (ctx) => {
+      try {
+        await this.handleAudioMessage(ctx);
+      } catch (error) {
+        this.logger.error(
+          { err: error, messageId: ctx.message.message_id },
+          'Failed to ingest audio message',
+        );
+      }
+    });
+
+    // Handle edited text messages -- append a new immutable event, never
+    // mutate the original (provenance-integrity-plan.md #5.2). An edited
+    // caption (photo/video/document) is not handled yet: out of scope here.
+    bot.on(editedMessage('text'), async (ctx) => {
+      try {
+        await this.handleEditedTextMessage(ctx);
+      } catch (error) {
+        this.logger.error(
+          { err: error, messageId: ctx.editedMessage.message_id },
+          'Failed to ingest edited text message',
         );
       }
     });
@@ -1167,6 +1402,174 @@ export class ChatbotHandler implements BotHandler {
       this.logger.info(
         { eventId, messageId: msg.message_id, familyId: family.id },
         'Document message ingested and queued',
+      );
+    }
+  }
+
+  /**
+   * Handle a video message - enqueue for processing. Capture-only.
+   */
+  private async handleVideoMessage(ctx: VideoMessageContext): Promise<void> {
+    const msg = ctx.message;
+    const chatId = String(msg.chat.id);
+
+    const family = await this.getActiveFamilyForChat(chatId);
+    if (!family) {
+      this.logger.debug(
+        { chatId, messageId: msg.message_id },
+        'Chat not registered or paused, ignoring video',
+      );
+      return;
+    }
+
+    const input = transformVideoMessage(msg);
+    const eventId = await this.ingester.ingestVideoMessage(family.id, input);
+
+    if (eventId) {
+      this.logger.info(
+        { eventId, messageId: msg.message_id, familyId: family.id },
+        'Video message ingested and queued',
+      );
+    }
+  }
+
+  /**
+   * Handle a video note (round video message) - enqueue for processing.
+   * Capture-only, stored as a `video` event flagged `isVideoNote`.
+   */
+  private async handleVideoNoteMessage(
+    ctx: VideoNoteMessageContext,
+  ): Promise<void> {
+    const msg = ctx.message;
+    const chatId = String(msg.chat.id);
+
+    const family = await this.getActiveFamilyForChat(chatId);
+    if (!family) {
+      this.logger.debug(
+        { chatId, messageId: msg.message_id },
+        'Chat not registered or paused, ignoring video note',
+      );
+      return;
+    }
+
+    const input = transformVideoNoteMessage(msg);
+    const eventId = await this.ingester.ingestVideoMessage(family.id, input);
+
+    if (eventId) {
+      this.logger.info(
+        { eventId, messageId: msg.message_id, familyId: family.id },
+        'Video note ingested and queued',
+      );
+    }
+  }
+
+  /**
+   * Handle a voice note - enqueue for processing. Capture-only.
+   */
+  private async handleVoiceMessage(ctx: VoiceMessageContext): Promise<void> {
+    const msg = ctx.message;
+    const chatId = String(msg.chat.id);
+
+    const family = await this.getActiveFamilyForChat(chatId);
+    if (!family) {
+      this.logger.debug(
+        { chatId, messageId: msg.message_id },
+        'Chat not registered or paused, ignoring voice message',
+      );
+      return;
+    }
+
+    const input = transformVoiceMessage(msg);
+    const eventId = await this.ingester.ingestVoiceMessage(family.id, input);
+
+    if (eventId) {
+      this.logger.info(
+        { eventId, messageId: msg.message_id, familyId: family.id },
+        'Voice message ingested and queued',
+      );
+    }
+  }
+
+  /**
+   * Handle an audio file - enqueue for processing. Capture-only.
+   */
+  private async handleAudioMessage(ctx: AudioMessageContext): Promise<void> {
+    const msg = ctx.message;
+    const chatId = String(msg.chat.id);
+
+    const family = await this.getActiveFamilyForChat(chatId);
+    if (!family) {
+      this.logger.debug(
+        { chatId, messageId: msg.message_id },
+        'Chat not registered or paused, ignoring audio message',
+      );
+      return;
+    }
+
+    const input = transformAudioMessage(msg);
+    const eventId = await this.ingester.ingestAudioMessage(family.id, input);
+
+    if (eventId) {
+      this.logger.info(
+        { eventId, messageId: msg.message_id, familyId: family.id },
+        'Audio message ingested and queued',
+      );
+    }
+  }
+
+  /**
+   * Handle an edited text message - append a new immutable event carrying
+   * `editOfExternalId`; the original event is never touched. Telegram reuses
+   * the original `message_id`, so the edit's own external id is minted from
+   * it plus the update's `update_id` (the same synthesis pattern as member
+   * join/leave events below). `update_id` is unique per update, so it never
+   * collides with the original message or another edit of it -- even two
+   * edits in the same second -- and a re-delivered update keeps its id, so
+   * dedup still works.
+   */
+  private async handleEditedTextMessage(
+    ctx: EditedTextMessageContext,
+  ): Promise<void> {
+    const msg = ctx.editedMessage;
+    const chatId = String(msg.chat.id);
+
+    const family = await this.getActiveFamilyForChat(chatId);
+    if (!family) {
+      this.logger.debug(
+        { chatId, messageId: msg.message_id },
+        'Chat not registered or paused, ignoring edited message',
+      );
+      return;
+    }
+
+    const input: EditMessageInput = {
+      type: 'edit',
+      source: 'telegram',
+      conversationId: chatId,
+      externalEventId: `edit_${msg.message_id}_${ctx.update.update_id}`,
+      editOfExternalId: String(msg.message_id),
+      externalReplyToId: msg.reply_to_message
+        ? String(msg.reply_to_message.message_id)
+        : undefined,
+      actor: {
+        externalId: String(msg.from.id),
+        displayName: getDisplayName(msg.from),
+        username: msg.from.username,
+      },
+      text: msg.text,
+      occurredAt: new Date(msg.edit_date * 1000),
+      metadata: {
+        chatType: msg.chat.type,
+      },
+      sourcePayload: msg as unknown as Record<string, unknown>,
+    };
+
+    const eventId = await this.ingester.ingestEditMessage(family.id, input);
+
+    if (eventId) {
+      this.logger.info(
+        { eventId, messageId: msg.message_id, familyId: family.id },
+        'Edited message ingested and queued',
       );
     }
   }

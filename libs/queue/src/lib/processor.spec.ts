@@ -692,6 +692,51 @@ describe('MessageProcessor', () => {
     expect(mockQueueRepo.complete).not.toHaveBeenCalled();
   });
 
+  it('does not create an image record for video events (capture-only)', async () => {
+    mockEventRepo.findById.mockResolvedValue({
+      ...baseEvent,
+      eventType: 'video',
+      contentOriginal: undefined,
+      metadata: { fileId: 'file-1', fileUniqueId: 'unique-1' },
+    });
+    const processor = createProcessor();
+    const onImageCreated = vi.fn();
+    processor.setOnImageCreated(onImageCreated);
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(true);
+    expect(mockImageRepo.createFromEvent).not.toHaveBeenCalled();
+    expect(onImageCreated).not.toHaveBeenCalled();
+  });
+
+  it('skips edit events without routing or extraction (capture-only)', async () => {
+    mockEventRepo.findById.mockResolvedValue({
+      ...baseEvent,
+      eventType: 'edit',
+      externalReplyToId: 'bot-question-1',
+    });
+    const processor = createProcessor();
+    const router = vi.fn();
+    processor.setRouter(router);
+    const scribe = vi.fn();
+    processor.setScribe(scribe);
+
+    const result = await processor.process(EVENT_ID, FAMILY_ID);
+
+    expect(result.success).toBe(true);
+    expect(mockQuestionRepo.findByExternalMessageId).not.toHaveBeenCalled();
+    expect(router).not.toHaveBeenCalled();
+    expect(scribe).not.toHaveBeenCalled();
+    expect(mockEventLog.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'event_processed',
+        conversationEventId: EVENT_ID,
+        eventData: { status: 'skipped_capture_only', eventType: 'edit' },
+      }),
+    );
+  });
+
   it('createHandler delegates to process', async () => {
     const processor = createProcessor();
     const domainModel = createBaseDomainModel();

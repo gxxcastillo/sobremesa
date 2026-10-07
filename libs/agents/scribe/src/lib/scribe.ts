@@ -328,6 +328,7 @@ export class ScribeAgent {
       context,
       new Date(event.occurredAt),
       senderTimezone,
+      event.metadata?.['forwardFrom'] === true,
     );
 
     return {

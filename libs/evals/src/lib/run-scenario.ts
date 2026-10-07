@@ -126,7 +126,7 @@ export function createEvent(options: {
     eventType: 'message',
     contentOriginal: options.message.text,
     languageOriginal: 'unknown',
-    metadata: {},
+    metadata: options.message.isForwarded ? { forwardFrom: true } : {},
     sourcePayload: {},
     occurredAt: options.message.occurredAt ?? options.occurredAt,
     ingestedAt: options.message.occurredAt ?? options.occurredAt,

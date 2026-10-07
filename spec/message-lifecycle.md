@@ -10,9 +10,29 @@ Telegram runs through one Telegraf `BotManager` in long-polling mode.
 - `/sobremesa` in an allow-listed group, from a Telegram admin, registers the family or runs admin
   subcommands: pause/resume/status/help/language/studio-link.
 - Private `/sobremesa` shows help.
-- Text, photo, document, and member events are ingested only for active, unpaused families.
+- Text, photo, document, video, video note, voice, audio, edit, and member events are ingested
+  only for active, unpaused families.
 - Member joins/leaves are debounced; Telegram admin status is cached for registration and access-pass
   role assignment.
+- Voice notes, audio files, videos, and video notes (round video messages) are captured as
+  immutable media events but never transcribed or analyzed — no Image record is created for them,
+  so Curator never sees them. Capture-and-preserve now, so a later
+  pass can process them without re-ingestion (provenance-integrity-plan.md #5.1). A video note is
+  stored as a `video` event flagged `isVideoNote` in its metadata.
+- An edited message never mutates the original event. It is appended as a new, separate `edit`
+  event carrying `editOfExternalId` (the original message's external id) in its metadata; its own
+  external id is `edit_{message_id}_{update_id}`, so two edits in the same second stay distinct.
+  Edits are **capture-only for now**: the queue processor records a `skipped_capture_only` event
+  and runs no routing, answer detection, or extraction on them, so a typo fix does not add a
+  second, conflicting claim next to the original message's. How an edit should supersede the
+  original's claims is an open decision; the event is preserved so a later pass can reprocess it.
+  Only edited **text** messages are handled; an edited caption (on a photo/video/document) is not
+  yet.
+- A Telegram album's `media_group_id` is stored in the event's metadata for photo, document, video,
+  and audio messages, so album items are groupable — no pipeline behavior depends on it yet.
+- A forwarded message is marked in the event's metadata (`forwardFrom`); Scribe's prompt surfaces
+  it as `MESSAGE from {sender} (forwarded):` and defaults its claims to `attributed`/`hearsay`
+  rather than `direct` (see [`agent-pipeline.md`](./agent-pipeline.md) §3.3).
 
 For each accepted inbound event, `MessageIngester`:
 

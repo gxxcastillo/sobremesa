@@ -6,6 +6,10 @@ export type {
   PhotoMessageInput,
   DocumentMessageInput,
   VideoMessageInput,
+  VoiceMessageInput,
+  AudioMessageInput,
+  EditMessageInput,
   MediaMessageInput,
   MemberEventInput,
+  MessageIngesterOptions,
 } from './lib/ingester';

@@ -75,7 +75,9 @@ export interface DocumentMessageInput extends BaseMessageInput {
 }
 
 /**
- * Video message input.
+ * Video message input. `isVideoNote` marks a Telegram round "video message"
+ * (`video_note`) sent through this same path -- it has no caption or
+ * `media_group_id` on the wire, but is otherwise a video.
  */
 export interface VideoMessageInput extends BaseMessageInput {
   type: 'video';
@@ -87,6 +89,7 @@ export interface VideoMessageInput extends BaseMessageInput {
   duration?: number;
   mimeType?: string;
   fileSize?: number;
+  isVideoNote?: boolean;
   thumbnail?: {
     fileId: string;
     fileUniqueId: string;
@@ -96,12 +99,57 @@ export interface VideoMessageInput extends BaseMessageInput {
 }
 
 /**
+ * Voice note input (Telegram `voice`) -- a short, usually-OGG/Opus recording.
+ * Capture-only: nothing transcribes it (provenance-integrity-plan.md #5.1).
+ */
+export interface VoiceMessageInput extends BaseMessageInput {
+  type: 'voice';
+  caption?: string;
+  fileId: string;
+  fileUniqueId: string;
+  duration?: number;
+  mimeType?: string;
+  fileSize?: number;
+}
+
+/**
+ * Audio file input (Telegram `audio`) -- a music/audio file, distinct from a
+ * `voice` note. Capture-only, same as voice.
+ */
+export interface AudioMessageInput extends BaseMessageInput {
+  type: 'audio';
+  caption?: string;
+  fileId: string;
+  fileUniqueId: string;
+  duration?: number;
+  performer?: string;
+  title?: string;
+  fileName?: string;
+  mimeType?: string;
+  fileSize?: number;
+}
+
+/**
  * Union type for all media message inputs.
  */
 export type MediaMessageInput =
   | PhotoMessageInput
   | DocumentMessageInput
-  | VideoMessageInput;
+  | VideoMessageInput
+  | VoiceMessageInput
+  | AudioMessageInput;
+
+/**
+ * An edited message input. Telegram reuses the original message's id, so the
+ * caller must mint a distinct `externalEventId` for the edit (the original
+ * event is never mutated -- it is an immutable ledger). `editOfExternalId` is
+ * the original message's external id, for traceability.
+ */
+export interface EditMessageInput extends BaseMessageInput {
+  type: 'edit';
+  text: string;
+  editOfExternalId: string;
+}
 
 /**
  * Member event input (join/leave).
@@ -112,6 +160,22 @@ export interface MemberEventInput extends BaseMessageInput {
   memberStatus: string;
   /** The old status of the member before the change */
   oldMemberStatus?: string;
+}
+
+/**
+ * Options for `MessageIngester`. `dbClient` is always required (`ensureIdentity`
+ * upserts `family_access` directly against it); each repository can be
+ * overridden independently for testing, defaulting to one built from
+ * `dbClient` otherwise -- same convention as the agent classes
+ * (`FollowupAgent`, `FacilitatorAgent`, ...).
+ */
+export interface MessageIngesterOptions {
+  dbClient: DatabaseClient;
+  logger?: pino.Logger;
+  conversationEvents?: ConversationEventRepository;
+  queueRepo?: ProcessingQueueRepository;
+  eventLog?: EventLogRepository;
+  identityRepo?: IdentityRepository;
 }
 
 /**
@@ -126,13 +190,18 @@ export class MessageIngester {
   private identityRepo: IdentityRepository;
   private logger: pino.Logger;
 
-  constructor(client: DatabaseClient, logger?: pino.Logger) {
-    this.client = client;
-    this.conversationEvents = new ConversationEventRepository(client);
-    this.queueRepo = new ProcessingQueueRepository(client);
-    this.eventLog = new EventLogRepository(client);
-    this.identityRepo = new IdentityRepository(client);
-    this.logger = logger || createLogger({ name: 'ingester' });
+  constructor(options: MessageIngesterOptions) {
+    this.client = options.dbClient;
+    this.conversationEvents =
+      options.conversationEvents ??
+      new ConversationEventRepository(options.dbClient);
+    this.queueRepo =
+      options.queueRepo ?? new ProcessingQueueRepository(options.dbClient);
+    this.eventLog =
+      options.eventLog ?? new EventLogRepository(options.dbClient);
+    this.identityRepo =
+      options.identityRepo ?? new IdentityRepository(options.dbClient);
+    this.logger = options.logger || createLogger({ name: 'ingester' });
   }
 
   /**
@@ -460,6 +529,7 @@ export class MessageIngester {
       mimeType: input.mimeType,
       fileSize: input.fileSize,
       thumbnail: input.thumbnail,
+      isVideoNote: input.isVideoNote || undefined,
     };
 
     // Create conversation event
@@ -492,6 +562,232 @@ export class MessageIngester {
     this.logger.info(
       { eventId: event.id, externalEventId: input.externalEventId },
       'Video message ingested and queued',
+    );
+
+    return event.id;
+  }
+
+  /**
+   * Ingest a voice note from any provider. Capture-only: nothing transcribes
+   * it, so `contentOriginal` stays unset and the event carries no text for
+   * the pipeline to extract from (provenance-integrity-plan.md #5.1).
+   * Returns the event ID if created, null if duplicate.
+   */
+  async ingestVoiceMessage(
+    familyId: string,
+    input: VoiceMessageInput,
+  ): Promise<string | null> {
+    this.logger.debug(
+      { conversationId: input.conversationId, eventId: input.externalEventId },
+      'Ingesting voice message',
+    );
+
+    await this.ensureIdentity(familyId, input.source, input.actor);
+
+    const existing = await this.conversationEvents.findByExternalId(
+      familyId,
+      input.source,
+      input.conversationId,
+      input.externalEventId,
+    );
+
+    if (existing) {
+      this.logger.debug(
+        { eventId: input.externalEventId },
+        'Voice message already exists, skipping',
+      );
+      return null;
+    }
+
+    const metadata: Record<string, unknown> = {
+      ...input.metadata,
+      fileId: input.fileId,
+      fileUniqueId: input.fileUniqueId,
+      duration: input.duration,
+      mimeType: input.mimeType,
+      fileSize: input.fileSize,
+    };
+
+    const event = await this.conversationEvents.insert({
+      familyId,
+      source: input.source,
+      conversationId: input.conversationId,
+      externalEventId: input.externalEventId,
+      externalReplyToId: input.externalReplyToId,
+      actorExternalId: input.actor.externalId,
+      actorDisplayName: input.actor.displayName,
+      actorUsername: input.actor.username,
+      eventType: 'voice',
+      contentOriginal: input.caption || undefined,
+      languageOriginal: input.caption
+        ? detectLanguage(input.caption)
+        : undefined,
+      metadata,
+      sourcePayload: input.sourcePayload,
+      occurredAt: input.occurredAt,
+      ingestedAt: new Date(),
+    });
+
+    await this.enqueue(familyId, event.id, input.actor, 'voice', {
+      hasCaption: !!input.caption,
+      duration: input.duration,
+    });
+
+    this.logger.info(
+      { eventId: event.id, externalEventId: input.externalEventId },
+      'Voice message ingested and queued',
+    );
+
+    return event.id;
+  }
+
+  /**
+   * Ingest an audio file from any provider. Capture-only, same as voice.
+   * Returns the event ID if created, null if duplicate.
+   */
+  async ingestAudioMessage(
+    familyId: string,
+    input: AudioMessageInput,
+  ): Promise<string | null> {
+    this.logger.debug(
+      { conversationId: input.conversationId, eventId: input.externalEventId },
+      'Ingesting audio message',
+    );
+
+    await this.ensureIdentity(familyId, input.source, input.actor);
+
+    const existing = await this.conversationEvents.findByExternalId(
+      familyId,
+      input.source,
+      input.conversationId,
+      input.externalEventId,
+    );
+
+    if (existing) {
+      this.logger.debug(
+        { eventId: input.externalEventId },
+        'Audio message already exists, skipping',
+      );
+      return null;
+    }
+
+    const metadata: Record<string, unknown> = {
+      ...input.metadata,
+      fileId: input.fileId,
+      fileUniqueId: input.fileUniqueId,
+      duration: input.duration,
+      performer: input.performer,
+      title: input.title,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      fileSize: input.fileSize,
+    };
+
+    const event = await this.conversationEvents.insert({
+      familyId,
+      source: input.source,
+      conversationId: input.conversationId,
+      externalEventId: input.externalEventId,
+      externalReplyToId: input.externalReplyToId,
+      actorExternalId: input.actor.externalId,
+      actorDisplayName: input.actor.displayName,
+      actorUsername: input.actor.username,
+      eventType: 'audio',
+      contentOriginal: input.caption || undefined,
+      languageOriginal: input.caption
+        ? detectLanguage(input.caption)
+        : undefined,
+      metadata,
+      sourcePayload: input.sourcePayload,
+      occurredAt: input.occurredAt,
+      ingestedAt: new Date(),
+    });
+
+    await this.enqueue(familyId, event.id, input.actor, 'audio', {
+      hasCaption: !!input.caption,
+      duration: input.duration,
+    });
+
+    this.logger.info(
+      { eventId: event.id, externalEventId: input.externalEventId },
+      'Audio message ingested and queued',
+    );
+
+    return event.id;
+  }
+
+  /**
+   * Ingest an edited message as a new, separate immutable event -- the
+   * original event is never mutated. `input.externalEventId` must already be
+   * distinct from the original message's id (the caller mints it); dedup
+   * here only guards against re-delivery of the same edit.
+   * Returns the event ID if created, null if duplicate.
+   */
+  async ingestEditMessage(
+    familyId: string,
+    input: EditMessageInput,
+  ): Promise<string | null> {
+    this.logger.debug(
+      {
+        conversationId: input.conversationId,
+        eventId: input.externalEventId,
+        editOf: input.editOfExternalId,
+      },
+      'Ingesting edited message',
+    );
+
+    await this.ensureIdentity(familyId, input.source, input.actor);
+
+    const existing = await this.conversationEvents.findByExternalId(
+      familyId,
+      input.source,
+      input.conversationId,
+      input.externalEventId,
+    );
+
+    if (existing) {
+      this.logger.debug(
+        { eventId: input.externalEventId },
+        'Edit already exists, skipping',
+      );
+      return null;
+    }
+
+    const metadata: Record<string, unknown> = {
+      ...input.metadata,
+      editOfExternalId: input.editOfExternalId,
+    };
+
+    const event = await this.conversationEvents.insert({
+      familyId,
+      source: input.source,
+      conversationId: input.conversationId,
+      externalEventId: input.externalEventId,
+      externalReplyToId: input.externalReplyToId,
+      actorExternalId: input.actor.externalId,
+      actorDisplayName: input.actor.displayName,
+      actorUsername: input.actor.username,
+      eventType: 'edit',
+      contentOriginal: input.text,
+      languageOriginal: detectLanguage(input.text),
+      metadata,
+      sourcePayload: input.sourcePayload,
+      occurredAt: input.occurredAt,
+      ingestedAt: new Date(),
+    });
+
+    await this.enqueue(familyId, event.id, input.actor, 'edit', {
+      textLength: input.text.length,
+      editOfExternalId: input.editOfExternalId,
+    });
+
+    this.logger.info(
+      {
+        eventId: event.id,
+        externalEventId: input.externalEventId,
+        editOf: input.editOfExternalId,
+      },
+      'Edited message ingested and queued',
     );
 
     return event.id;

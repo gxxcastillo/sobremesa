@@ -461,6 +461,38 @@ const curatedScribeEvalScenarios: ScribeEvalScenario[] = [
       },
     },
   },
+  {
+    id: 'forwarded-message-attribution',
+    description:
+      'A forwarded message (provenance-integrity-plan.md #5.4) is marked ' +
+      '(forwarded); its claim should be attributed to the original writer, ' +
+      'not asserted as the current sender’s own firsthand account.',
+    senders,
+    messages: [
+      {
+        sender: 'mickey',
+        isForwarded: true,
+        text: 'Tía Rosa escribió que la boda de Carlos fue en Granada en 1985.',
+      },
+    ],
+    golden: {
+      requiredPeople: [{ name: 'Carlos' }],
+      requiredPlaces: [{ name: 'Granada' }],
+      requiredClaims: [
+        {
+          subject: { anyOf: ["Carlos's wedding", 'la boda de Carlos'] },
+          valueIncludes: { anyOf: ['Granada', '1985'] },
+          claimedBySource: 'attributed',
+          attributedTo: 'Tía Rosa',
+        },
+      ],
+      forbidden: {
+        // The forwarder (Mickey) must never be recorded as the firsthand
+        // source of a fact he only relayed.
+        claimSubjects: ['Mickey'],
+      },
+    },
+  },
 ];
 
 const internNegativeScenarios: ScribeEvalScenario[] = [

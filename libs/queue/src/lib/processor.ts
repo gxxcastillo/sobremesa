@@ -24,7 +24,7 @@ import type pino from 'pino';
 /**
  * Media event types that should create Image records.
  */
-const MEDIA_EVENT_TYPES = ['photo', 'document', 'video'] as const;
+const MEDIA_EVENT_TYPES = ['photo', 'document'] as const;
 type MediaEventType = (typeof MEDIA_EVENT_TYPES)[number];
 
 /**
@@ -620,6 +620,27 @@ export class MessageProcessor {
         };
       }
 
+      // An edit is captured as an immutable event but not processed yet: the
+      // original message's claims stay in place, and extracting from the edit
+      // would add a second, conflicting claim for what is often just a typo
+      // fix. Reprocessing later is possible because the event is preserved.
+      if (event.eventType === 'edit') {
+        this.logger.info({ eventId }, 'Skipping edit event (capture-only)');
+        await this.eventLog.log({
+          familyId,
+          eventType: 'event_processed',
+          eventCategory: 'system_event',
+          actor: 'processor',
+          actorType: 'system',
+          conversationEventId: eventId,
+          eventData: { status: 'skipped_capture_only', eventType: 'edit' },
+        });
+        return {
+          success: true,
+          duration: Date.now() - startTime,
+        };
+      }
+
       // Check if this message is a reply to a question (answer detection)
       let answeredQuestion: AnsweredQuestionContext | undefined;
       if (event.externalReplyToId) {
@@ -1156,14 +1177,8 @@ export class MessageProcessor {
     }
 
     // Determine file type based on event type
-    let fileType: 'photo' | 'document' | 'video';
-    if (event.eventType === 'photo') {
-      fileType = 'photo';
-    } else if (event.eventType === 'video') {
-      fileType = 'video';
-    } else {
-      fileType = 'document';
-    }
+    const fileType: 'photo' | 'document' =
+      event.eventType === 'photo' ? 'photo' : 'document';
 
     // Create a new Image record
     this.logger.debug({ eventId, fileType, fileId }, 'Creating image record');
